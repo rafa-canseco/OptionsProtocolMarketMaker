@@ -17,7 +17,10 @@ def _require(name: str) -> str:
 # --- Required ---
 MM_PRIVATE_KEY: str = _require("MM_PRIVATE_KEY")
 MM_API_KEY: str = _require("MM_API_KEY")
-BACKEND_URL: str = _require("BACKEND_URL").rstrip("/")
+_backend_raw = _require("BACKEND_URL").rstrip("/")
+if not _backend_raw.startswith(("http://", "https://")):
+    _backend_raw = f"https://{_backend_raw}"
+BACKEND_URL: str = _backend_raw
 RPC_URL: str = _require("RPC_URL")
 
 # --- Optional with defaults ---
