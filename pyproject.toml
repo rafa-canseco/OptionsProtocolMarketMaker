@@ -1,0 +1,19 @@
+[project]
+name = "b1nary-market-maker"
+version = "0.1.0"
+description = "Standalone market maker client for the b1nary options protocol"
+requires-python = ">=3.12"
+dependencies = [
+    "eth-account>=0.13",
+    "web3>=7",
+    "scipy>=1.14",
+    "requests>=2.32",
+    "python-dotenv>=1.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
