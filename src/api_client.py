@@ -1,5 +1,6 @@
 import logging
 from typing import Any
+from urllib.parse import urlencode, urlparse, urlunparse
 
 import requests
 
@@ -15,6 +16,16 @@ _TIMEOUT = 15
 
 def _url(path: str) -> str:
     return f"{BACKEND_URL}{path}"
+
+
+def ws_url(path: str, **params: str) -> str:
+    """Build a WebSocket URL from BACKEND_URL, converting http→ws."""
+    parsed = urlparse(f"{BACKEND_URL}{path}")
+    scheme = "wss" if parsed.scheme == "https" else "ws"
+    query = urlencode(params) if params else parsed.query
+    return urlunparse(
+        (scheme, parsed.netloc, parsed.path, "", query, "")
+    )
 
 
 def get_market_data() -> dict[str, Any]:
