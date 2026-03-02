@@ -9,7 +9,7 @@ import time
 from eth_account import Account
 from web3 import Web3
 
-from src import api_client, config
+from src import api_client, config, fill_listener
 from src.quote_builder import build_quotes, to_api_payload
 from src.signer import build_domain, read_maker_nonce, sign_quote
 
@@ -94,19 +94,27 @@ def log_monitoring() -> None:
     except Exception:
         log.warning("Failed to fetch exposure", exc_info=True)
 
-    try:
-        fills = api_client.get_fills(limit=5)
-        if fills:
-            log.info("Recent fills: %d", len(fills))
-            for f in fills[:3]:
-                log.info(
-                    "  fill: otoken=%s amount=%s premium=%s",
-                    f.get("otoken_address", "")[:10] + "...",
-                    f.get("amount"),
-                    f.get("gross_premium"),
-                )
-    except Exception:
-        log.warning("Failed to fetch fills", exc_info=True)
+    # Prefer WebSocket fills; fall back to REST if WS is disconnected
+    if fill_listener.is_connected():
+        fills = fill_listener.get_recent_fills()
+        source = "ws"
+    else:
+        try:
+            fills = api_client.get_fills(limit=5)
+            source = "rest"
+        except Exception:
+            log.warning("Failed to fetch fills", exc_info=True)
+            return
+
+    if fills:
+        log.info("Recent fills (%s): %d", source, len(fills))
+        for f in fills[:3]:
+            log.info(
+                "  fill: otoken=%s amount=%s premium=%s",
+                (f.get("otoken_address") or "")[:10] + "...",
+                f.get("amount"),
+                f.get("gross_premium"),
+            )
 
 
 def main() -> None:
@@ -122,6 +130,8 @@ def main() -> None:
     log.info("  Refresh:     %ds", config.REFRESH_INTERVAL)
     log.info("  Max amount:  %d (raw)", config.MAX_AMOUNT)
     log.info("  Deadline:    %ds", config.DEADLINE_SECONDS)
+
+    fill_listener.start()
 
     cycle = 0
     while True:

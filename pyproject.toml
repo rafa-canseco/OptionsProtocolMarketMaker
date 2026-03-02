@@ -9,6 +9,7 @@ dependencies = [
     "scipy>=1.14",
     "requests>=2.32",
     "python-dotenv>=1.0",
+    "websocket-client>=1.7",
 ]
 
 [tool.hatch.build.targets.wheel]
