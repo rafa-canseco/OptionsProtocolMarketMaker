@@ -34,3 +34,11 @@ BATCH_SETTLER: str = os.getenv(
     "0x29bb32c014aC3378FfbE335804B94cED48f2afc4",
 )
 RISK_FREE_RATE: float = float(os.getenv("RISK_FREE_RATE", "0.05"))
+
+# --- Hedging ---
+HEDGE_MODE: str = os.getenv("HEDGE_MODE", "simulate")  # simulate | live
+HYPERLIQUID_TESTNET: bool = os.getenv(
+    "HYPERLIQUID_TESTNET", "true"
+).lower() in ("true", "1", "yes")
+HEDGE_SLIPPAGE: float = float(os.getenv("HEDGE_SLIPPAGE", "0.01"))
+HEDGE_LEVERAGE: int = int(os.getenv("HEDGE_LEVERAGE", "3"))

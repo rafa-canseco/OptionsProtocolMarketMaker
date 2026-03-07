@@ -10,6 +10,7 @@ dependencies = [
     "requests>=2.32",
     "python-dotenv>=1.0",
     "websocket-client>=1.7",
+    "hyperliquid-python-sdk>=0.22.0",
 ]
 
 [tool.hatch.build.targets.wheel]

@@ -9,10 +9,9 @@ from scipy.stats import norm
 
 
 def _d1(S: float, K: float, T: float, r: float, sigma: float) -> float:
-    return (
-        (math.log(S / K) + (r + 0.5 * sigma**2) * T)
-        / (sigma * math.sqrt(T))
-    )
+    if sigma <= 0 or T <= 0:
+        return 0.0
+    return (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
 
 
 def _d2(S: float, K: float, T: float, r: float, sigma: float) -> float:
@@ -51,6 +50,30 @@ def bs_price(
     if is_put:
         return K * math.exp(-r * T) * norm.cdf(-d2) - S * norm.cdf(-d1)
     return S * norm.cdf(d1) - K * math.exp(-r * T) * norm.cdf(d2)
+
+
+def bs_delta(
+    is_put: bool,
+    S: float,
+    K: float,
+    T: float,
+    r: float,
+    sigma: float,
+) -> float:
+    """Black-Scholes delta.
+
+    Returns:
+        Delta in range [-1, 0] for puts, [0, 1] for calls.
+    """
+    if T <= 0:
+        if is_put:
+            return -1.0 if S < K else 0.0
+        return 1.0 if S > K else 0.0
+
+    d1 = _d1(S, K, T, r, sigma)
+    if is_put:
+        return norm.cdf(d1) - 1.0
+    return norm.cdf(d1)
 
 
 def price_with_spread(
