@@ -38,11 +38,9 @@ def init() -> None:
     _info = Info(api_url, skip_ws=True, spot_meta=empty_spot)
     _exchange = Exchange(wallet, api_url, spot_meta=empty_spot)
 
-    # Set leverage once
+    # Set leverage once — fail hard if this doesn't work
     try:
-        _exchange.update_leverage(
-            config.HEDGE_LEVERAGE, "ETH", is_cross=True
-        )
+        _exchange.update_leverage(config.HEDGE_LEVERAGE, "ETH", is_cross=True)
         log.info(
             "Hyperliquid ready: %s, leverage=%dx, testnet=%s",
             _address,
@@ -50,7 +48,12 @@ def init() -> None:
             config.HYPERLIQUID_TESTNET,
         )
     except Exception:
-        log.error("Failed to set leverage on Hyperliquid", exc_info=True)
+        log.error(
+            "Failed to set leverage — disabling hedging",
+            exc_info=True,
+        )
+        _exchange = None
+        return
 
     _log_account_state()
 
@@ -70,7 +73,9 @@ def _log_account_state() -> None:
             p = pos["position"]
             log.info(
                 "  Position: %s size=%s entry=%s uPnL=%s",
-                p["coin"], p["szi"], p["entryPx"],
+                p["coin"],
+                p["szi"],
+                p["entryPx"],
                 p["unrealizedPnl"],
             )
     except Exception:
@@ -84,18 +89,18 @@ def _round_size(asset: str, size: float) -> float:
             coin = _info.name_to_coin.get(asset, asset)
             asset_id = _info.coin_to_asset.get(coin)
             if isinstance(asset_id, int):
-                decimals = _info.asset_to_sz_decimals.get(
-                    asset_id, 4
-                )
+                decimals = _info.asset_to_sz_decimals.get(asset_id, 4)
                 return round(size, decimals)
     except (AttributeError, TypeError):
-        pass
+        log.warning(
+            "Failed to look up size decimals for %s, defaulting to 4",
+            asset,
+            exc_info=True,
+        )
     return round(size, 4)
 
 
-def open_hedge(
-    asset: str, is_buy: bool, size: float
-) -> dict | None:
+def open_hedge(asset: str, is_buy: bool, size: float) -> dict | None:
     """Open a hedge position via market order.
 
     Args:
@@ -109,7 +114,9 @@ def open_hedge(
     if config.HEDGE_MODE != "live":
         log.info(
             "[HEDGE SIMULATED] %s %s %.4f",
-            "LONG" if is_buy else "SHORT", asset, size,
+            "LONG" if is_buy else "SHORT",
+            asset,
+            size,
         )
         return None
 
@@ -132,8 +139,7 @@ def open_hedge(
                 if "filled" in status:
                     filled = status["filled"]
                     log.info(
-                        "[HEDGE EXECUTED] %s %s %.4f "
-                        "filled=%s @ $%s",
+                        "[HEDGE EXECUTED] %s %s %.4f filled=%s @ $%s",
                         "LONG" if is_buy else "SHORT",
                         asset,
                         size,
@@ -145,15 +151,11 @@ def open_hedge(
                         "avg_price": float(filled["avgPx"]),
                         "oid": filled.get("oid"),
                     }
-            log.warning(
-                "[HEDGE] Order accepted but no fill: %s", statuses
-            )
+            log.warning("[HEDGE] Order accepted but no fill: %s", statuses)
         else:
             log.error("[HEDGE FAILED] %s", result)
     except Exception:
-        log.error(
-            "Hyperliquid market_open failed", exc_info=True
-        )
+        log.error("Hyperliquid market_open failed", exc_info=True)
     return None
 
 
@@ -182,9 +184,7 @@ def close_hedge(asset: str, size: float | None = None) -> dict | None:
                 asset, sz=size, slippage=config.HEDGE_SLIPPAGE
             )
         else:
-            result = _exchange.market_close(
-                asset, slippage=config.HEDGE_SLIPPAGE
-            )
+            result = _exchange.market_close(asset, slippage=config.HEDGE_SLIPPAGE)
 
         if result and result["status"] == "ok":
             statuses = result["response"]["data"]["statuses"]
@@ -201,15 +201,11 @@ def close_hedge(asset: str, size: float | None = None) -> dict | None:
                         "size": float(filled["totalSz"]),
                         "avg_price": float(filled["avgPx"]),
                     }
-            log.warning(
-                "[HEDGE CLOSE] Accepted but no fill: %s", statuses
-            )
+            log.warning("[HEDGE CLOSE] Accepted but no fill: %s", statuses)
         else:
             log.error("[HEDGE CLOSE FAILED] %s", result)
     except Exception:
-        log.error(
-            "Hyperliquid market_close failed", exc_info=True
-        )
+        log.error("Hyperliquid market_close failed", exc_info=True)
     return None
 
 
@@ -237,15 +233,21 @@ def adjust_hedge(
     if target_size > current_size:
         log.info(
             "[HEDGE ADJUST] %s %s: %.4f -> %.4f (+%.4f)",
-            "LONG" if is_buy else "SHORT", asset,
-            current_size, target_size, diff,
+            "LONG" if is_buy else "SHORT",
+            asset,
+            current_size,
+            target_size,
+            diff,
         )
         return open_hedge(asset, is_buy, diff)
     else:
         log.info(
             "[HEDGE ADJUST] %s %s: %.4f -> %.4f (-%.4f)",
-            "LONG" if is_buy else "SHORT", asset,
-            current_size, target_size, diff,
+            "LONG" if is_buy else "SHORT",
+            asset,
+            current_size,
+            target_size,
+            diff,
         )
         return close_hedge(asset, size=diff)
 
@@ -259,13 +261,15 @@ def get_positions() -> list[dict]:
         positions = []
         for pos in state["assetPositions"]:
             p = pos["position"]
-            positions.append({
-                "coin": p["coin"],
-                "size": float(p["szi"]),
-                "entry_price": float(p["entryPx"]),
-                "unrealized_pnl": float(p["unrealizedPnl"]),
-                "leverage": p["leverage"],
-            })
+            positions.append(
+                {
+                    "coin": p["coin"],
+                    "size": float(p["szi"]),
+                    "entry_price": float(p["entryPx"]),
+                    "unrealized_pnl": float(p["unrealizedPnl"]),
+                    "leverage": p["leverage"],
+                }
+            )
         return positions
     except Exception:
         log.warning("Failed to get Hyperliquid positions", exc_info=True)

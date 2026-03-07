@@ -9,10 +9,9 @@ from scipy.stats import norm
 
 
 def _d1(S: float, K: float, T: float, r: float, sigma: float) -> float:
-    return (
-        (math.log(S / K) + (r + 0.5 * sigma**2) * T)
-        / (sigma * math.sqrt(T))
-    )
+    if sigma <= 0 or T <= 0:
+        return 0.0
+    return (math.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
 
 
 def _d2(S: float, K: float, T: float, r: float, sigma: float) -> float:

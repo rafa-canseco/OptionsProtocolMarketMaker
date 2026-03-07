@@ -11,6 +11,7 @@ import logging
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from typing import Any
 
 import websocket
@@ -26,7 +27,7 @@ _MAX_BACKOFF = 60
 
 _recent_fills: deque[dict[str, Any]] = deque(maxlen=_MAX_RECENT)
 _connected = threading.Event()
-_on_fill_callback: Any | None = None
+_on_fill_callback: Callable[[dict[str, Any]], None] | None = None
 
 
 def get_recent_fills() -> list[dict[str, Any]]:
@@ -38,7 +39,9 @@ def is_connected() -> bool:
     return _connected.is_set()
 
 
-def set_on_fill(callback: Any) -> None:
+def set_on_fill(
+    callback: Callable[[dict[str, Any]], None],
+) -> None:
     """Register a callback invoked on each fill: callback(fill_dict)."""
     global _on_fill_callback
     _on_fill_callback = callback
@@ -55,9 +58,7 @@ def _on_message(ws: websocket.WebSocketApp, raw: str) -> None:
 
     if msg_type == "auth":
         if msg.get("status") == "ok":
-            log.info(
-                "WS authenticated as %s", msg.get("mm_address")
-            )
+            log.info("WS authenticated as %s", msg.get("mm_address"))
         else:
             log.error("WS auth failed: %s", msg)
         return
@@ -77,7 +78,11 @@ def _on_message(ws: websocket.WebSocketApp, raw: str) -> None:
             try:
                 _on_fill_callback(fill)
             except Exception:
-                log.warning("Fill callback failed", exc_info=True)
+                log.error(
+                    "Fill callback failed for tx=%s",
+                    fill.get("tx_hash", "?")[:16],
+                    exc_info=True,
+                )
         return
 
     if msg_type == "error":
@@ -92,9 +97,7 @@ def _on_open(ws: websocket.WebSocketApp) -> None:
     log.info("WS connected to /mm/stream")
 
 
-def _on_close(
-    ws: websocket.WebSocketApp, code: int | None, reason: str | None
-) -> None:
+def _on_close(ws: websocket.WebSocketApp, code: int | None, reason: str | None) -> None:
     _connected.clear()
     log.warning("WS closed: code=%s reason=%s", code, reason)
 

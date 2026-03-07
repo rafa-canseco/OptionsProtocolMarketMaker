@@ -4,6 +4,7 @@ Usage: uv run python -m src.main
 """
 
 import logging
+import threading
 import time
 
 from eth_account import Account
@@ -26,6 +27,7 @@ _tracker = PositionTracker()
 _last_spot: float = 0.0
 _last_iv: float = 0.0
 _seen_tx_hashes: set[str] = set()
+_fill_lock = threading.Lock()
 
 
 def run_cycle(
@@ -61,9 +63,7 @@ def run_cycle(
 
     # 2c. Recalculate deltas on open positions
     if _tracker.open_positions():
-        _tracker.recalculate_deltas(
-            _last_spot, _last_iv, config.RISK_FREE_RATE
-        )
+        _tracker.recalculate_deltas(_last_spot, _last_iv, config.RISK_FREE_RATE)
         _tracker.log_portfolio(_last_spot)
 
     # 2d. Poll fills via REST as fallback (WS may miss events)
@@ -160,31 +160,31 @@ def _poll_fills_rest() -> None:
     for fill in fills:
         tx = fill.get("tx_hash", "")
         if tx and tx not in _seen_tx_hashes:
-            _seen_tx_hashes.add(tx)
-            log.info("New fill detected via REST poll: %s", tx[:16])
+            log.info("New fill via REST poll: %s", tx[:16])
             _handle_fill(fill)
 
 
 def _handle_fill(fill: dict) -> None:
     """Called from fill_listener thread or REST poll on each fill."""
-    tx = fill.get("tx_hash", "")
-    if tx in _seen_tx_hashes and tx:
-        # Already processed via the other path
-        if any(
-            p.tx_hash == tx for p in _tracker.positions
-        ):
-            return
-    _seen_tx_hashes.add(tx)
+    with _fill_lock:
+        tx = fill.get("tx_hash", "")
+        if tx:
+            if any(p.tx_hash == tx for p in _tracker.positions):
+                _seen_tx_hashes.add(tx)
+                return
+            if tx in _seen_tx_hashes:
+                return
 
-    if _last_spot <= 0 or _last_iv <= 0:
-        log.warning(
-            "Fill received before market data, skipped"
-        )
-        return
-    _tracker.add_position(
-        fill, _last_spot, _last_iv, config.RISK_FREE_RATE
-    )
-    _tracker.log_portfolio(_last_spot)
+        if _last_spot <= 0 or _last_iv <= 0:
+            log.warning(
+                "Fill %s before market data, will retry",
+                tx[:16] if tx else "?",
+            )
+            return
+
+        _seen_tx_hashes.add(tx)
+        _tracker.add_position(fill, _last_spot, _last_iv, config.RISK_FREE_RATE)
+        _tracker.log_portfolio(_last_spot)
 
 
 def main() -> None:

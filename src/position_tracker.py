@@ -80,9 +80,7 @@ class PositionTracker:
         for ot in otokens:
             self._otoken_cache[ot["address"].lower()] = ot
 
-    def get_otoken_details(
-        self, address: str
-    ) -> dict[str, Any] | None:
+    def get_otoken_details(self, address: str) -> dict[str, Any] | None:
         return self._otoken_cache.get(address.lower())
 
     def add_position(
@@ -133,18 +131,14 @@ class PositionTracker:
 
         # Execute hedge
         is_buy = not pos.is_put  # long for calls, short for puts
-        fill = hedge_executor.open_hedge(
-            "ETH", is_buy, pos.hedge_size_eth
-        )
+        fill = hedge_executor.open_hedge("ETH", is_buy, pos.hedge_size_eth)
         if fill:
             pos.hedge_fill_size = fill["size"]
             pos.hedge_fill_price = fill["avg_price"]
 
         return pos
 
-    def recalculate_deltas(
-        self, spot: float, iv: float, risk_free_rate: float
-    ) -> None:
+    def recalculate_deltas(self, spot: float, iv: float, risk_free_rate: float) -> None:
         for pos in self.open_positions():
             T = pos.time_to_expiry_years()
             old_delta = pos.current_delta
@@ -162,9 +156,7 @@ class PositionTracker:
                 )
                 # Adjust hedge if live
                 is_buy = not pos.is_put
-                fill = hedge_executor.adjust_hedge(
-                    "ETH", old_hedge, new_hedge, is_buy
-                )
+                fill = hedge_executor.adjust_hedge("ETH", old_hedge, new_hedge, is_buy)
                 if fill:
                     pos.hedge_fill_size = new_hedge
                     pos.hedge_fill_price = fill["avg_price"]
@@ -238,8 +230,7 @@ def _log_position_open(
         "[HEDGE REQUIRED]\n"
         "  Action: %s ETH\n"
         "  Size: $%.2f (%.4f ETH @ $%.2f)\n"
-        "  Venue: Hyperliquid\n"
-        "  Status: SIMULATED (not executed)",
+        "  Venue: Hyperliquid",
         label,
         pos.notional_usd,
         pos.premium_paid_usd,
@@ -276,17 +267,14 @@ def _calculate_expiry_pnl(pos: Position, spot: float) -> None:
 
 def _log_expiry(pos: Position, spot: float) -> None:
     label = _option_label(pos)
-    itm = (pos.is_put and spot < pos.strike) or (
-        not pos.is_put and spot > pos.strike
-    )
+    itm = (pos.is_put and spot < pos.strike) or (not pos.is_put and spot > pos.strike)
     status = "ITM" if itm else "OTM"
 
-    net_pnl = (
-        -pos.premium_paid_usd + pos.settlement_pnl + pos.hedge_pnl
-    )
+    net_pnl = -pos.premium_paid_usd + pos.settlement_pnl + pos.hedge_pnl
 
     settle_note = (
-        f"{status}, collateral returned" if not itm
+        f"{status}, collateral returned"
+        if not itm
         else f"{status}, intrinsic value captured"
     )
     expiry_note = (
@@ -304,7 +292,6 @@ def _log_expiry(pos: Position, spot: float) -> None:
         "  Size: %.4f ETH\n"
         "  Entry: $%.2f | Exit: $%.2f\n"
         "  Hedge P&L: %+.2f\n"
-        "  Status: SIMULATED (not executed)\n"
         "\n"
         "[POSITION P&L]\n"
         "  Premium paid to user:  -$%.2f\n"
