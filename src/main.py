@@ -25,6 +25,7 @@ log = logging.getLogger("mm")
 _tracker = PositionTracker()
 _last_spot: float = 0.0
 _last_iv: float = 0.0
+_seen_tx_hashes: set[str] = set()
 
 
 def run_cycle(
@@ -65,7 +66,10 @@ def run_cycle(
         )
         _tracker.log_portfolio(_last_spot)
 
-    # 2d. Check for expired positions
+    # 2d. Poll fills via REST as fallback (WS may miss events)
+    _poll_fills_rest()
+
+    # 2e. Check for expired positions
     expired = _tracker.check_expiries(_last_spot)
     if expired:
         log.info("Settled %d expired positions", len(expired))
@@ -144,11 +148,37 @@ def log_monitoring() -> None:
             )
 
 
+def _poll_fills_rest() -> None:
+    """Check for new fills via REST API as WS fallback."""
+    if _last_spot <= 0 or _last_iv <= 0:
+        return
+    try:
+        fills = api_client.get_fills(limit=10)
+    except Exception:
+        log.warning("Failed to poll fills", exc_info=True)
+        return
+    for fill in fills:
+        tx = fill.get("tx_hash", "")
+        if tx and tx not in _seen_tx_hashes:
+            _seen_tx_hashes.add(tx)
+            log.info("New fill detected via REST poll: %s", tx[:16])
+            _handle_fill(fill)
+
+
 def _handle_fill(fill: dict) -> None:
-    """Called from fill_listener thread on each new fill."""
+    """Called from fill_listener thread or REST poll on each fill."""
+    tx = fill.get("tx_hash", "")
+    if tx in _seen_tx_hashes and tx:
+        # Already processed via the other path
+        if any(
+            p.tx_hash == tx for p in _tracker.positions
+        ):
+            return
+    _seen_tx_hashes.add(tx)
+
     if _last_spot <= 0 or _last_iv <= 0:
         log.warning(
-            "Fill received before market data, queuing skipped"
+            "Fill received before market data, skipped"
         )
         return
     _tracker.add_position(
@@ -173,6 +203,18 @@ def main() -> None:
     log.info("  Hedge mode:  %s", config.HEDGE_MODE)
 
     hedge_executor.init()
+
+    # Seed seen fills so REST poll doesn't reprocess history
+    try:
+        existing = api_client.get_fills(limit=50)
+        for f in existing:
+            tx = f.get("tx_hash", "")
+            if tx:
+                _seen_tx_hashes.add(tx)
+        log.info("Seeded %d existing fills", len(_seen_tx_hashes))
+    except Exception:
+        log.warning("Failed to seed fills", exc_info=True)
+
     fill_listener.set_on_fill(_handle_fill)
     fill_listener.start()
 

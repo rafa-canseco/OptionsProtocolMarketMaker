@@ -32,8 +32,11 @@ def init() -> None:
     wallet = eth_account.Account.from_key(config.MM_PRIVATE_KEY)
     _address = wallet.address
 
-    _info = Info(api_url, skip_ws=True)
-    _exchange = Exchange(wallet, api_url)
+    # Empty spot_meta bypasses SDK bug where testnet spot token
+    # indices are out of range. Perp metadata still loads fine.
+    empty_spot: dict = {"universe": [], "tokens": []}
+    _info = Info(api_url, skip_ws=True, spot_meta=empty_spot)
+    _exchange = Exchange(wallet, api_url, spot_meta=empty_spot)
 
     # Set leverage once
     try:
@@ -74,6 +77,22 @@ def _log_account_state() -> None:
         log.warning("Failed to read Hyperliquid state", exc_info=True)
 
 
+def _round_size(asset: str, size: float) -> float:
+    """Round size to asset's allowed decimal places."""
+    try:
+        if _info and hasattr(_info, "coin_to_asset"):
+            coin = _info.name_to_coin.get(asset, asset)
+            asset_id = _info.coin_to_asset.get(coin)
+            if isinstance(asset_id, int):
+                decimals = _info.asset_to_sz_decimals.get(
+                    asset_id, 4
+                )
+                return round(size, decimals)
+    except (AttributeError, TypeError):
+        pass
+    return round(size, 4)
+
+
 def open_hedge(
     asset: str, is_buy: bool, size: float
 ) -> dict | None:
@@ -96,6 +115,11 @@ def open_hedge(
 
     if not _exchange:
         log.error("Hyperliquid not initialized, cannot hedge")
+        return None
+
+    size = _round_size(asset, size)
+    if size <= 0:
+        log.warning("[HEDGE] Size rounds to 0, skipping")
         return None
 
     try:
@@ -153,6 +177,7 @@ def close_hedge(asset: str, size: float | None = None) -> dict | None:
 
     try:
         if size is not None:
+            size = _round_size(asset, size)
             result = _exchange.market_close(
                 asset, sz=size, slippage=config.HEDGE_SLIPPAGE
             )
