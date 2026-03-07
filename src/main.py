@@ -10,6 +10,7 @@ from eth_account import Account
 from web3 import Web3
 
 from src import api_client, config, fill_listener
+from src.position_tracker import PositionTracker
 from src.quote_builder import build_quotes, to_api_payload
 from src.signer import build_domain, read_maker_nonce, sign_quote
 
@@ -21,12 +22,19 @@ logging.basicConfig(
 log = logging.getLogger("mm")
 
 
+_tracker = PositionTracker()
+_last_spot: float = 0.0
+_last_iv: float = 0.0
+
+
 def run_cycle(
     w3: Web3,
     domain: dict,
     mm_address: str,
 ) -> None:
     """Single quote-refresh cycle."""
+    global _last_spot, _last_iv
+
     # 1. Delete stale quotes from previous cycle
     try:
         deleted = api_client.delete_quotes()
@@ -37,12 +45,31 @@ def run_cycle(
     # 2. Fetch market data
     market = api_client.get_market_data()
     otokens = market.get("available_otokens", [])
+    _last_spot = market["eth_spot"]
+    _last_iv = market["eth_iv"]
     log.info(
         "Market: spot=%.2f iv=%.4f oTokens=%d",
-        market["eth_spot"],
-        market["eth_iv"],
+        _last_spot,
+        _last_iv,
         len(otokens),
     )
+
+    # 2b. Cache oToken details for position tracking
+    if otokens:
+        _tracker.cache_otokens(otokens)
+
+    # 2c. Recalculate deltas on open positions
+    if _tracker.open_positions():
+        _tracker.recalculate_deltas(
+            _last_spot, _last_iv, config.RISK_FREE_RATE
+        )
+        _tracker.log_portfolio(_last_spot)
+
+    # 2d. Check for expired positions
+    expired = _tracker.check_expiries(_last_spot)
+    if expired:
+        log.info("Settled %d expired positions", len(expired))
+
     if not otokens:
         log.warning("No oTokens available, skipping cycle")
         return
@@ -117,6 +144,19 @@ def log_monitoring() -> None:
             )
 
 
+def _handle_fill(fill: dict) -> None:
+    """Called from fill_listener thread on each new fill."""
+    if _last_spot <= 0 or _last_iv <= 0:
+        log.warning(
+            "Fill received before market data, queuing skipped"
+        )
+        return
+    _tracker.add_position(
+        fill, _last_spot, _last_iv, config.RISK_FREE_RATE
+    )
+    _tracker.log_portfolio(_last_spot)
+
+
 def main() -> None:
     mm_address = Account.from_key(config.MM_PRIVATE_KEY).address
     w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
@@ -131,6 +171,7 @@ def main() -> None:
     log.info("  Max amount:  %d (raw)", config.MAX_AMOUNT)
     log.info("  Deadline:    %ds", config.DEADLINE_SECONDS)
 
+    fill_listener.set_on_fill(_handle_fill)
     fill_listener.start()
 
     cycle = 0

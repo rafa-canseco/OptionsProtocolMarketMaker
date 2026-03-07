@@ -26,6 +26,7 @@ _MAX_BACKOFF = 60
 
 _recent_fills: deque[dict[str, Any]] = deque(maxlen=_MAX_RECENT)
 _connected = threading.Event()
+_on_fill_callback: Any | None = None
 
 
 def get_recent_fills() -> list[dict[str, Any]]:
@@ -35,6 +36,12 @@ def get_recent_fills() -> list[dict[str, Any]]:
 
 def is_connected() -> bool:
     return _connected.is_set()
+
+
+def set_on_fill(callback: Any) -> None:
+    """Register a callback invoked on each fill: callback(fill_dict)."""
+    global _on_fill_callback
+    _on_fill_callback = callback
 
 
 def _on_message(ws: websocket.WebSocketApp, raw: str) -> None:
@@ -66,6 +73,11 @@ def _on_message(ws: websocket.WebSocketApp, raw: str) -> None:
             _short(fill.get("user_address")),
             _short(fill.get("tx_hash")),
         )
+        if _on_fill_callback:
+            try:
+                _on_fill_callback(fill)
+            except Exception:
+                log.warning("Fill callback failed", exc_info=True)
         return
 
     if msg_type == "error":

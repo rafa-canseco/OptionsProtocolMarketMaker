@@ -53,6 +53,30 @@ def bs_price(
     return S * norm.cdf(d1) - K * math.exp(-r * T) * norm.cdf(d2)
 
 
+def bs_delta(
+    is_put: bool,
+    S: float,
+    K: float,
+    T: float,
+    r: float,
+    sigma: float,
+) -> float:
+    """Black-Scholes delta.
+
+    Returns:
+        Delta in range [-1, 0] for puts, [0, 1] for calls.
+    """
+    if T <= 0:
+        if is_put:
+            return -1.0 if S < K else 0.0
+        return 1.0 if S > K else 0.0
+
+    d1 = _d1(S, K, T, r, sigma)
+    if is_put:
+        return norm.cdf(d1) - 1.0
+    return norm.cdf(d1)
+
+
 def price_with_spread(
     is_put: bool,
     S: float,
