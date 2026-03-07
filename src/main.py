@@ -9,7 +9,7 @@ import time
 from eth_account import Account
 from web3 import Web3
 
-from src import api_client, config, fill_listener
+from src import api_client, config, fill_listener, hedge_executor
 from src.position_tracker import PositionTracker
 from src.quote_builder import build_quotes, to_api_payload
 from src.signer import build_domain, read_maker_nonce, sign_quote
@@ -170,7 +170,9 @@ def main() -> None:
     log.info("  Refresh:     %ds", config.REFRESH_INTERVAL)
     log.info("  Max amount:  %d (raw)", config.MAX_AMOUNT)
     log.info("  Deadline:    %ds", config.DEADLINE_SECONDS)
+    log.info("  Hedge mode:  %s", config.HEDGE_MODE)
 
+    hedge_executor.init()
     fill_listener.set_on_fill(_handle_fill)
     fill_listener.start()
 

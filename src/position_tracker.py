@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from src import hedge_executor
 from src.pricer import bs_delta, bs_price
 
 log = logging.getLogger(__name__)
@@ -30,6 +31,10 @@ class Position:
     closed: bool = False
     settlement_pnl: float = 0.0
     hedge_pnl: float = 0.0
+    # Live hedge tracking
+    hedge_fill_size: float = 0.0
+    hedge_fill_price: float = 0.0
+    hedge_close_price: float = 0.0
 
     @property
     def num_options(self) -> float:
@@ -125,6 +130,16 @@ class PositionTracker:
 
         spread_usd = pos.premium_paid_usd - theo * pos.num_options
         _log_position_open(pos, spot, theo, spread_usd)
+
+        # Execute hedge
+        is_buy = not pos.is_put  # long for calls, short for puts
+        fill = hedge_executor.open_hedge(
+            "ETH", is_buy, pos.hedge_size_eth
+        )
+        if fill:
+            pos.hedge_fill_size = fill["size"]
+            pos.hedge_fill_price = fill["avg_price"]
+
         return pos
 
     def recalculate_deltas(
@@ -133,9 +148,11 @@ class PositionTracker:
         for pos in self.open_positions():
             T = pos.time_to_expiry_years()
             old_delta = pos.current_delta
+            old_hedge = abs(old_delta) * pos.num_options
             pos.current_delta = bs_delta(
                 pos.is_put, spot, pos.strike, T, risk_free_rate, iv
             )
+            new_hedge = pos.hedge_size_eth
             if abs(pos.current_delta - old_delta) > 0.02:
                 log.info(
                     "[DELTA CHANGE] %s delta %.3f -> %.3f",
@@ -143,12 +160,26 @@ class PositionTracker:
                     old_delta,
                     pos.current_delta,
                 )
+                # Adjust hedge if live
+                is_buy = not pos.is_put
+                fill = hedge_executor.adjust_hedge(
+                    "ETH", old_hedge, new_hedge, is_buy
+                )
+                if fill:
+                    pos.hedge_fill_size = new_hedge
+                    pos.hedge_fill_price = fill["avg_price"]
 
     def check_expiries(self, spot: float) -> list[Position]:
         expired = []
         for pos in self.open_positions():
             if pos.is_expired():
                 pos.closed = True
+                # Close hedge on Hyperliquid
+                close_fill = hedge_executor.close_hedge(
+                    "ETH", size=pos.hedge_fill_size or None
+                )
+                if close_fill:
+                    pos.hedge_close_price = close_fill["avg_price"]
                 _calculate_expiry_pnl(pos, spot)
                 _log_expiry(pos, spot)
                 expired.append(pos)
@@ -232,11 +263,15 @@ def _calculate_expiry_pnl(pos: Position, spot: float) -> None:
         intrinsic = max(spot - pos.strike, 0.0)
     pos.settlement_pnl = intrinsic * pos.num_options
 
-    hedge_entry = pos.spot_at_open
+    # Use real fill prices if available, otherwise theoretical
+    entry = pos.hedge_fill_price or pos.spot_at_open
+    exit_price = pos.hedge_close_price or spot
+    hedge_size = pos.hedge_fill_size or pos.hedge_size_eth
+
     if pos.is_put:
-        pos.hedge_pnl = (hedge_entry - spot) * pos.hedge_size_eth
+        pos.hedge_pnl = (entry - exit_price) * hedge_size
     else:
-        pos.hedge_pnl = (spot - hedge_entry) * pos.hedge_size_eth
+        pos.hedge_pnl = (exit_price - entry) * hedge_size
 
 
 def _log_expiry(pos: Position, spot: float) -> None:
