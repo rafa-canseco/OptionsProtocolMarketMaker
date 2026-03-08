@@ -31,7 +31,7 @@ DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "300"))
 CHAIN_ID: int = int(os.getenv("CHAIN_ID", "84532"))
 BATCH_SETTLER: str = os.getenv(
     "BATCH_SETTLER",
-    "0x29bb32c014aC3378FfbE335804B94cED48f2afc4",
+    "0x3B5d4640233E14cc330A749926838ba2C540054f",
 )
 RISK_FREE_RATE: float = float(os.getenv("RISK_FREE_RATE", "0.05"))
 
