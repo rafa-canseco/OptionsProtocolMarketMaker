@@ -23,9 +23,7 @@ def ws_url(path: str, **params: str) -> str:
     parsed = urlparse(f"{BACKEND_URL}{path}")
     scheme = "wss" if parsed.scheme == "https" else "ws"
     query = urlencode(params) if params else parsed.query
-    return urlunparse(
-        (scheme, parsed.netloc, parsed.path, "", query, "")
-    )
+    return urlunparse((scheme, parsed.netloc, parsed.path, "", query, ""))
 
 
 def get_market_data() -> dict[str, Any]:
@@ -58,9 +56,7 @@ def get_fills(since: int | None = None, limit: int = 100) -> list[dict]:
     params: dict[str, Any] = {"limit": limit}
     if since is not None:
         params["since"] = since
-    resp = _SESSION.get(
-        _url("/mm/fills"), params=params, timeout=_TIMEOUT
-    )
+    resp = _SESSION.get(_url("/mm/fills"), params=params, timeout=_TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 
@@ -68,5 +64,16 @@ def get_fills(since: int | None = None, limit: int = 100) -> list[dict]:
 def get_exposure() -> dict[str, Any]:
     """GET /mm/exposure — risk summary."""
     resp = _SESSION.get(_url("/mm/exposure"), timeout=_TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def report_capacity(payload: dict[str, Any]) -> dict[str, Any]:
+    """POST /mm/capacity — report current capacity to backend."""
+    resp = _SESSION.post(
+        _url("/mm/capacity"),
+        json=payload,
+        timeout=_TIMEOUT,
+    )
     resp.raise_for_status()
     return resp.json()

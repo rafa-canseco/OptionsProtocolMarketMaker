@@ -11,9 +11,12 @@ from eth_account import Account
 from web3 import Web3
 
 from src import api_client, config, fill_listener, hedge_executor
+from src.capacity import calculate_capacity_internal
 from src.position_tracker import PositionTracker
 from src.quote_builder import build_quotes, to_api_payload
 from src.signer import build_domain, read_maker_nonce, sign_quote
+
+OTOKEN_DECIMALS = 8
 
 logging.basicConfig(
     level=logging.INFO,
@@ -78,16 +81,50 @@ def run_cycle(
         log.warning("No oTokens available, skipping cycle")
         return
 
-    # 3. Read makerNonce from chain
+    # 3. Calculate capacity
+    try:
+        cap = calculate_capacity_internal(w3, _last_spot, mm_address, _tracker)
+        is_internal = config.MM_TYPE == "internal"
+        cap_payload = cap.to_dict(internal=is_internal)
+        log.info(
+            "Capacity: %.2f ETH ($%.0f) status=%s [premium=$%.0f hedge=$%.0f]",
+            cap.capacity_eth,
+            cap.capacity_usd,
+            cap.status,
+            cap.premium_pool_usd,
+            cap.hedge_pool_usd,
+        )
+    except Exception:
+        log.warning("Failed to calculate capacity, using MAX_AMOUNT", exc_info=True)
+        cap = None
+        cap_payload = None
+
+    # 3b. Report capacity to backend
+    if cap_payload:
+        try:
+            api_client.report_capacity(cap_payload)
+        except Exception:
+            log.warning("Failed to report capacity", exc_info=True)
+
+    # 3c. Skip quoting if full
+    if cap and cap.status == "full":
+        log.warning("Capacity full, skipping quote submission")
+        return
+
+    # 4. Read makerNonce from chain
     nonce = read_maker_nonce(w3, config.BATCH_SETTLER, mm_address)
 
-    # 4. Price and build quotes
-    quotes = build_quotes(market, nonce)
+    # 5. Price and build quotes (dynamic maxAmount)
+    max_amount_raw = None
+    if cap:
+        max_amount_raw = int(cap.capacity_eth * 10**OTOKEN_DECIMALS)
+        max_amount_raw = min(max_amount_raw, config.MAX_AMOUNT)
+    quotes = build_quotes(market, nonce, max_amount_raw=max_amount_raw)
     if not quotes:
         log.warning("All oTokens expired, nothing to quote")
         return
 
-    # 5. Sign each quote
+    # 6. Sign each quote
     payloads = []
     for q in quotes:
         eip712_data = {
@@ -101,7 +138,7 @@ def run_cycle(
         sig = sign_quote(config.MM_PRIVATE_KEY, domain, eip712_data)
         payloads.append(to_api_payload(q, sig))
 
-    # 6. Submit quotes
+    # 7. Submit quotes
     result = api_client.submit_quotes(payloads)
     log.info(
         "Submitted %d quotes: accepted=%s rejected=%s errors=%s",
@@ -201,6 +238,8 @@ def main() -> None:
     log.info("  Max amount:  %d (raw)", config.MAX_AMOUNT)
     log.info("  Deadline:    %ds", config.DEADLINE_SECONDS)
     log.info("  Hedge mode:  %s", config.HEDGE_MODE)
+    log.info("  MM type:     %s", config.MM_TYPE)
+    log.info("  Reserve:     %.0f%%", config.CAPACITY_RESERVE_RATIO * 100)
 
     hedge_executor.init()
 
