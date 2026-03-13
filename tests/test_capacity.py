@@ -111,12 +111,16 @@ class TestCapacityStatus:
     def test_degraded_when_hedge_pool_zero(self):
         assert capacity_status(5.0, 10000.0, 0.0) == "degraded"
 
+    def test_not_degraded_when_hedge_not_live(self):
+        assert capacity_status(5.0, 10000.0, 0.0, hedge_live=False) == "active"
+
 
 class TestCalculateCapacityInternal:
     @patch("src.capacity.hedge_executor")
     @patch("src.capacity.config")
     def test_min_of_premium_and_hedge(self, mock_config, mock_hedge):
         """Effective capacity is min(premium_pool, hedge_notional)."""
+        mock_config.HEDGE_MODE = "live"
         mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
@@ -145,6 +149,7 @@ class TestCalculateCapacityInternal:
     @patch("src.capacity.config")
     def test_premium_pool_is_bottleneck(self, mock_config, mock_hedge):
         """When premium pool < hedge notional, premium pool limits."""
+        mock_config.HEDGE_MODE = "live"
         mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
@@ -171,6 +176,7 @@ class TestCalculateCapacityInternal:
     @patch("src.capacity.config")
     def test_allowance_limits_premium_pool(self, mock_config, mock_hedge):
         """Allowance < balance → allowance is the premium pool."""
+        mock_config.HEDGE_MODE = "live"
         mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
@@ -196,6 +202,7 @@ class TestCalculateCapacityInternal:
     @patch("src.capacity.config")
     def test_committed_premium_subtracted(self, mock_config, mock_hedge):
         """Open positions' premium is subtracted from premium pool."""
+        mock_config.HEDGE_MODE = "live"
         mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
@@ -221,6 +228,7 @@ class TestCalculateCapacityInternal:
     @patch("src.capacity.config")
     def test_max_amount_ceiling(self, mock_config, mock_hedge):
         """capacity_eth capped by MAX_AMOUNT."""
+        mock_config.HEDGE_MODE = "live"
         mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
@@ -244,6 +252,7 @@ class TestCalculateCapacityInternal:
     @patch("src.capacity.config")
     def test_zero_hedge_withdrawable(self, mock_config, mock_hedge):
         """Zero withdrawable on Hyperliquid → capacity limited to 0."""
+        mock_config.HEDGE_MODE = "live"
         mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
@@ -268,6 +277,7 @@ class TestCalculateCapacityInternal:
     @patch("src.capacity.config")
     def test_status_degraded_when_hedge_low(self, mock_config, mock_hedge):
         """Status is degraded when hedge pool < 40% of premium pool."""
+        mock_config.HEDGE_MODE = "live"
         mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
@@ -288,3 +298,28 @@ class TestCalculateCapacityInternal:
         report = calculate_capacity_internal(w3, SPOT, "0xMM", tracker)
 
         assert report.status == "degraded"
+
+    @patch("src.capacity.hedge_executor")
+    @patch("src.capacity.config")
+    def test_simulate_mode_uses_premium_only(self, mock_config, mock_hedge):
+        """In simulate mode, capacity uses only premium pool (no hedge)."""
+        mock_config.HEDGE_MODE = "simulate"
+        mock_config.HEDGE_LEVERAGE = 3
+        mock_config.CAPACITY_RESERVE_RATIO = 0.25
+        mock_config.USDC_ADDRESS = "0xUSDC"
+        mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
+        mock_config.MAX_AMOUNT = 100 * 10**8
+
+        w3 = _mock_w3(50_000 * 10**6, 50_000 * 10**6)
+
+        tracker = MagicMock()
+        tracker.open_positions.return_value = []
+        tracker.total_premium_paid.return_value = 0.0
+
+        report = calculate_capacity_internal(w3, SPOT, "0xMM", tracker)
+
+        mock_hedge.get_withdrawable.assert_not_called()
+        mock_hedge.get_account_value.assert_not_called()
+        assert report.capacity_usd == pytest.approx(50_000.0, rel=0.01)
+        assert report.capacity_eth == pytest.approx(25.0, rel=0.01)
+        assert report.status == "active"

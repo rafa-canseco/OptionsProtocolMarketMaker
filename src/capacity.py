@@ -58,11 +58,13 @@ def capacity_status(
     capacity_eth: float,
     premium_pool_usd: float,
     hedge_pool_usd: float,
+    hedge_live: bool = True,
 ) -> str:
     if capacity_eth < FULL_THRESHOLD_ETH:
         return "full"
     if (
-        premium_pool_usd > 0
+        hedge_live
+        and premium_pool_usd > 0
         and hedge_pool_usd < DEGRADED_HEDGE_RATIO * premium_pool_usd
     ):
         return "degraded"
@@ -97,13 +99,17 @@ def calculate_capacity_internal(
     committed = tracker.total_premium_paid()
     premium_pool = max(min(usdc_balance, usdc_allowance) - committed, 0.0)
 
-    # Hedge pool
-    withdrawable = hedge_executor.get_withdrawable()
-    hedge_pool_value = hedge_executor.get_account_value()
-    reserve = config.CAPACITY_RESERVE_RATIO
-    hedge_notional = withdrawable * config.HEDGE_LEVERAGE * (1.0 - reserve)
-
-    effective_usd = min(premium_pool, hedge_notional)
+    # Hedge pool (skip when not live — no Hyperliquid connection)
+    if config.HEDGE_MODE == "live":
+        withdrawable = hedge_executor.get_withdrawable()
+        hedge_pool_value = hedge_executor.get_account_value()
+        reserve = config.CAPACITY_RESERVE_RATIO
+        hedge_notional = withdrawable * config.HEDGE_LEVERAGE * (1.0 - reserve)
+        effective_usd = min(premium_pool, hedge_notional)
+    else:
+        withdrawable = 0.0
+        hedge_pool_value = 0.0
+        effective_usd = premium_pool
 
     # Apply MAX_AMOUNT ceiling
     max_eth_ceiling = config.MAX_AMOUNT / 10**OTOKEN_DECIMALS
@@ -114,7 +120,8 @@ def calculate_capacity_internal(
     open_pos = tracker.open_positions()
     open_notional = sum(p.notional_usd for p in open_pos) if open_pos else 0.0
 
-    status = capacity_status(effective_eth, premium_pool, hedge_pool_value)
+    hedge_live = config.HEDGE_MODE == "live"
+    status = capacity_status(effective_eth, premium_pool, hedge_pool_value, hedge_live)
 
     return CapacityReport(
         mm_address=mm_address,
