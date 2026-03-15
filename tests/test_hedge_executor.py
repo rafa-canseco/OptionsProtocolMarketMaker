@@ -85,9 +85,7 @@ def test_close_hedge_calls_market_close():
 
     result = hedge_executor.close_hedge("ETH")
 
-    hedge_executor._exchange.market_close.assert_called_once_with(
-        "ETH", slippage=0.01
-    )
+    hedge_executor._exchange.market_close.assert_called_once_with("ETH", slippage=0.01)
     assert result is not None
     assert result["avg_price"] == 1850.25
 
@@ -156,20 +154,29 @@ def test_full_lifecycle_with_mock_hyperliquid():
     hedge_executor._exchange.market_close.return_value = MOCK_CLOSE_RESULT
 
     tracker = PositionTracker()
-    tracker.cache_otokens([{
-        "address": "0xPUT_TEST",
-        "strike_price": 2000.0,
-        "expiry": int(time.time()) + 2,
-        "is_put": True,
-    }])
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xPUT_TEST",
+                "strike_price": 2000.0,
+                "expiry": int(time.time()) + 2,
+                "is_put": True,
+            }
+        ]
+    )
 
-    pos = tracker.add_position({
-        "otoken_address": "0xPUT_TEST",
-        "amount": 100000000,
-        "gross_premium": 50000000,
-        "user_address": "0xUSER",
-        "tx_hash": "0xTX",
-    }, SPOT, IV, RF)
+    pos = tracker.add_position(
+        {
+            "otoken_address": "0xPUT_TEST",
+            "amount": 100000000,
+            "gross_premium": 50000000,
+            "user_address": "0xUSER",
+            "tx_hash": "0xTX",
+        },
+        SPOT,
+        IV,
+        RF,
+    )
 
     # Verify hedge was executed
     assert pos is not None
@@ -202,9 +209,7 @@ def test_full_lifecycle_with_mock_hyperliquid():
 def test_open_hedge_handles_failure():
     """Failed Hyperliquid call doesn't crash, returns None."""
     _setup_live_mode()
-    hedge_executor._exchange.market_open.side_effect = Exception(
-        "Connection refused"
-    )
+    hedge_executor._exchange.market_open.side_effect = Exception("Connection refused")
 
     result = hedge_executor.open_hedge("ETH", True, 1.0)
 
@@ -222,3 +227,29 @@ def test_simulate_mode_no_api_calls():
 
     result = hedge_executor.close_hedge("ETH")
     assert result is None
+
+
+def test_get_withdrawable_returns_value():
+    """get_withdrawable reads user_state.withdrawable."""
+    _setup_live_mode()
+    hedge_executor._info.user_state.return_value = {
+        "marginSummary": {"accountValue": "30000.0"},
+        "withdrawable": "12500.50",
+        "assetPositions": [],
+    }
+
+    result = hedge_executor.get_withdrawable()
+    assert result == 12500.50
+
+
+def test_get_withdrawable_no_info():
+    """Returns 0.0 when Hyperliquid not initialized."""
+    hedge_executor._info = None
+    assert hedge_executor.get_withdrawable() == 0.0
+
+
+def test_get_withdrawable_handles_error():
+    """Returns 0.0 on API error."""
+    _setup_live_mode()
+    hedge_executor._info.user_state.side_effect = Exception("timeout")
+    assert hedge_executor.get_withdrawable() == 0.0

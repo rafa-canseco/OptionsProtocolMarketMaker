@@ -286,3 +286,15 @@ def get_account_value() -> float:
     except Exception:
         log.warning("Failed to get account value", exc_info=True)
         return 0.0
+
+
+def get_withdrawable() -> float:
+    """Get withdrawable (free) margin in USD."""
+    if not _info:
+        return 0.0
+    try:
+        state = _info.user_state(_address)
+        return float(state["withdrawable"])
+    except Exception:
+        log.warning("Failed to get withdrawable margin", exc_info=True)
+        return 0.0

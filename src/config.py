@@ -37,8 +37,22 @@ RISK_FREE_RATE: float = float(os.getenv("RISK_FREE_RATE", "0.05"))
 
 # --- Hedging ---
 HEDGE_MODE: str = os.getenv("HEDGE_MODE", "simulate")  # simulate | live
-HYPERLIQUID_TESTNET: bool = os.getenv(
-    "HYPERLIQUID_TESTNET", "true"
-).lower() in ("true", "1", "yes")
+HYPERLIQUID_TESTNET: bool = os.getenv("HYPERLIQUID_TESTNET", "true").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 HEDGE_SLIPPAGE: float = float(os.getenv("HEDGE_SLIPPAGE", "0.01"))
 HEDGE_LEVERAGE: int = int(os.getenv("HEDGE_LEVERAGE", "3"))
+
+# --- Capacity ---
+MM_TYPE: str = os.getenv("MM_TYPE", "internal")  # internal | external
+CAPACITY_RESERVE_RATIO: float = float(os.getenv("CAPACITY_RESERVE_RATIO", "0.25"))
+USDC_ADDRESS: str = os.getenv(
+    "USDC_ADDRESS",
+    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  # Base mainnet USDC
+)
+MARGIN_POOL_ADDRESS: str = os.getenv(
+    "MARGIN_POOL_ADDRESS",
+    "0xa1e04873F6d112d84824C88c9D6937bE38811657",  # Base mainnet MarginPool
+)
