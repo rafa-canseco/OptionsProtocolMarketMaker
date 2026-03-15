@@ -149,13 +149,9 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "requests" },
     { name = "scipy" },
+    { name = "supabase" },
     { name = "web3" },
     { name = "websocket-client" },
-]
-
-[package.optional-dependencies]
-supabase = [
-    { name = "supabase" },
 ]
 
 [package.metadata]
@@ -165,7 +161,7 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "requests", specifier = ">=2.32" },
     { name = "scipy", specifier = ">=1.14" },
-    { name = "supabase", marker = "extra == 'supabase'", specifier = ">=2.0" },
+    { name = "supabase", specifier = ">=2.0" },
     { name = "web3", specifier = ">=7" },
     { name = "websocket-client", specifier = ">=1.7" },
 ]
