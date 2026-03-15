@@ -5,7 +5,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from src import hedge_executor
+from src import hedge_executor, trade_logger
 from src.pricer import bs_delta, bs_price
 
 log = logging.getLogger(__name__)
@@ -131,10 +131,26 @@ class PositionTracker:
 
         # Execute hedge
         is_buy = not pos.is_put  # long for calls, short for puts
-        fill = hedge_executor.open_hedge("ETH", is_buy, pos.hedge_size_eth)
-        if fill:
-            pos.hedge_fill_size = fill["size"]
-            pos.hedge_fill_price = fill["avg_price"]
+        hedge_fill = hedge_executor.open_hedge("ETH", is_buy, pos.hedge_size_eth)
+        if hedge_fill:
+            pos.hedge_fill_size = hedge_fill["size"]
+            pos.hedge_fill_price = hedge_fill["avg_price"]
+
+        trade_logger.log_position_opened(
+            otoken=pos.otoken_address,
+            strike=pos.strike,
+            expiry=pos.expiry,
+            is_put=pos.is_put,
+            amount_eth=pos.num_options,
+            premium_usd=pos.premium_paid_usd,
+            user_address=pos.user_address,
+            tx_hash=pos.tx_hash,
+            spot=spot,
+            delta=pos.current_delta,
+            hedge_action=pos.hedge_action,
+            hedge_size_eth=pos.hedge_fill_size or pos.hedge_size_eth,
+            hedge_fill_price=pos.hedge_fill_price,
+        )
 
         return pos
 
@@ -156,10 +172,23 @@ class PositionTracker:
                 )
                 # Adjust hedge if live
                 is_buy = not pos.is_put
-                fill = hedge_executor.adjust_hedge("ETH", old_hedge, new_hedge, is_buy)
-                if fill:
+                adj_fill = hedge_executor.adjust_hedge(
+                    "ETH", old_hedge, new_hedge, is_buy
+                )
+                fill_price = 0.0
+                if adj_fill:
                     pos.hedge_fill_size = new_hedge
-                    pos.hedge_fill_price = fill["avg_price"]
+                    pos.hedge_fill_price = adj_fill["avg_price"]
+                    fill_price = adj_fill["avg_price"]
+
+                trade_logger.log_delta_rebalanced(
+                    otoken=pos.otoken_address,
+                    old_delta=old_delta,
+                    new_delta=pos.current_delta,
+                    old_hedge=old_hedge,
+                    new_hedge=new_hedge,
+                    hedge_fill_price=fill_price,
+                )
 
     def check_expiries(self, spot: float) -> list[Position]:
         expired = []
@@ -174,6 +203,21 @@ class PositionTracker:
                     pos.hedge_close_price = close_fill["avg_price"]
                 _calculate_expiry_pnl(pos, spot)
                 _log_expiry(pos, spot)
+
+                itm = (pos.is_put and spot < pos.strike) or (
+                    not pos.is_put and spot > pos.strike
+                )
+                net_pnl = -pos.premium_paid_usd + pos.settlement_pnl + pos.hedge_pnl
+                trade_logger.log_position_expired(
+                    otoken=pos.otoken_address,
+                    settlement="ITM" if itm else "OTM",
+                    expiry_price=spot,
+                    settlement_pnl=pos.settlement_pnl,
+                    hedge_pnl=pos.hedge_pnl,
+                    hedge_close_price=pos.hedge_close_price,
+                    net_pnl=net_pnl,
+                )
+
                 expired.append(pos)
         return expired
 

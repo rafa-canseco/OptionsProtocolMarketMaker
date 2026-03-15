@@ -37,8 +37,15 @@ RISK_FREE_RATE: float = float(os.getenv("RISK_FREE_RATE", "0.05"))
 
 # --- Hedging ---
 HEDGE_MODE: str = os.getenv("HEDGE_MODE", "simulate")  # simulate | live
-HYPERLIQUID_TESTNET: bool = os.getenv(
-    "HYPERLIQUID_TESTNET", "true"
-).lower() in ("true", "1", "yes")
+HYPERLIQUID_TESTNET: bool = os.getenv("HYPERLIQUID_TESTNET", "true").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 HEDGE_SLIPPAGE: float = float(os.getenv("HEDGE_SLIPPAGE", "0.01"))
 HEDGE_LEVERAGE: int = int(os.getenv("HEDGE_LEVERAGE", "3"))
+
+# --- Trade history persistence ---
+TRADE_LOG_PATH: str = os.getenv("TRADE_LOG_PATH", "data/trade_history.jsonl")
+SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
