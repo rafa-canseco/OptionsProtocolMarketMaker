@@ -56,3 +56,8 @@ MARGIN_POOL_ADDRESS: str = os.getenv(
     "MARGIN_POOL_ADDRESS",
     "0xa1e04873F6d112d84824C88c9D6937bE38811657",  # Base mainnet MarginPool
 )
+
+# --- Trade history persistence ---
+TRADE_LOG_PATH: str = os.getenv("TRADE_LOG_PATH", "data/trade_history.jsonl")
+SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")

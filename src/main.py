@@ -10,11 +10,12 @@ import time
 from eth_account import Account
 from web3 import Web3
 
-from src import api_client, config, fill_listener, hedge_executor
+from src import api_client, config, fill_listener, hedge_executor, trade_logger
 from src.capacity import calculate_capacity_internal
 from src.position_tracker import PositionTracker
 from src.quote_builder import build_quotes, to_api_payload
 from src.signer import build_domain, read_maker_nonce, sign_quote
+from src.startup_recovery import recover_positions
 
 OTOKEN_DECIMALS = 8
 
@@ -76,6 +77,9 @@ def run_cycle(
     expired = _tracker.check_expiries(_last_spot)
     if expired:
         log.info("Settled %d expired positions", len(expired))
+
+    # 2f. Log capacity snapshot
+    _log_capacity_snapshot()
 
     if not otokens:
         log.warning("No oTokens available, skipping cycle")
@@ -185,6 +189,32 @@ def log_monitoring() -> None:
             )
 
 
+def _log_capacity_snapshot() -> None:
+    """Log a capacity snapshot using exposure + Hyperliquid state."""
+    try:
+        exposure = api_client.get_exposure()
+        account_val = hedge_executor.get_account_value()
+        hl_positions = hedge_executor.get_positions()
+        eth_pos = next((p for p in hl_positions if p["coin"] == "ETH"), None)
+        hedge_usd = 0.0
+        if eth_pos:
+            hedge_usd = abs(eth_pos["size"]) * eth_pos["entry_price"]
+
+        premium_usd = float(exposure.get("total_premium_earned", 0))
+        status = "active" if _tracker.open_positions() else "idle"
+        spot = _last_spot or 1.0
+
+        trade_logger.log_capacity_snapshot(
+            premium_usd=premium_usd,
+            hedge_usd=hedge_usd,
+            hedge_withdrawable=account_val,
+            effective_eth=account_val / spot if spot > 0 else 0.0,
+            status=status,
+        )
+    except Exception:
+        log.warning("Failed to log capacity snapshot", exc_info=True)
+
+
 def _poll_fills_rest() -> None:
     """Check for new fills via REST API as WS fallback."""
     if _last_spot <= 0 or _last_iv <= 0:
@@ -242,6 +272,13 @@ def main() -> None:
     log.info("  Reserve:     %.0f%%", config.CAPACITY_RESERVE_RATIO * 100)
 
     hedge_executor.init()
+
+    # Recover open positions from trade history
+    restored = recover_positions(_tracker)
+    if restored:
+        log.info("Recovered %d open positions from trade history", restored)
+        for pos in _tracker.open_positions():
+            _seen_tx_hashes.add(pos.tx_hash)
 
     # Seed seen fills so REST poll doesn't reprocess history
     try:
