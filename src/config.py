@@ -31,7 +31,7 @@ DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "300"))
 CHAIN_ID: int = int(os.getenv("CHAIN_ID", "84532"))
 BATCH_SETTLER: str = os.getenv(
     "BATCH_SETTLER",
-    "0x29bb32c014aC3378FfbE335804B94cED48f2afc4",
+    "0x3B5d4640233E14cc330A749926838ba2C540054f",
 )
 RISK_FREE_RATE: float = float(os.getenv("RISK_FREE_RATE", "0.05"))
 
@@ -44,6 +44,18 @@ HYPERLIQUID_TESTNET: bool = os.getenv("HYPERLIQUID_TESTNET", "true").lower() in 
 )
 HEDGE_SLIPPAGE: float = float(os.getenv("HEDGE_SLIPPAGE", "0.01"))
 HEDGE_LEVERAGE: int = int(os.getenv("HEDGE_LEVERAGE", "3"))
+
+# --- Capacity ---
+MM_TYPE: str = os.getenv("MM_TYPE", "internal")  # internal | external
+CAPACITY_RESERVE_RATIO: float = float(os.getenv("CAPACITY_RESERVE_RATIO", "0.25"))
+USDC_ADDRESS: str = os.getenv(
+    "USDC_ADDRESS",
+    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  # Base mainnet USDC
+)
+MARGIN_POOL_ADDRESS: str = os.getenv(
+    "MARGIN_POOL_ADDRESS",
+    "0xa1e04873F6d112d84824C88c9D6937bE38811657",  # Base mainnet MarginPool
+)
 
 # --- Trade history persistence ---
 TRADE_LOG_PATH: str = os.getenv("TRADE_LOG_PATH", "data/trade_history.jsonl")
