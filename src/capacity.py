@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 USDC_DECIMALS = 6
 OTOKEN_DECIMALS = 8
-FULL_THRESHOLD_ETH = 0.1
+FULL_THRESHOLD_ETH = 0.01
 DEGRADED_HEDGE_RATIO = 0.4
 
 # ERC-20 function selectors
