@@ -158,7 +158,6 @@ class PositionTracker:
         for pos in self.open_positions():
             T = pos.time_to_expiry_years()
             old_delta = pos.current_delta
-            old_hedge = abs(old_delta) * pos.num_options
             pos.current_delta = bs_delta(
                 pos.is_put, spot, pos.strike, T, risk_free_rate, iv
             )
@@ -170,14 +169,16 @@ class PositionTracker:
                     old_delta,
                     pos.current_delta,
                 )
-                # Adjust hedge if live
+                # Use actual exchange position so skipped adjustments
+                # accumulate until they cross the exchange minimum
+                actual_hedge = pos.hedge_fill_size
                 is_buy = not pos.is_put
                 adj_fill = hedge_executor.adjust_hedge(
-                    "ETH", old_hedge, new_hedge, is_buy
+                    "ETH", actual_hedge, new_hedge, is_buy
                 )
                 fill_price = 0.0
                 if adj_fill:
-                    pos.hedge_fill_size = new_hedge
+                    pos.hedge_fill_size = actual_hedge + adj_fill["size"]
                     pos.hedge_fill_price = adj_fill["avg_price"]
                     fill_price = adj_fill["avg_price"]
 
@@ -185,7 +186,7 @@ class PositionTracker:
                     otoken=pos.otoken_address,
                     old_delta=old_delta,
                     new_delta=pos.current_delta,
-                    old_hedge=old_hedge,
+                    old_hedge=actual_hedge,
                     new_hedge=new_hedge,
                     hedge_fill_price=fill_price,
                 )
