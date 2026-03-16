@@ -4,8 +4,9 @@ import logging
 import time
 from typing import Any
 
-from src import api_client, hedge_executor, trade_logger
+from src import api_client, config, hedge_executor, trade_logger
 from src.position_tracker import Position, PositionTracker
+from src.pricer import bs_delta
 
 log = logging.getLogger(__name__)
 
@@ -147,6 +148,19 @@ def _bootstrap_from_live_state(tracker: PositionTracker) -> int:
         )
         return 0
 
+    # Fetch market data once for spot, IV, and otoken lookup
+    try:
+        market = api_client.get_market_data()
+    except Exception:
+        log.warning("Failed to fetch market data for bootstrap", exc_info=True)
+        market = {}
+
+    spot = market.get("spot_price", eth_pos["entry_price"])
+    iv = market.get("iv", 0.80)
+    otoken_map = {
+        ot["address"].lower(): ot for ot in market.get("available_otokens", [])
+    }
+
     hl_size = abs(eth_pos["size"])
     is_short = eth_pos["size"] < 0
 
@@ -156,11 +170,10 @@ def _bootstrap_from_live_state(tracker: PositionTracker) -> int:
         if not otoken_addr:
             continue
 
-        market = _fetch_market_for_otoken(otoken_addr)
-        if not market:
+        details = otoken_map.get(otoken_addr.lower())
+        if not details:
             continue
 
-        details = market
         expiry = details.get("expiry", 0)
         if expiry < int(time.time()):
             continue
@@ -171,20 +184,23 @@ def _bootstrap_from_live_state(tracker: PositionTracker) -> int:
         premium_usd = premium_raw / 10**6
 
         is_put = details.get("is_put", is_short)
+        strike = details.get("strike_price", 0)
+        T = max((expiry - int(time.time())) / (365 * 86400), 0.0)
+        delta = bs_delta(is_put, spot, strike, T, config.RISK_FREE_RATE, iv)
 
         event = {
             "event": "position_opened",
             "ts": int(time.time()),
             "otoken": otoken_addr,
-            "strike": details.get("strike_price", 0),
+            "strike": strike,
             "expiry": expiry,
             "is_put": is_put,
             "amount_eth": amount_eth,
             "premium_usd": premium_usd,
             "user_address": fill.get("user_address", ""),
             "tx_hash": fill.get("tx_hash", ""),
-            "spot": eth_pos["entry_price"],
-            "delta": -0.5 if is_put else 0.5,
+            "spot": spot,
+            "delta": delta,
             "hedge_action": "SHORT" if is_put else "LONG",
             "hedge_size_eth": hl_size,
             "hedge_fill_price": eth_pos["entry_price"],
@@ -195,9 +211,10 @@ def _bootstrap_from_live_state(tracker: PositionTracker) -> int:
         tracker.positions.append(pos)
         bootstrapped += 1
         log.info(
-            "[BOOTSTRAP] Restored position: %s strike=%.0f",
+            "[BOOTSTRAP] Restored position: %s strike=%.0f delta=%.3f",
             otoken_addr[:10],
             pos.strike,
+            delta,
         )
         break
 
@@ -205,16 +222,3 @@ def _bootstrap_from_live_state(tracker: PositionTracker) -> int:
         _verify_hedges(tracker)
 
     return bootstrapped
-
-
-def _fetch_market_for_otoken(otoken_addr: str) -> dict[str, Any] | None:
-    """Get otoken details from the backend market endpoint."""
-    try:
-        market = api_client.get_market_data()
-        otokens = market.get("available_otokens", [])
-        for ot in otokens:
-            if ot["address"].lower() == otoken_addr.lower():
-                return ot
-    except Exception:
-        log.warning("Failed to fetch market data for bootstrap", exc_info=True)
-    return None
