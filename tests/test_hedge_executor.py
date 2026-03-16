@@ -133,10 +133,10 @@ def test_adjust_hedge_decreases():
 
 @patch("src.config.HEDGE_MODE", "live")
 def test_adjust_hedge_skip_tiny():
-    """Skip adjustment if diff < 0.001."""
+    """Skip adjustment if diff < 0.0001."""
     _setup_live_mode()
 
-    result = hedge_executor.adjust_hedge("ETH", 1.0, 1.0005, True)
+    result = hedge_executor.adjust_hedge("ETH", 1.0, 1.00005, True)
 
     hedge_executor._exchange.market_open.assert_not_called()
     hedge_executor._exchange.market_close.assert_not_called()

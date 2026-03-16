@@ -227,7 +227,7 @@ def adjust_hedge(
         Fill info or None.
     """
     diff = abs(target_size - current_size)
-    if diff < 0.001:
+    if diff < 0.0001:
         return None
 
     if target_size > current_size:
