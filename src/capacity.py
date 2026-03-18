@@ -18,7 +18,7 @@ log = logging.getLogger(__name__)
 
 USDC_DECIMALS = 6
 OTOKEN_DECIMALS = 8
-FULL_THRESHOLD_ETH = 0.01
+FULL_THRESHOLD_USD = 10.0
 DEGRADED_HEDGE_RATIO = 0.4
 
 # ERC-20 function selectors
@@ -61,12 +61,12 @@ class CapacityReport:
 
 
 def capacity_status(
-    capacity_eth: float,
+    capacity_usd: float,
     premium_pool_usd: float,
     hedge_pool_usd: float,
     hedge_live: bool = True,
 ) -> str:
-    if capacity_eth < FULL_THRESHOLD_ETH:
+    if capacity_usd < FULL_THRESHOLD_USD:
         return "full"
     if (
         hedge_live
@@ -169,7 +169,7 @@ def calculate_capacity_internal(
     open_notional = sum(p.notional_usd for p in open_pos) if open_pos else 0.0
 
     hedge_live = config.HEDGE_MODE == "live"
-    status = capacity_status(effective_eth, premium_pool, hedge_pool_value, hedge_live)
+    status = capacity_status(effective_usd, premium_pool, hedge_pool_value, hedge_live)
 
     return CapacityReport(
         mm_address=mm_address,
