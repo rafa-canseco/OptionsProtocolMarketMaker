@@ -99,23 +99,23 @@ class TestCapacityReport:
 
 class TestCapacityStatus:
     def test_active_when_capacity_above_threshold(self):
-        assert capacity_status(5.0, 10000.0, 8000.0) == "active"
+        assert capacity_status(500.0, 10000.0, 8000.0) == "active"
 
     def test_full_when_capacity_below_threshold(self):
-        assert capacity_status(0.005, 10000.0, 8000.0) == "full"
+        assert capacity_status(5.0, 10000.0, 8000.0) == "full"
 
     def test_full_at_zero(self):
         assert capacity_status(0.0, 10000.0, 8000.0) == "full"
 
     def test_degraded_when_hedge_pool_low(self):
         # hedge_pool < 40% of premium_pool → degraded
-        assert capacity_status(5.0, 10000.0, 3000.0) == "degraded"
+        assert capacity_status(500.0, 10000.0, 3000.0) == "degraded"
 
     def test_degraded_when_hedge_pool_zero(self):
-        assert capacity_status(5.0, 10000.0, 0.0) == "degraded"
+        assert capacity_status(500.0, 10000.0, 0.0) == "degraded"
 
     def test_not_degraded_when_hedge_not_live(self):
-        assert capacity_status(5.0, 10000.0, 0.0, hedge_live=False) == "active"
+        assert capacity_status(500.0, 10000.0, 0.0, hedge_live=False) == "active"
 
 
 class TestCalculateCapacityInternal:
