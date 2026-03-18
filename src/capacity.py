@@ -1,12 +1,18 @@
-"""MM capacity calculation based on premium pool and hedge pool."""
+"""MM capacity calculation — shared pool with per-asset max exposure."""
+
+from __future__ import annotations
 
 import logging
 import time
 from dataclasses import dataclass, fields
+from typing import TYPE_CHECKING
 
 from web3 import Web3
 
 from src import config, hedge_executor
+
+if TYPE_CHECKING:
+    from src.config import AssetConfig
 
 log = logging.getLogger(__name__)
 
@@ -86,30 +92,69 @@ def _read_usdc_allowance(w3: Web3, mm_address: str) -> float:
     return int.from_bytes(raw, "big") / 10**USDC_DECIMALS
 
 
+def _compute_global_pools(
+    w3: Web3,
+    mm_address: str,
+    total_premium_committed: float,
+) -> tuple[float, float, float]:
+    """Compute premium pool and hedge pool (global, shared across assets).
+
+    Returns:
+        (premium_pool_usd, hedge_pool_value_usd, hedge_withdrawable_usd)
+    """
+    usdc_balance = _read_usdc_balance(w3, mm_address)
+    usdc_allowance = _read_usdc_allowance(w3, mm_address)
+    premium_pool = max(min(usdc_balance, usdc_allowance) - total_premium_committed, 0.0)
+
+    if config.HEDGE_MODE == "live":
+        withdrawable = hedge_executor.get_withdrawable()
+        hedge_pool_value = hedge_executor.get_account_value()
+    else:
+        withdrawable = 0.0
+        hedge_pool_value = 0.0
+
+    return premium_pool, hedge_pool_value, withdrawable
+
+
 def calculate_capacity_internal(
     w3: Web3,
     spot: float,
     mm_address: str,
     tracker,
+    asset_config: AssetConfig | None = None,
 ) -> CapacityReport:
-    """Calculate MM capacity from both premium and hedge pools."""
-    # Premium pool: min(balance, allowance) - committed premium
-    usdc_balance = _read_usdc_balance(w3, mm_address)
-    usdc_allowance = _read_usdc_allowance(w3, mm_address)
-    committed = tracker.total_premium_paid()
-    premium_pool = max(min(usdc_balance, usdc_allowance) - committed, 0.0)
+    """Calculate MM capacity for a specific asset using shared pool model.
 
-    # Hedge pool (skip when not live — no Hyperliquid connection)
+    Shared pool with per-asset max exposure:
+        total_capital = premium_pool + hedge_notional
+        deployed_total = sum(notional across ALL open positions)
+        deployed_this = sum(notional for THIS asset)
+        available_global = total_capital - deployed_total
+        capacity = min(max_exposure * total_capital - deployed_this,
+                       available_global)
+    """
+    if asset_config is None:
+        asset_config = config.ASSET_MAP.get("eth", config.ASSETS[0])
+
+    total_premium_committed = tracker.total_premium_paid()
+    premium_pool, hedge_pool_value, withdrawable = _compute_global_pools(
+        w3, mm_address, total_premium_committed
+    )
+
+    # Compute total capital
     if config.HEDGE_MODE == "live":
-        withdrawable = hedge_executor.get_withdrawable()
-        hedge_pool_value = hedge_executor.get_account_value()
         reserve = config.CAPACITY_RESERVE_RATIO
-        hedge_notional = withdrawable * config.HEDGE_LEVERAGE * (1.0 - reserve)
-        effective_usd = min(premium_pool, hedge_notional)
+        hedge_notional = withdrawable * asset_config.leverage * (1.0 - reserve)
+        total_capital = min(premium_pool, hedge_notional)
     else:
-        withdrawable = 0.0
-        hedge_pool_value = 0.0
-        effective_usd = premium_pool
+        total_capital = premium_pool
+
+    # Shared pool with max exposure cap
+    deployed_total = tracker.deployed_usd()
+    deployed_this = tracker.deployed_usd(underlying=asset_config.name)
+    available_global = max(total_capital - deployed_total, 0.0)
+    max_for_asset = max(asset_config.max_exposure * total_capital - deployed_this, 0.0)
+    effective_usd = min(max_for_asset, available_global)
 
     # Apply MAX_AMOUNT ceiling
     max_eth_ceiling = config.MAX_AMOUNT / 10**OTOKEN_DECIMALS
@@ -117,7 +162,7 @@ def calculate_capacity_internal(
     effective_eth = min(effective_eth, max_eth_ceiling)
     effective_usd = min(effective_usd, max_eth_ceiling * spot)
 
-    open_pos = tracker.open_positions()
+    open_pos = tracker.open_positions(underlying=asset_config.name)
     open_notional = sum(p.notional_usd for p in open_pos) if open_pos else 0.0
 
     hedge_live = config.HEDGE_MODE == "live"
@@ -125,13 +170,13 @@ def calculate_capacity_internal(
 
     return CapacityReport(
         mm_address=mm_address,
-        asset="ETH",
+        asset=asset_config.name,
         capacity_eth=effective_eth,
         capacity_usd=effective_usd,
         premium_pool_usd=premium_pool,
         hedge_pool_usd=hedge_pool_value,
         hedge_pool_withdrawable_usd=withdrawable,
-        leverage=config.HEDGE_LEVERAGE,
+        leverage=asset_config.leverage,
         open_positions_count=len(open_pos),
         open_positions_notional_usd=open_notional,
         status=status,

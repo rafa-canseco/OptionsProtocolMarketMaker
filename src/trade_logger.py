@@ -64,39 +64,42 @@ def log_position_opened(
     strike: float,
     expiry: int,
     is_put: bool,
-    amount_eth: float,
+    amount: float,
     premium_usd: float,
     user_address: str,
     tx_hash: str,
     spot: float,
     delta: float,
     hedge_action: str,
-    hedge_size_eth: float,
+    hedge_size: float,
     hedge_fill_price: float,
+    underlying: str = "eth",
 ) -> None:
     _emit(
         {
             "event": "position_opened",
             "ts": int(time.time()),
             "otoken": otoken,
+            "underlying": underlying,
             "strike": strike,
             "expiry": expiry,
             "is_put": is_put,
-            "amount_eth": amount_eth,
+            "amount": amount,
             "premium_usd": premium_usd,
             "user_address": user_address,
             "tx_hash": tx_hash,
             "spot": spot,
             "delta": delta,
             "hedge_action": hedge_action,
-            "hedge_size_eth": hedge_size_eth,
+            "hedge_size": hedge_size,
             "hedge_fill_price": hedge_fill_price,
         }
     )
     log.info(
-        "[TRADE LOG] position_opened otoken=%s strike=%.0f",
+        "[TRADE LOG] position_opened otoken=%s strike=%.0f underlying=%s",
         otoken[:10],
         strike,
+        underlying,
     )
 
 
@@ -107,12 +110,14 @@ def log_delta_rebalanced(
     old_hedge: float,
     new_hedge: float,
     hedge_fill_price: float,
+    underlying: str = "eth",
 ) -> None:
     _emit(
         {
             "event": "delta_rebalanced",
             "ts": int(time.time()),
             "otoken": otoken,
+            "underlying": underlying,
             "old_delta": round(old_delta, 6),
             "new_delta": round(new_delta, 6),
             "old_hedge": round(old_hedge, 6),
@@ -130,12 +135,14 @@ def log_position_expired(
     hedge_pnl: float,
     hedge_close_price: float,
     net_pnl: float,
+    underlying: str = "eth",
 ) -> None:
     _emit(
         {
             "event": "position_expired",
             "ts": int(time.time()),
             "otoken": otoken,
+            "underlying": underlying,
             "result": settlement,
             "expiry_price": expiry_price,
             "settlement_pnl": round(settlement_pnl, 4),
@@ -156,17 +163,19 @@ def log_capacity_snapshot(
     premium_usd: float,
     hedge_usd: float,
     hedge_withdrawable: float,
-    effective_eth: float,
+    effective_units: float,
     status: str,
+    underlying: str = "eth",
 ) -> None:
     _emit(
         {
             "event": "capacity_snapshot",
             "ts": int(time.time()),
+            "underlying": underlying,
             "premium_usd": round(premium_usd, 2),
             "hedge_usd": round(hedge_usd, 2),
             "hedge_withdrawable": round(hedge_withdrawable, 2),
-            "effective_eth": round(effective_eth, 4),
+            "effective_units": round(effective_units, 4),
             "status": status,
         }
     )

@@ -27,16 +27,20 @@ def test_put_position_open():
     strike = 1900.0
     expiry = int(time.time()) + 7 * 86400
 
-    tracker.cache_otokens([{
-        "address": "0xPUT_OTOKEN",
-        "strike_price": strike,
-        "expiry": expiry,
-        "is_put": True,
-    }])
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xPUT_OTOKEN",
+                "strike_price": strike,
+                "expiry": expiry,
+                "is_put": True,
+            }
+        ]
+    )
 
     fill = {
         "otoken_address": "0xPUT_OTOKEN",
-        "amount": 50000000,       # 0.5 oTokens (8 dec)
+        "amount": 50000000,  # 0.5 oTokens (8 dec)
         "gross_premium": 12000000,  # $12 (6 dec)
         "user_address": "0xUSER1",
         "tx_hash": "0xTX1",
@@ -50,14 +54,16 @@ def test_put_position_open():
     assert pos.premium_paid_usd == 12.0
     assert pos.hedge_action == "SHORT"
     assert pos.current_delta < 0
-    assert pos.hedge_size_eth > 0
+    assert pos.hedge_size > 0
     assert len(tracker.open_positions()) == 1
-    assert tracker.net_delta_eth() < 0
+    assert tracker.net_delta() < 0
 
     print(f"\n  Put delta: {pos.current_delta:.4f}")
-    print(f"  Hedge: {pos.hedge_action} {pos.hedge_size_eth:.4f} ETH"
-          f" (${pos.hedge_size_usd(SPOT):.2f})")
-    print(f"  Net delta: {tracker.net_delta_eth():.4f} ETH")
+    print(
+        f"  Hedge: {pos.hedge_action} {pos.hedge_size:.4f} ETH"
+        f" (${pos.hedge_size_usd(SPOT):.2f})"
+    )
+    print(f"  Net delta: {tracker.net_delta():.4f} ETH")
 
 
 def test_call_position_open():
@@ -66,16 +72,20 @@ def test_call_position_open():
     strike = 2100.0
     expiry = int(time.time()) + 7 * 86400
 
-    tracker.cache_otokens([{
-        "address": "0xCALL_OTOKEN",
-        "strike_price": strike,
-        "expiry": expiry,
-        "is_put": False,
-    }])
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xCALL_OTOKEN",
+                "strike_price": strike,
+                "expiry": expiry,
+                "is_put": False,
+            }
+        ]
+    )
 
     fill = {
         "otoken_address": "0xCALL_OTOKEN",
-        "amount": 100000000,       # 1.0 oToken
+        "amount": 100000000,  # 1.0 oToken
         "gross_premium": 30000000,  # $30
         "user_address": "0xUSER2",
         "tx_hash": "0xTX2",
@@ -91,8 +101,10 @@ def test_call_position_open():
     assert len(tracker.open_positions()) == 1
 
     print(f"\n  Call delta: {pos.current_delta:.4f}")
-    print(f"  Hedge: {pos.hedge_action} {pos.hedge_size_eth:.4f} ETH"
-          f" (${pos.hedge_size_usd(SPOT):.2f})")
+    print(
+        f"  Hedge: {pos.hedge_action} {pos.hedge_size:.4f} ETH"
+        f" (${pos.hedge_size_usd(SPOT):.2f})"
+    )
 
 
 def test_delta_recalculation():
@@ -101,12 +113,16 @@ def test_delta_recalculation():
     strike = 1900.0
     expiry = int(time.time()) + 7 * 86400
 
-    tracker.cache_otokens([{
-        "address": "0xPUT_OTOKEN",
-        "strike_price": strike,
-        "expiry": expiry,
-        "is_put": True,
-    }])
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xPUT_OTOKEN",
+                "strike_price": strike,
+                "expiry": expiry,
+                "is_put": True,
+            }
+        ]
+    )
 
     fill = {
         "otoken_address": "0xPUT_OTOKEN",
@@ -136,41 +152,53 @@ def test_portfolio_net_delta():
     tracker = PositionTracker()
     expiry = int(time.time()) + 7 * 86400
 
-    tracker.cache_otokens([
-        {
-            "address": "0xPUT1",
-            "strike_price": 1900.0,
-            "expiry": expiry,
-            "is_put": True,
-        },
-        {
-            "address": "0xCALL1",
-            "strike_price": 2100.0,
-            "expiry": expiry,
-            "is_put": False,
-        },
-    ])
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xPUT1",
+                "strike_price": 1900.0,
+                "expiry": expiry,
+                "is_put": True,
+            },
+            {
+                "address": "0xCALL1",
+                "strike_price": 2100.0,
+                "expiry": expiry,
+                "is_put": False,
+            },
+        ]
+    )
 
-    tracker.add_position({
-        "otoken_address": "0xPUT1",
-        "amount": 100000000,
-        "gross_premium": 20000000,
-        "user_address": "0xU1",
-        "tx_hash": "0xT1",
-    }, SPOT, IV, RISK_FREE)
+    tracker.add_position(
+        {
+            "otoken_address": "0xPUT1",
+            "amount": 100000000,
+            "gross_premium": 20000000,
+            "user_address": "0xU1",
+            "tx_hash": "0xT1",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
 
-    tracker.add_position({
-        "otoken_address": "0xCALL1",
-        "amount": 100000000,
-        "gross_premium": 30000000,
-        "user_address": "0xU2",
-        "tx_hash": "0xT2",
-    }, SPOT, IV, RISK_FREE)
+    tracker.add_position(
+        {
+            "otoken_address": "0xCALL1",
+            "amount": 100000000,
+            "gross_premium": 30000000,
+            "user_address": "0xU2",
+            "tx_hash": "0xT2",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
 
     assert len(tracker.open_positions()) == 2
 
     # Put delta is negative, call delta is positive — they offset
-    net = tracker.net_delta_eth()
+    net = tracker.net_delta()
     put_d = tracker.positions[0].current_delta
     call_d = tracker.positions[1].current_delta
     expected = put_d + call_d
@@ -186,20 +214,29 @@ def test_expiry_otm():
     """Put expires OTM → settlement $0, MM lost premium."""
     tracker = PositionTracker()
     # Already expired
-    tracker.cache_otokens([{
-        "address": "0xPUT_OTM",
-        "strike_price": 1800.0,
-        "expiry": int(time.time()) + 1,
-        "is_put": True,
-    }])
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xPUT_OTM",
+                "strike_price": 1800.0,
+                "expiry": int(time.time()) + 1,
+                "is_put": True,
+            }
+        ]
+    )
 
-    pos = tracker.add_position({
-        "otoken_address": "0xPUT_OTM",
-        "amount": 100000000,
-        "gross_premium": 10000000,  # $10
-        "user_address": "0xU",
-        "tx_hash": "0xT",
-    }, SPOT, IV, RISK_FREE)
+    pos = tracker.add_position(
+        {
+            "otoken_address": "0xPUT_OTM",
+            "amount": 100000000,
+            "gross_premium": 10000000,  # $10
+            "user_address": "0xU",
+            "tx_hash": "0xT",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
 
     time.sleep(2)
 
@@ -221,20 +258,29 @@ def test_expiry_itm():
     """Put expires ITM → MM captures intrinsic value."""
     tracker = PositionTracker()
     strike = 2000.0
-    tracker.cache_otokens([{
-        "address": "0xPUT_ITM",
-        "strike_price": strike,
-        "expiry": int(time.time()) + 1,
-        "is_put": True,
-    }])
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xPUT_ITM",
+                "strike_price": strike,
+                "expiry": int(time.time()) + 1,
+                "is_put": True,
+            }
+        ]
+    )
 
-    pos = tracker.add_position({
-        "otoken_address": "0xPUT_ITM",
-        "amount": 100000000,  # 1 oToken
-        "gross_premium": 15000000,  # $15
-        "user_address": "0xU",
-        "tx_hash": "0xT",
-    }, spot=2020.0, iv=IV, risk_free_rate=RISK_FREE)
+    pos = tracker.add_position(
+        {
+            "otoken_address": "0xPUT_ITM",
+            "amount": 100000000,  # 1 oToken
+            "gross_premium": 15000000,  # $15
+            "user_address": "0xU",
+            "tx_hash": "0xT",
+        },
+        spot=2020.0,
+        iv=IV,
+        risk_free_rate=RISK_FREE,
+    )
 
     time.sleep(2)
 
@@ -255,13 +301,18 @@ def test_expiry_itm():
 def test_unknown_otoken_ignored():
     """Fill for unknown oToken is silently ignored."""
     tracker = PositionTracker()
-    pos = tracker.add_position({
-        "otoken_address": "0xUNKNOWN",
-        "amount": 100000000,
-        "gross_premium": 10000000,
-        "user_address": "0xU",
-        "tx_hash": "0xT",
-    }, SPOT, IV, RISK_FREE)
+    pos = tracker.add_position(
+        {
+            "otoken_address": "0xUNKNOWN",
+            "amount": 100000000,
+            "gross_premium": 10000000,
+            "user_address": "0xU",
+            "tx_hash": "0xT",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
 
     assert pos is None
     assert len(tracker.positions) == 0

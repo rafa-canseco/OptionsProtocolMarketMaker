@@ -1,5 +1,6 @@
 import os
 import sys
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
@@ -12,6 +13,14 @@ def _require(name: str) -> str:
         print(f"FATAL: missing required env var {name}", file=sys.stderr)
         sys.exit(1)
     return val
+
+
+@dataclass(frozen=True)
+class AssetConfig:
+    name: str  # lowercase, e.g. "eth"
+    hedge_symbol: str  # Hyperliquid symbol, e.g. "ETH"
+    leverage: int
+    max_exposure: float  # 0.0–1.0, fraction of total capital
 
 
 # --- Required ---
@@ -43,7 +52,6 @@ HYPERLIQUID_TESTNET: bool = os.getenv("HYPERLIQUID_TESTNET", "true").lower() in 
     "yes",
 )
 HEDGE_SLIPPAGE: float = float(os.getenv("HEDGE_SLIPPAGE", "0.01"))
-HEDGE_LEVERAGE: int = int(os.getenv("HEDGE_LEVERAGE", "3"))
 
 # --- Capacity ---
 MM_TYPE: str = os.getenv("MM_TYPE", "internal")  # internal | external
@@ -61,3 +69,27 @@ MARGIN_POOL_ADDRESS: str = os.getenv(
 TRADE_LOG_PATH: str = os.getenv("TRADE_LOG_PATH", "data/trade_history.jsonl")
 SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
+
+
+# --- Multi-asset configuration ---
+def _parse_assets() -> list[AssetConfig]:
+    raw = os.getenv("ASSETS", "eth")
+    assets = []
+    for name in raw.split(","):
+        name = name.strip().lower()
+        if not name:
+            continue
+        prefix = name.upper()
+        assets.append(
+            AssetConfig(
+                name=name,
+                hedge_symbol=os.getenv(f"{prefix}_HEDGE_SYMBOL", name.upper()),
+                leverage=int(os.getenv(f"{prefix}_HEDGE_LEVERAGE", "3")),
+                max_exposure=float(os.getenv(f"{prefix}_MAX_EXPOSURE", "1.0")),
+            )
+        )
+    return assets
+
+
+ASSETS: list[AssetConfig] = _parse_assets()
+ASSET_MAP: dict[str, AssetConfig] = {a.name: a for a in ASSETS}

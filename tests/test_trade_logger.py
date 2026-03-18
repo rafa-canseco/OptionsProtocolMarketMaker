@@ -37,15 +37,16 @@ class TestTradeLogger:
             strike=2100.0,
             expiry=int(time.time()) + 86400,
             is_put=True,
-            amount_eth=0.01,
+            amount=0.01,
             premium_usd=0.42,
             user_address="0xuser",
             tx_hash="0xtx",
             spot=2112.75,
             delta=-0.45,
             hedge_action="SHORT",
-            hedge_size_eth=0.0098,
+            hedge_size=0.0098,
             hedge_fill_price=2108.7,
+            underlying="eth",
         )
         events = _read_events(_clean_log)
         assert len(events) == 1
@@ -55,6 +56,29 @@ class TestTradeLogger:
         assert ev["strike"] == 2100.0
         assert ev["is_put"] is True
         assert ev["hedge_fill_price"] == 2108.7
+        assert ev["underlying"] == "eth"
+        assert ev["amount"] == 0.01
+        assert ev["hedge_size"] == 0.0098
+
+    def test_log_position_opened_btc(self, _clean_log):
+        trade_logger.log_position_opened(
+            otoken="0xbtc123",
+            strike=55000.0,
+            expiry=int(time.time()) + 86400,
+            is_put=False,
+            amount=0.001,
+            premium_usd=5.0,
+            user_address="0xuser",
+            tx_hash="0xtx",
+            spot=50000.0,
+            delta=0.65,
+            hedge_action="LONG",
+            hedge_size=0.0008,
+            hedge_fill_price=50100.0,
+            underlying="btc",
+        )
+        events = _read_events(_clean_log)
+        assert events[0]["underlying"] == "btc"
 
     def test_log_delta_rebalanced(self, _clean_log):
         trade_logger.log_delta_rebalanced(
@@ -64,10 +88,12 @@ class TestTradeLogger:
             old_hedge=0.0098,
             new_hedge=0.0105,
             hedge_fill_price=2100.0,
+            underlying="eth",
         )
         events = _read_events(_clean_log)
         assert len(events) == 1
         assert events[0]["event"] == "delta_rebalanced"
+        assert events[0]["underlying"] == "eth"
 
     def test_log_position_expired(self, _clean_log):
         trade_logger.log_position_expired(
@@ -78,23 +104,28 @@ class TestTradeLogger:
             hedge_pnl=-0.15,
             hedge_close_price=2150.0,
             net_pnl=-0.57,
+            underlying="eth",
         )
         events = _read_events(_clean_log)
         assert len(events) == 1
         assert events[0]["event"] == "position_expired"
         assert events[0]["result"] == "OTM"
+        assert events[0]["underlying"] == "eth"
 
     def test_log_capacity_snapshot(self, _clean_log):
         trade_logger.log_capacity_snapshot(
             premium_usd=40.65,
             hedge_usd=166.25,
             hedge_withdrawable=159.07,
-            effective_eth=0.60,
+            effective_units=0.60,
             status="active",
+            underlying="eth",
         )
         events = _read_events(_clean_log)
         assert len(events) == 1
         assert events[0]["event"] == "capacity_snapshot"
+        assert events[0]["underlying"] == "eth"
+        assert events[0]["effective_units"] == 0.6
 
     def test_multiple_events_append(self, _clean_log):
         trade_logger.log_capacity_snapshot(1.0, 2.0, 3.0, 0.1, "active")
@@ -110,24 +141,25 @@ class TestTradeLogger:
 
 
 class TestStartupRecovery:
-    def _write_opened_event(self, path, otoken="0xabc", expiry=None):
+    def _write_opened_event(self, path, otoken="0xabc", expiry=None, underlying="eth"):
         if expiry is None:
             expiry = int(time.time()) + 86400
         event = {
             "event": "position_opened",
             "ts": int(time.time()),
             "otoken": otoken,
+            "underlying": underlying,
             "strike": 2100.0,
             "expiry": expiry,
             "is_put": True,
-            "amount_eth": 0.01,
+            "amount": 0.01,
             "premium_usd": 0.42,
             "user_address": "0xuser",
             "tx_hash": "0xtx123",
             "spot": 2112.75,
             "delta": -0.45,
             "hedge_action": "SHORT",
-            "hedge_size_eth": 0.0098,
+            "hedge_size": 0.0098,
             "hedge_fill_price": 2108.7,
         }
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
@@ -147,6 +179,7 @@ class TestStartupRecovery:
         pos = tracker.open_positions()[0]
         assert pos.strike == 2100.0
         assert pos.is_put is True
+        assert pos.underlying == "eth"
 
     @patch("src.startup_recovery.hedge_executor")
     def test_skip_closed_position(self, mock_hedge, _clean_log):
@@ -155,6 +188,7 @@ class TestStartupRecovery:
             "event": "position_expired",
             "ts": int(time.time()),
             "otoken": "0xabc",
+            "underlying": "eth",
             "result": "OTM",
             "expiry_price": 2150.0,
             "settlement_pnl": 0,
@@ -216,6 +250,8 @@ class TestStartupRecovery:
             }
         ]
         mock_api.get_market_data.return_value = {
+            "spot": 2100.0,
+            "iv": 0.6,
             "available_otokens": [
                 {
                     "address": "0x151fabc",
@@ -223,7 +259,7 @@ class TestStartupRecovery:
                     "expiry": future_expiry,
                     "is_put": True,
                 }
-            ]
+            ],
         }
 
         tracker = PositionTracker()
@@ -232,6 +268,7 @@ class TestStartupRecovery:
         events = _read_events(_clean_log)
         assert len(events) == 1
         assert events[0]["event"] == "position_opened"
+        assert events[0]["underlying"] == "eth"
 
     @patch("src.startup_recovery.api_client")
     @patch("src.startup_recovery.hedge_executor")
@@ -240,3 +277,37 @@ class TestStartupRecovery:
         tracker = PositionTracker()
         restored = recover_positions(tracker)
         assert restored == 0
+
+    @patch("src.startup_recovery.hedge_executor")
+    def test_recover_old_format_events(self, mock_hedge, _clean_log):
+        """Old events with amount_eth/hedge_size_eth are still readable."""
+        old_event = {
+            "event": "position_opened",
+            "ts": int(time.time()),
+            "otoken": "0xold",
+            "strike": 2000.0,
+            "expiry": int(time.time()) + 86400,
+            "is_put": True,
+            "amount_eth": 0.5,
+            "premium_usd": 10.0,
+            "user_address": "0xuser",
+            "tx_hash": "0xoldtx",
+            "spot": 2000.0,
+            "delta": -0.5,
+            "hedge_action": "SHORT",
+            "hedge_size_eth": 0.25,
+            "hedge_fill_price": 2000.0,
+        }
+        with open(_clean_log, "w") as f:
+            f.write(json.dumps(old_event) + "\n")
+
+        mock_hedge.get_positions.return_value = [
+            {"coin": "ETH", "size": -0.25, "entry_price": 2000.0}
+        ]
+        tracker = PositionTracker()
+        restored = recover_positions(tracker)
+        assert restored == 1
+        pos = tracker.open_positions()[0]
+        assert pos.underlying == "eth"
+        assert pos.hedge_fill_size == 0.25
+        assert pos.num_options == pytest.approx(0.5)
