@@ -111,7 +111,7 @@ def _run_asset_cycle(
 
     # Cache oToken details for position tracking
     if otokens:
-        _tracker.cache_otokens(otokens)
+        _tracker.cache_otokens(otokens, underlying=asset_name)
 
     # Recalculate deltas on open positions for this asset
     asset_positions = _tracker.open_positions(underlying=asset_name)

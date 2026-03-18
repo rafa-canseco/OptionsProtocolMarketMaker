@@ -80,9 +80,14 @@ class PositionTracker:
         self.positions: list[Position] = []
         self._otoken_cache: dict[str, dict[str, Any]] = {}
 
-    def cache_otokens(self, otokens: list[dict[str, Any]]) -> None:
+    def cache_otokens(
+        self, otokens: list[dict[str, Any]], underlying: str | None = None
+    ) -> None:
         for ot in otokens:
-            self._otoken_cache[ot["address"].lower()] = ot
+            entry = dict(ot)
+            if underlying:
+                entry["underlying"] = underlying
+            self._otoken_cache[entry["address"].lower()] = entry
 
     def get_otoken_details(self, address: str) -> dict[str, Any] | None:
         return self._otoken_cache.get(address.lower())

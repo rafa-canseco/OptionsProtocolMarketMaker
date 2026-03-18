@@ -27,9 +27,7 @@ def build_quotes(
 
     # Offset quote_ids per asset so multi-asset quotes don't collide
     # in the backend's upsert (on_conflict=mm_address,quote_id)
-    asset_index = next(
-        (i for i, a in enumerate(config.ASSETS) if a.name == asset), 0
-    )
+    asset_index = next((i for i, a in enumerate(config.ASSETS) if a.name == asset), 0)
     quote_id_offset = asset_index * 1000
 
     quotes: list[dict[str, Any]] = []

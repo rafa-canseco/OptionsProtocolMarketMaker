@@ -42,13 +42,20 @@ def _write_jsonl(event: dict[str, Any]) -> None:
         log.warning("Failed to write JSONL event", exc_info=True)
 
 
+_SUPABASE_KEY_MAP = {
+    "amount": "amount_eth",
+    "hedge_size": "hedge_size_eth",
+}
+
+
 def _write_supabase(event: dict[str, Any]) -> None:
     """Insert event row into mm_trade_history table."""
     client = _get_supabase()
     if not client:
         return
+    mapped = {_SUPABASE_KEY_MAP.get(k, k): v for k, v in event.items()}
     try:
-        client.table("mm_trade_history").insert(event).execute()
+        client.table("mm_trade_history").insert(mapped).execute()
     except Exception:
         log.warning("Failed to write event to Supabase", exc_info=True)
 
