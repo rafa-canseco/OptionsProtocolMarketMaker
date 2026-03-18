@@ -25,6 +25,13 @@ def build_quotes(
     now = int(time.time())
     effective_max = max_amount_raw if max_amount_raw is not None else config.MAX_AMOUNT
 
+    # Offset quote_ids per asset so multi-asset quotes don't collide
+    # in the backend's upsert (on_conflict=mm_address,quote_id)
+    asset_index = next(
+        (i for i, a in enumerate(config.ASSETS) if a.name == asset), 0
+    )
+    quote_id_offset = asset_index * 1000
+
     quotes: list[dict[str, Any]] = []
     for idx, ot in enumerate(otokens):
         strike: float = ot["strike_price"]
@@ -56,7 +63,7 @@ def build_quotes(
                 "oToken": ot["address"],
                 "bidPrice": bid_price_raw,
                 "deadline": now + config.DEADLINE_SECONDS,
-                "quoteId": idx,
+                "quoteId": quote_id_offset + idx,
                 "maxAmount": effective_max,
                 "makerNonce": maker_nonce,
                 # API metadata
