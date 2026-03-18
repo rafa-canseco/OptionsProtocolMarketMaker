@@ -62,17 +62,28 @@ def run_cycle(
     # 2. Poll fills via REST as fallback (WS may miss events)
     _poll_fills_rest()
 
-    # 3. Check for expired positions (all assets)
+    # 3. Check for expired positions (per-asset with correct spot)
     for asset_cfg in config.ASSETS:
         mkt = _get_market(asset_cfg.name)
         if mkt.spot > 0:
-            expired = _tracker.check_expiries(mkt.spot)
+            expired = _tracker.check_expiries(mkt.spot, underlying=asset_cfg.name)
             if expired:
-                log.info("Settled %d expired positions", len(expired))
+                log.info(
+                    "Settled %d expired %s positions",
+                    len(expired),
+                    asset_cfg.name.upper(),
+                )
 
     # 4. Per-asset: fetch market data, quote, capacity
     for asset_cfg in config.ASSETS:
-        _run_asset_cycle(w3, domain, mm_address, asset_cfg)
+        try:
+            _run_asset_cycle(w3, domain, mm_address, asset_cfg)
+        except Exception:
+            log.error(
+                "Asset cycle failed for %s",
+                asset_cfg.name.upper(),
+                exc_info=True,
+            )
 
 
 def _run_asset_cycle(
@@ -133,12 +144,11 @@ def _run_asset_cycle(
         )
     except Exception:
         log.warning(
-            "Failed to calculate capacity for %s",
+            "Failed to calculate capacity for %s, skipping quotes",
             asset_name.upper(),
             exc_info=True,
         )
-        cap = None
-        cap_payload = None
+        return
 
     # Report capacity to backend
     if cap_payload:
@@ -288,6 +298,11 @@ def _resolve_underlying(otoken_addr: str) -> tuple[str, str]:
             return underlying, asset_cfg.hedge_symbol
     # Default to first configured asset (backward compat)
     default = config.ASSETS[0]
+    log.warning(
+        "Could not resolve underlying for oToken %s, defaulting to %s",
+        otoken_addr[:10],
+        default.name,
+    )
     return default.name, default.hedge_symbol
 
 

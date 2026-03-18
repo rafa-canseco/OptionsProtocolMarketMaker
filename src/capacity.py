@@ -126,7 +126,7 @@ def calculate_capacity_internal(
     """Calculate MM capacity for a specific asset using shared pool model.
 
     Shared pool with per-asset max exposure:
-        total_capital = premium_pool + hedge_notional
+        total_capital = min(premium_pool, hedge_notional)
         deployed_total = sum(notional across ALL open positions)
         deployed_this = sum(notional for THIS asset)
         available_global = total_capital - deployed_total
@@ -141,7 +141,10 @@ def calculate_capacity_internal(
         w3, mm_address, total_premium_committed
     )
 
-    # Compute total capital
+    # Compute total capital.  Per-asset leverage is intentional:
+    # higher-leverage assets see more notional headroom, but
+    # max_exposure caps and the global available_global constraint
+    # prevent over-allocation across the shared pool.
     if config.HEDGE_MODE == "live":
         reserve = config.CAPACITY_RESERVE_RATIO
         hedge_notional = withdrawable * asset_config.leverage * (1.0 - reserve)

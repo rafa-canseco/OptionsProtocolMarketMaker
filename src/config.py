@@ -80,16 +80,33 @@ def _parse_assets() -> list[AssetConfig]:
         if not name:
             continue
         prefix = name.upper()
+        leverage = int(os.getenv(f"{prefix}_HEDGE_LEVERAGE", "3"))
+        if leverage < 1:
+            print(
+                f"FATAL: {prefix}_HEDGE_LEVERAGE must be >= 1, got {leverage}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        max_exp = float(os.getenv(f"{prefix}_MAX_EXPOSURE", "1.0"))
+        if not 0.0 < max_exp <= 1.0:
+            print(
+                f"FATAL: {prefix}_MAX_EXPOSURE must be in (0, 1], got {max_exp}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         assets.append(
             AssetConfig(
                 name=name,
                 hedge_symbol=os.getenv(f"{prefix}_HEDGE_SYMBOL", name.upper()),
-                leverage=int(os.getenv(f"{prefix}_HEDGE_LEVERAGE", "3")),
-                max_exposure=float(os.getenv(f"{prefix}_MAX_EXPOSURE", "1.0")),
+                leverage=leverage,
+                max_exposure=max_exp,
             )
         )
     return assets
 
 
 ASSETS: list[AssetConfig] = _parse_assets()
+if not ASSETS:
+    print("FATAL: no assets configured (check ASSETS env var)", file=sys.stderr)
+    sys.exit(1)
 ASSET_MAP: dict[str, AssetConfig] = {a.name: a for a in ASSETS}

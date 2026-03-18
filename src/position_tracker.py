@@ -207,9 +207,11 @@ class PositionTracker:
                     underlying=pos.underlying,
                 )
 
-    def check_expiries(self, spot: float) -> list[Position]:
+    def check_expiries(
+        self, spot: float, underlying: str | None = None
+    ) -> list[Position]:
         expired = []
-        for pos in self.open_positions():
+        for pos in self.open_positions(underlying=underlying):
             if pos.is_expired():
                 pos.closed = True
                 # Close hedge on Hyperliquid
@@ -300,7 +302,7 @@ def _log_position_open(
         "  Delta: %.3f\n"
         "\n"
         "[HEDGE REQUIRED]\n"
-        "  Action: %s ETH\n"
+        "  Action: %s %s\n"
         "  Size: $%.2f (%.4f %s @ $%.2f)\n"
         "  Venue: Hyperliquid",
         label,
@@ -313,6 +315,7 @@ def _log_position_open(
         spread_usd,
         pos.current_delta,
         pos.hedge_action,
+        pos.underlying.upper(),
         pos.hedge_size_usd(spot),
         pos.hedge_size,
         pos.underlying.upper(),
@@ -357,11 +360,11 @@ def _log_expiry(pos: Position, spot: float) -> None:
     )
     log.info(
         "\n[EXPIRY] %s expired %s\n"
-        "  ETH price at expiry: $%.2f\n"
+        "  %s price at expiry: $%.2f\n"
         "  Settlement: $%.2f (%s)\n"
         "\n"
         "[CLOSE HEDGE]\n"
-        "  Action: CLOSE %s ETH\n"
+        "  Action: CLOSE %s %s\n"
         "  Size: %.4f %s\n"
         "  Entry: $%.2f | Exit: $%.2f\n"
         "  Hedge P&L: %+.2f\n"
@@ -375,10 +378,12 @@ def _log_expiry(pos: Position, spot: float) -> None:
         "  Note: %s",
         label,
         status,
+        pos.underlying.upper(),
         spot,
         pos.settlement_pnl,
         settle_note,
         pos.hedge_action,
+        pos.underlying.upper(),
         pos.hedge_size,
         pos.underlying.upper(),
         pos.spot_at_open,
