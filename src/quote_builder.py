@@ -11,15 +11,16 @@ def build_quotes(
     market_data: dict[str, Any],
     maker_nonce: int,
     max_amount_raw: int | None = None,
+    asset: str = "eth",
 ) -> list[dict[str, Any]]:
     """Price each oToken and build a list of quote dicts ready for signing.
 
     Returns:
         List of dicts with keys matching the EIP-712 Quote struct
-        plus metadata fields for the API (strike_price, expiry, is_put).
+        plus metadata fields for the API (strike_price, expiry, is_put, asset).
     """
-    spot: float = market_data["eth_spot"]
-    iv: float = market_data["eth_iv"]
+    spot: float = market_data["spot"]
+    iv: float = market_data["iv"]
     otokens: list[dict] = market_data["available_otokens"]
     now = int(time.time())
     effective_max = max_amount_raw if max_amount_raw is not None else config.MAX_AMOUNT
@@ -62,6 +63,7 @@ def build_quotes(
                 "strike_price": strike,
                 "expiry": expiry,
                 "is_put": is_put,
+                "asset": asset,
             }
         )
 
@@ -81,4 +83,5 @@ def to_api_payload(quote: dict[str, Any], signature: str) -> dict[str, Any]:
         "strike_price": quote["strike_price"],
         "expiry": quote["expiry"],
         "is_put": quote["is_put"],
+        "asset": quote.get("asset", "eth"),
     }

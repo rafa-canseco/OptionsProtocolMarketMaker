@@ -1,6 +1,9 @@
 """Execute hedges on Hyperliquid perpetual futures."""
 
+from __future__ import annotations
+
 import logging
+from typing import TYPE_CHECKING
 
 import eth_account
 from hyperliquid.exchange import Exchange
@@ -9,6 +12,9 @@ from hyperliquid.utils import constants
 
 from src import config
 
+if TYPE_CHECKING:
+    from src.config import AssetConfig
+
 log = logging.getLogger(__name__)
 
 _exchange: Exchange | None = None
@@ -16,13 +22,16 @@ _info: Info | None = None
 _address: str = ""
 
 
-def init() -> None:
+def init(assets: list[AssetConfig] | None = None) -> None:
     """Initialize Hyperliquid clients. Call once at startup."""
     global _exchange, _info, _address
 
     if config.HEDGE_MODE != "live":
         log.info("Hedge mode=%s, skipping Hyperliquid init", config.HEDGE_MODE)
         return
+
+    if assets is None:
+        assets = config.ASSETS
 
     api_url = (
         constants.TESTNET_API_URL
@@ -38,23 +47,32 @@ def init() -> None:
     _info = Info(api_url, skip_ws=True, spot_meta=empty_spot)
     _exchange = Exchange(wallet, api_url, spot_meta=empty_spot)
 
-    # Set leverage once — fail hard if this doesn't work
-    try:
-        _exchange.update_leverage(config.HEDGE_LEVERAGE, "ETH", is_cross=True)
-        log.info(
-            "Hyperliquid ready: %s, leverage=%dx, testnet=%s",
-            _address,
-            config.HEDGE_LEVERAGE,
-            config.HYPERLIQUID_TESTNET,
-        )
-    except Exception:
-        log.error(
-            "Failed to set leverage — disabling hedging",
-            exc_info=True,
-        )
-        _exchange = None
-        return
+    # Set leverage per configured asset
+    for asset_cfg in assets:
+        try:
+            _exchange.update_leverage(
+                asset_cfg.leverage, asset_cfg.hedge_symbol, is_cross=True
+            )
+            log.info(
+                "Leverage set: %s=%dx",
+                asset_cfg.hedge_symbol,
+                asset_cfg.leverage,
+            )
+        except Exception:
+            log.error(
+                "Failed to set leverage for %s — disabling hedging",
+                asset_cfg.hedge_symbol,
+                exc_info=True,
+            )
+            _exchange = None
+            return
 
+    log.info(
+        "Hyperliquid ready: %s, assets=%s, testnet=%s",
+        _address,
+        [a.hedge_symbol for a in assets],
+        config.HYPERLIQUID_TESTNET,
+    )
     _log_account_state()
 
 

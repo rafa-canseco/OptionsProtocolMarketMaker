@@ -51,10 +51,11 @@ def recover_positions(tracker: PositionTracker) -> int:
         tracker.positions.append(pos)
         restored += 1
         log.info(
-            "[RECOVERED] %s strike=%.0f hedge=%.4f ETH",
+            "[RECOVERED] %s strike=%.0f hedge=%.4f %s",
             otoken[:10],
             pos.strike,
             pos.hedge_fill_size,
+            pos.underlying.upper(),
         )
 
     if restored:
@@ -65,20 +66,30 @@ def recover_positions(tracker: PositionTracker) -> int:
 
 def _event_to_position(ev: dict[str, Any]) -> Position:
     """Convert a position_opened event back into a Position object."""
+    underlying = ev.get("underlying", "eth")
+    asset_cfg = config.ASSET_MAP.get(underlying)
+    hedge_symbol = asset_cfg.hedge_symbol if asset_cfg else underlying.upper()
+
+    # Support both old (amount_eth/hedge_size_eth) and new field names
+    amount = ev.get("amount", ev.get("amount_eth", 0))
+    hedge_size = ev.get("hedge_size", ev.get("hedge_size_eth", 0.0))
+
     return Position(
         otoken_address=ev["otoken"],
         strike=ev["strike"],
         expiry=ev["expiry"],
         is_put=ev["is_put"],
-        amount_raw=int(ev["amount_eth"] * 10**8),
+        amount_raw=int(amount * 10**8),
         premium_paid_raw=int(ev["premium_usd"] * 10**6),
         user_address=ev.get("user_address", ""),
         tx_hash=ev.get("tx_hash", ""),
         open_time=ev.get("ts", 0),
         spot_at_open=ev["spot"],
         delta_at_open=ev["delta"],
+        underlying=underlying,
+        hedge_symbol=hedge_symbol,
         current_delta=ev["delta"],
-        hedge_fill_size=ev.get("hedge_size_eth", 0.0),
+        hedge_fill_size=hedge_size,
         hedge_fill_price=ev.get("hedge_fill_price", 0.0),
     )
 
@@ -94,28 +105,35 @@ def _verify_hedges(tracker: PositionTracker) -> None:
             )
         return
 
-    eth_pos = next((p for p in hl_positions if p["coin"] == "ETH"), None)
-    if not eth_pos:
-        log.warning("[DRIFT] No ETH position on Hyperliquid")
-        return
+    hl_by_coin = {p["coin"]: p for p in hl_positions}
 
-    hl_size = abs(eth_pos["size"])
-    expected = sum(p.hedge_fill_size for p in tracker.open_positions())
+    for asset_cfg in config.ASSETS:
+        symbol = asset_cfg.hedge_symbol
+        asset_positions = tracker.open_positions(underlying=asset_cfg.name)
+        expected = sum(p.hedge_fill_size for p in asset_positions)
 
-    drift = abs(hl_size - expected)
-    if drift > 0.001:
-        log.warning(
-            "[DRIFT] Hyperliquid ETH=%.4f, expected=%.4f, diff=%.4f",
-            hl_size,
-            expected,
-            drift,
-        )
-    else:
-        log.info(
-            "[HEDGE OK] Hyperliquid ETH=%.4f matches expected=%.4f",
-            hl_size,
-            expected,
-        )
+        hl_pos = hl_by_coin.get(symbol)
+        hl_size = abs(hl_pos["size"]) if hl_pos else 0.0
+
+        if expected == 0.0 and hl_size == 0.0:
+            continue
+
+        drift = abs(hl_size - expected)
+        if drift > 0.001:
+            log.warning(
+                "[DRIFT] %s: Hyperliquid=%.4f, expected=%.4f, diff=%.4f",
+                symbol,
+                hl_size,
+                expected,
+                drift,
+            )
+        else:
+            log.info(
+                "[HEDGE OK] %s: Hyperliquid=%.4f matches expected=%.4f",
+                symbol,
+                hl_size,
+                expected,
+            )
 
 
 def _bootstrap_from_live_state(tracker: PositionTracker) -> int:
@@ -124,99 +142,109 @@ def _bootstrap_from_live_state(tracker: PositionTracker) -> int:
     Used when deploying for the first time with an existing position.
     """
     hl_positions = hedge_executor.get_positions()
-    eth_pos = next((p for p in hl_positions if p["coin"] == "ETH"), None)
-    if not eth_pos:
-        log.info("No existing Hyperliquid position, nothing to bootstrap")
+    if not hl_positions:
+        log.info("No existing Hyperliquid positions, nothing to bootstrap")
         return 0
 
-    log.info(
-        "[BOOTSTRAP] Found Hyperliquid position: size=%.4f entry=$%.2f",
-        eth_pos["size"],
-        eth_pos["entry_price"],
-    )
-
-    try:
-        fills = api_client.get_fills(limit=50)
-    except Exception:
-        log.warning("Failed to fetch fills for bootstrap", exc_info=True)
-        fills = []
-
-    if not fills:
-        log.warning(
-            "[BOOTSTRAP] Hyperliquid position exists but no backend fills. "
-            "Cannot reconstruct option details."
-        )
-        return 0
-
-    # Fetch market data once for spot, IV, and otoken lookup
-    try:
-        market = api_client.get_market_data()
-    except Exception:
-        log.warning("Failed to fetch market data for bootstrap", exc_info=True)
-        market = {}
-
-    spot = market.get("spot_price", eth_pos["entry_price"])
-    iv = market.get("iv", 0.80)
-    otoken_map = {
-        ot["address"].lower(): ot for ot in market.get("available_otokens", [])
-    }
-
-    hl_size = abs(eth_pos["size"])
-    is_short = eth_pos["size"] < 0
+    # Build a map of HL coin → asset config
+    coin_to_asset = {a.hedge_symbol: a for a in config.ASSETS}
 
     bootstrapped = 0
-    for fill in fills:
-        otoken_addr = fill.get("otoken_address", "")
-        if not otoken_addr:
+    for hl_pos in hl_positions:
+        coin = hl_pos["coin"]
+        asset_cfg = coin_to_asset.get(coin)
+        if not asset_cfg:
             continue
 
-        details = otoken_map.get(otoken_addr.lower())
-        if not details:
-            continue
-
-        expiry = details.get("expiry", 0)
-        if expiry < int(time.time()):
-            continue
-
-        amount_raw = int(fill.get("amount", 0))
-        premium_raw = int(fill.get("gross_premium", 0))
-        amount_eth = amount_raw / 10**8
-        premium_usd = premium_raw / 10**6
-
-        is_put = details.get("is_put", is_short)
-        strike = details.get("strike_price", 0)
-        T = max((expiry - int(time.time())) / (365 * 86400), 0.0)
-        delta = bs_delta(is_put, spot, strike, T, config.RISK_FREE_RATE, iv)
-
-        event = {
-            "event": "position_opened",
-            "ts": int(time.time()),
-            "otoken": otoken_addr,
-            "strike": strike,
-            "expiry": expiry,
-            "is_put": is_put,
-            "amount_eth": amount_eth,
-            "premium_usd": premium_usd,
-            "user_address": fill.get("user_address", ""),
-            "tx_hash": fill.get("tx_hash", ""),
-            "spot": spot,
-            "delta": delta,
-            "hedge_action": "SHORT" if is_put else "LONG",
-            "hedge_size_eth": hl_size,
-            "hedge_fill_price": eth_pos["entry_price"],
-        }
-        trade_logger.write_bootstrap_event(event)
-
-        pos = _event_to_position(event)
-        tracker.positions.append(pos)
-        bootstrapped += 1
         log.info(
-            "[BOOTSTRAP] Restored position: %s strike=%.0f delta=%.3f",
-            otoken_addr[:10],
-            pos.strike,
-            delta,
+            "[BOOTSTRAP] Found %s position: size=%.4f entry=$%.2f",
+            coin,
+            hl_pos["size"],
+            hl_pos["entry_price"],
         )
-        break
+
+        try:
+            fills = api_client.get_fills(limit=50)
+        except Exception:
+            log.warning("Failed to fetch fills for bootstrap", exc_info=True)
+            fills = []
+
+        if not fills:
+            log.warning(
+                "[BOOTSTRAP] %s position exists but no backend fills",
+                coin,
+            )
+            continue
+
+        try:
+            market = api_client.get_market_data(asset=asset_cfg.name)
+        except Exception:
+            log.warning("Failed to fetch market data for bootstrap", exc_info=True)
+            market = {}
+
+        spot = market.get("spot", hl_pos["entry_price"])
+        iv = market.get("iv", 0.80)
+        otoken_map = {
+            ot["address"].lower(): ot for ot in market.get("available_otokens", [])
+        }
+
+        hl_size = abs(hl_pos["size"])
+        is_short = hl_pos["size"] < 0
+
+        for fill in fills:
+            otoken_addr = fill.get("otoken_address", "")
+            if not otoken_addr:
+                continue
+
+            details = otoken_map.get(otoken_addr.lower())
+            if not details:
+                continue
+
+            expiry = details.get("expiry", 0)
+            if expiry < int(time.time()):
+                continue
+
+            amount_raw = int(fill.get("amount", 0))
+            premium_raw = int(fill.get("gross_premium", 0))
+            amount = amount_raw / 10**8
+            premium_usd = premium_raw / 10**6
+
+            is_put = details.get("is_put", is_short)
+            strike = details.get("strike_price", 0)
+            T = max((expiry - int(time.time())) / (365 * 86400), 0.0)
+            delta = bs_delta(is_put, spot, strike, T, config.RISK_FREE_RATE, iv)
+
+            event = {
+                "event": "position_opened",
+                "ts": int(time.time()),
+                "otoken": otoken_addr,
+                "underlying": asset_cfg.name,
+                "strike": strike,
+                "expiry": expiry,
+                "is_put": is_put,
+                "amount": amount,
+                "premium_usd": premium_usd,
+                "user_address": fill.get("user_address", ""),
+                "tx_hash": fill.get("tx_hash", ""),
+                "spot": spot,
+                "delta": delta,
+                "hedge_action": "SHORT" if is_put else "LONG",
+                "hedge_size": hl_size,
+                "hedge_fill_price": hl_pos["entry_price"],
+            }
+            trade_logger.write_bootstrap_event(event)
+
+            pos = _event_to_position(event)
+            tracker.positions.append(pos)
+            bootstrapped += 1
+            log.info(
+                "[BOOTSTRAP] Restored %s position: %s strike=%.0f delta=%.3f",
+                asset_cfg.name.upper(),
+                otoken_addr[:10],
+                pos.strike,
+                delta,
+            )
+            break
 
     if bootstrapped:
         _verify_hedges(tracker)
