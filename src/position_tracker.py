@@ -1,5 +1,7 @@
 """Track open positions and portfolio-level net delta."""
 
+from __future__ import annotations
+
 import logging
 import time
 from dataclasses import dataclass
@@ -27,6 +29,8 @@ class Position:
     open_time: int
     spot_at_open: float
     delta_at_open: float
+    underlying: str = "eth"
+    hedge_symbol: str = "ETH"
     current_delta: float = 0.0
     closed: bool = False
     settlement_pnl: float = 0.0
@@ -49,11 +53,11 @@ class Position:
         return self.num_options * self.spot_at_open
 
     @property
-    def hedge_size_eth(self) -> float:
+    def hedge_size(self) -> float:
         return abs(self.current_delta) * self.num_options
 
     def hedge_size_usd(self, spot: float) -> float:
-        return self.hedge_size_eth * spot
+        return self.hedge_size * spot
 
     @property
     def hedge_action(self) -> str:
@@ -76,9 +80,14 @@ class PositionTracker:
         self.positions: list[Position] = []
         self._otoken_cache: dict[str, dict[str, Any]] = {}
 
-    def cache_otokens(self, otokens: list[dict[str, Any]]) -> None:
+    def cache_otokens(
+        self, otokens: list[dict[str, Any]], underlying: str | None = None
+    ) -> None:
         for ot in otokens:
-            self._otoken_cache[ot["address"].lower()] = ot
+            entry = dict(ot)
+            if underlying:
+                entry["underlying"] = underlying
+            self._otoken_cache[entry["address"].lower()] = entry
 
     def get_otoken_details(self, address: str) -> dict[str, Any] | None:
         return self._otoken_cache.get(address.lower())
@@ -89,6 +98,8 @@ class PositionTracker:
         spot: float,
         iv: float,
         risk_free_rate: float,
+        underlying: str = "eth",
+        hedge_symbol: str = "ETH",
     ) -> Position | None:
         otoken_addr = fill.get("otoken_address", "")
         details = self.get_otoken_details(otoken_addr)
@@ -122,6 +133,8 @@ class PositionTracker:
             open_time=int(time.time()),
             spot_at_open=spot,
             delta_at_open=delta,
+            underlying=underlying,
+            hedge_symbol=hedge_symbol,
             current_delta=delta,
         )
         self.positions.append(pos)
@@ -131,7 +144,7 @@ class PositionTracker:
 
         # Execute hedge
         is_buy = not pos.is_put  # long for calls, short for puts
-        hedge_fill = hedge_executor.open_hedge("ETH", is_buy, pos.hedge_size_eth)
+        hedge_fill = hedge_executor.open_hedge(pos.hedge_symbol, is_buy, pos.hedge_size)
         if hedge_fill:
             pos.hedge_fill_size = hedge_fill["size"]
             pos.hedge_fill_price = hedge_fill["avg_price"]
@@ -141,27 +154,34 @@ class PositionTracker:
             strike=pos.strike,
             expiry=pos.expiry,
             is_put=pos.is_put,
-            amount_eth=pos.num_options,
+            amount=pos.num_options,
             premium_usd=pos.premium_paid_usd,
             user_address=pos.user_address,
             tx_hash=pos.tx_hash,
             spot=spot,
             delta=pos.current_delta,
             hedge_action=pos.hedge_action,
-            hedge_size_eth=pos.hedge_fill_size or pos.hedge_size_eth,
+            hedge_size=pos.hedge_fill_size or pos.hedge_size,
             hedge_fill_price=pos.hedge_fill_price,
+            underlying=underlying,
         )
 
         return pos
 
-    def recalculate_deltas(self, spot: float, iv: float, risk_free_rate: float) -> None:
-        for pos in self.open_positions():
+    def recalculate_deltas(
+        self,
+        spot: float,
+        iv: float,
+        risk_free_rate: float,
+        underlying: str | None = None,
+    ) -> None:
+        for pos in self.open_positions(underlying=underlying):
             T = pos.time_to_expiry_years()
             old_delta = pos.current_delta
             pos.current_delta = bs_delta(
                 pos.is_put, spot, pos.strike, T, risk_free_rate, iv
             )
-            new_hedge = pos.hedge_size_eth
+            new_hedge = pos.hedge_size
             if abs(pos.current_delta - old_delta) > 0.02:
                 log.info(
                     "[DELTA CHANGE] %s delta %.3f -> %.3f",
@@ -174,7 +194,7 @@ class PositionTracker:
                 actual_hedge = pos.hedge_fill_size
                 is_buy = not pos.is_put
                 adj_fill = hedge_executor.adjust_hedge(
-                    "ETH", actual_hedge, new_hedge, is_buy
+                    pos.hedge_symbol, actual_hedge, new_hedge, is_buy
                 )
                 fill_price = 0.0
                 if adj_fill:
@@ -189,16 +209,19 @@ class PositionTracker:
                     old_hedge=actual_hedge,
                     new_hedge=new_hedge,
                     hedge_fill_price=fill_price,
+                    underlying=pos.underlying,
                 )
 
-    def check_expiries(self, spot: float) -> list[Position]:
+    def check_expiries(
+        self, spot: float, underlying: str | None = None
+    ) -> list[Position]:
         expired = []
-        for pos in self.open_positions():
+        for pos in self.open_positions(underlying=underlying):
             if pos.is_expired():
                 pos.closed = True
                 # Close hedge on Hyperliquid
                 close_fill = hedge_executor.close_hedge(
-                    "ETH", size=pos.hedge_fill_size or None
+                    pos.hedge_symbol, size=pos.hedge_fill_size or None
                 )
                 if close_fill:
                     pos.hedge_close_price = close_fill["avg_price"]
@@ -217,35 +240,45 @@ class PositionTracker:
                     hedge_pnl=pos.hedge_pnl,
                     hedge_close_price=pos.hedge_close_price,
                     net_pnl=net_pnl,
+                    underlying=pos.underlying,
                 )
 
                 expired.append(pos)
         return expired
 
-    def open_positions(self) -> list[Position]:
-        return [p for p in self.positions if not p.closed]
+    def open_positions(self, underlying: str | None = None) -> list[Position]:
+        positions = [p for p in self.positions if not p.closed]
+        if underlying is not None:
+            positions = [p for p in positions if p.underlying == underlying]
+        return positions
 
-    def net_delta_eth(self) -> float:
+    def net_delta(self, underlying: str | None = None) -> float:
         total = 0.0
-        for pos in self.open_positions():
+        for pos in self.open_positions(underlying=underlying):
             total += pos.current_delta * pos.num_options
         return total
 
-    def net_delta_usd(self, spot: float) -> float:
-        return self.net_delta_eth() * spot
+    def net_delta_usd(self, spot: float, underlying: str | None = None) -> float:
+        return self.net_delta(underlying=underlying) * spot
 
-    def total_premium_paid(self) -> float:
-        return sum(p.premium_paid_usd for p in self.positions)
+    def deployed_usd(self, underlying: str | None = None) -> float:
+        return sum(p.notional_usd for p in self.open_positions(underlying=underlying))
+
+    def total_premium_paid(self, underlying: str | None = None) -> float:
+        positions = self.positions
+        if underlying is not None:
+            positions = [p for p in positions if p.underlying == underlying]
+        return sum(p.premium_paid_usd for p in positions)
 
     def log_portfolio(self, spot: float) -> None:
         open_pos = self.open_positions()
         if not open_pos:
             return
-        net_d = self.net_delta_eth()
+        net_d = self.net_delta()
         log.info(
             "\n[PORTFOLIO]\n"
             "  Open positions: %d\n"
-            "  Net delta: %.4f ETH ($%.2f exposure)\n"
+            "  Net delta: %.4f ($%.2f exposure)\n"
             "  Total premium paid: $%.2f",
             len(open_pos),
             net_d,
@@ -257,7 +290,8 @@ class PositionTracker:
 def _option_label(pos: Position) -> str:
     side = "Put" if pos.is_put else "Call"
     action = "Buy" if pos.is_put else "Sell"
-    return f'"{action} ETH at ${pos.strike:,.0f}" ({side})'
+    symbol = pos.underlying.upper()
+    return f'"{action} {symbol} at ${pos.strike:,.0f}" ({side})'
 
 
 def _log_position_open(
@@ -273,8 +307,8 @@ def _log_position_open(
         "  Delta: %.3f\n"
         "\n"
         "[HEDGE REQUIRED]\n"
-        "  Action: %s ETH\n"
-        "  Size: $%.2f (%.4f ETH @ $%.2f)\n"
+        "  Action: %s %s\n"
+        "  Size: $%.2f (%.4f %s @ $%.2f)\n"
         "  Venue: Hyperliquid",
         label,
         pos.notional_usd,
@@ -286,8 +320,10 @@ def _log_position_open(
         spread_usd,
         pos.current_delta,
         pos.hedge_action,
+        pos.underlying.upper(),
         pos.hedge_size_usd(spot),
-        pos.hedge_size_eth,
+        pos.hedge_size,
+        pos.underlying.upper(),
         spot,
     )
 
@@ -302,7 +338,7 @@ def _calculate_expiry_pnl(pos: Position, spot: float) -> None:
     # Use real fill prices if available, otherwise theoretical
     entry = pos.hedge_fill_price or pos.spot_at_open
     exit_price = pos.hedge_close_price or spot
-    hedge_size = pos.hedge_fill_size or pos.hedge_size_eth
+    hedge_size = pos.hedge_fill_size or pos.hedge_size
 
     if pos.is_put:
         pos.hedge_pnl = (entry - exit_price) * hedge_size
@@ -329,12 +365,12 @@ def _log_expiry(pos: Position, spot: float) -> None:
     )
     log.info(
         "\n[EXPIRY] %s expired %s\n"
-        "  ETH price at expiry: $%.2f\n"
+        "  %s price at expiry: $%.2f\n"
         "  Settlement: $%.2f (%s)\n"
         "\n"
         "[CLOSE HEDGE]\n"
-        "  Action: CLOSE %s ETH\n"
-        "  Size: %.4f ETH\n"
+        "  Action: CLOSE %s %s\n"
+        "  Size: %.4f %s\n"
         "  Entry: $%.2f | Exit: $%.2f\n"
         "  Hedge P&L: %+.2f\n"
         "\n"
@@ -347,11 +383,14 @@ def _log_expiry(pos: Position, spot: float) -> None:
         "  Note: %s",
         label,
         status,
+        pos.underlying.upper(),
         spot,
         pos.settlement_pnl,
         settle_note,
         pos.hedge_action,
-        pos.hedge_size_eth,
+        pos.underlying.upper(),
+        pos.hedge_size,
+        pos.underlying.upper(),
         pos.spot_at_open,
         spot,
         pos.hedge_pnl,

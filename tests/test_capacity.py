@@ -9,10 +9,13 @@ from src.capacity import (
     calculate_capacity_internal,
     capacity_status,
 )
+from src.config import AssetConfig
 
 
 SPOT = 2000.0
-LEVERAGE = 3
+
+ETH_CONFIG = AssetConfig(name="eth", hedge_symbol="ETH", leverage=3, max_exposure=0.8)
+BTC_CONFIG = AssetConfig(name="btc", hedge_symbol="BTC", leverage=2, max_exposure=0.8)
 
 
 def _mock_w3(usdc_balance: int, usdc_allowance: int):
@@ -99,7 +102,7 @@ class TestCapacityStatus:
         assert capacity_status(5.0, 10000.0, 8000.0) == "active"
 
     def test_full_when_capacity_below_threshold(self):
-        assert capacity_status(0.05, 10000.0, 8000.0) == "full"
+        assert capacity_status(0.005, 10000.0, 8000.0) == "full"
 
     def test_full_at_zero(self):
         assert capacity_status(0.0, 10000.0, 8000.0) == "full"
@@ -121,7 +124,6 @@ class TestCalculateCapacityInternal:
     def test_min_of_premium_and_hedge(self, mock_config, mock_hedge):
         """Effective capacity is min(premium_pool, hedge_notional)."""
         mock_config.HEDGE_MODE = "live"
-        mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
         mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
@@ -137,12 +139,16 @@ class TestCalculateCapacityInternal:
         tracker = MagicMock()
         tracker.open_positions.return_value = []
         tracker.total_premium_paid.return_value = 0.0
+        tracker.deployed_usd.return_value = 0.0
 
-        report = calculate_capacity_internal(w3, SPOT, "0xMM", tracker)
+        report = calculate_capacity_internal(
+            w3, SPOT, "0xMM", tracker, asset_config=ETH_CONFIG
+        )
 
-        # min(50000, 45000) = 45000 → 45000/2000 = 22.5 ETH
-        assert report.capacity_usd == pytest.approx(45_000.0, rel=0.01)
-        assert report.capacity_eth == pytest.approx(22.5, rel=0.01)
+        # min(50000, 45000) = 45000
+        # max_exposure 0.8 * 45000 = 36000 → 36000/2000 = 18 ETH
+        assert report.capacity_usd == pytest.approx(36_000.0, rel=0.01)
+        assert report.capacity_eth == pytest.approx(18.0, rel=0.01)
         assert report.premium_pool_usd == pytest.approx(50_000.0, rel=0.01)
 
     @patch("src.capacity.hedge_executor")
@@ -150,7 +156,6 @@ class TestCalculateCapacityInternal:
     def test_premium_pool_is_bottleneck(self, mock_config, mock_hedge):
         """When premium pool < hedge notional, premium pool limits."""
         mock_config.HEDGE_MODE = "live"
-        mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
         mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
@@ -166,8 +171,14 @@ class TestCalculateCapacityInternal:
         tracker = MagicMock()
         tracker.open_positions.return_value = []
         tracker.total_premium_paid.return_value = 0.0
+        tracker.deployed_usd.return_value = 0.0
 
-        report = calculate_capacity_internal(w3, SPOT, "0xMM", tracker)
+        full_exposure = AssetConfig(
+            name="eth", hedge_symbol="ETH", leverage=3, max_exposure=1.0
+        )
+        report = calculate_capacity_internal(
+            w3, SPOT, "0xMM", tracker, asset_config=full_exposure
+        )
 
         assert report.capacity_usd == pytest.approx(10_000.0, rel=0.01)
         assert report.capacity_eth == pytest.approx(5.0, rel=0.01)
@@ -177,7 +188,6 @@ class TestCalculateCapacityInternal:
     def test_allowance_limits_premium_pool(self, mock_config, mock_hedge):
         """Allowance < balance → allowance is the premium pool."""
         mock_config.HEDGE_MODE = "live"
-        mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
         mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
@@ -192,8 +202,14 @@ class TestCalculateCapacityInternal:
         tracker = MagicMock()
         tracker.open_positions.return_value = []
         tracker.total_premium_paid.return_value = 0.0
+        tracker.deployed_usd.return_value = 0.0
 
-        report = calculate_capacity_internal(w3, SPOT, "0xMM", tracker)
+        full_exposure = AssetConfig(
+            name="eth", hedge_symbol="ETH", leverage=3, max_exposure=1.0
+        )
+        report = calculate_capacity_internal(
+            w3, SPOT, "0xMM", tracker, asset_config=full_exposure
+        )
 
         assert report.premium_pool_usd == pytest.approx(5_000.0, rel=0.01)
         assert report.capacity_usd == pytest.approx(5_000.0, rel=0.01)
@@ -203,7 +219,6 @@ class TestCalculateCapacityInternal:
     def test_committed_premium_subtracted(self, mock_config, mock_hedge):
         """Open positions' premium is subtracted from premium pool."""
         mock_config.HEDGE_MODE = "live"
-        mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
         mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
@@ -218,8 +233,14 @@ class TestCalculateCapacityInternal:
         tracker = MagicMock()
         tracker.open_positions.return_value = [MagicMock(), MagicMock()]
         tracker.total_premium_paid.return_value = 8_000.0  # $8k committed
+        tracker.deployed_usd.return_value = 0.0
 
-        report = calculate_capacity_internal(w3, SPOT, "0xMM", tracker)
+        full_exposure = AssetConfig(
+            name="eth", hedge_symbol="ETH", leverage=3, max_exposure=1.0
+        )
+        report = calculate_capacity_internal(
+            w3, SPOT, "0xMM", tracker, asset_config=full_exposure
+        )
 
         # 20k - 8k = 12k premium pool
         assert report.premium_pool_usd == pytest.approx(12_000.0, rel=0.01)
@@ -229,13 +250,12 @@ class TestCalculateCapacityInternal:
     def test_max_amount_ceiling(self, mock_config, mock_hedge):
         """capacity_eth capped by MAX_AMOUNT."""
         mock_config.HEDGE_MODE = "live"
-        mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
         mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
         mock_config.MAX_AMOUNT = 5 * 10**8  # 5 ETH cap
 
-        # Huge pools → 500 ETH capacity before cap
+        # Huge pools → lots of capacity before cap
         w3 = _mock_w3(1_000_000 * 10**6, 1_000_000 * 10**6)
         mock_hedge.get_withdrawable.return_value = 500_000.0
         mock_hedge.get_account_value.return_value = 600_000.0
@@ -243,8 +263,14 @@ class TestCalculateCapacityInternal:
         tracker = MagicMock()
         tracker.open_positions.return_value = []
         tracker.total_premium_paid.return_value = 0.0
+        tracker.deployed_usd.return_value = 0.0
 
-        report = calculate_capacity_internal(w3, SPOT, "0xMM", tracker)
+        full_exposure = AssetConfig(
+            name="eth", hedge_symbol="ETH", leverage=3, max_exposure=1.0
+        )
+        report = calculate_capacity_internal(
+            w3, SPOT, "0xMM", tracker, asset_config=full_exposure
+        )
 
         assert report.capacity_eth == pytest.approx(5.0, rel=0.01)
 
@@ -253,7 +279,6 @@ class TestCalculateCapacityInternal:
     def test_zero_hedge_withdrawable(self, mock_config, mock_hedge):
         """Zero withdrawable on Hyperliquid → capacity limited to 0."""
         mock_config.HEDGE_MODE = "live"
-        mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
         mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
@@ -266,8 +291,11 @@ class TestCalculateCapacityInternal:
         tracker = MagicMock()
         tracker.open_positions.return_value = []
         tracker.total_premium_paid.return_value = 0.0
+        tracker.deployed_usd.return_value = 0.0
 
-        report = calculate_capacity_internal(w3, SPOT, "0xMM", tracker)
+        report = calculate_capacity_internal(
+            w3, SPOT, "0xMM", tracker, asset_config=ETH_CONFIG
+        )
 
         assert report.capacity_usd == pytest.approx(0.0)
         assert report.capacity_eth == pytest.approx(0.0)
@@ -278,7 +306,6 @@ class TestCalculateCapacityInternal:
     def test_status_degraded_when_hedge_low(self, mock_config, mock_hedge):
         """Status is degraded when hedge pool < 40% of premium pool."""
         mock_config.HEDGE_MODE = "live"
-        mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
         mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
@@ -294,8 +321,11 @@ class TestCalculateCapacityInternal:
         tracker = MagicMock()
         tracker.open_positions.return_value = []
         tracker.total_premium_paid.return_value = 0.0
+        tracker.deployed_usd.return_value = 0.0
 
-        report = calculate_capacity_internal(w3, SPOT, "0xMM", tracker)
+        report = calculate_capacity_internal(
+            w3, SPOT, "0xMM", tracker, asset_config=ETH_CONFIG
+        )
 
         assert report.status == "degraded"
 
@@ -304,7 +334,6 @@ class TestCalculateCapacityInternal:
     def test_simulate_mode_uses_premium_only(self, mock_config, mock_hedge):
         """In simulate mode, capacity uses only premium pool (no hedge)."""
         mock_config.HEDGE_MODE = "simulate"
-        mock_config.HEDGE_LEVERAGE = 3
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
         mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
@@ -315,11 +344,106 @@ class TestCalculateCapacityInternal:
         tracker = MagicMock()
         tracker.open_positions.return_value = []
         tracker.total_premium_paid.return_value = 0.0
+        tracker.deployed_usd.return_value = 0.0
 
-        report = calculate_capacity_internal(w3, SPOT, "0xMM", tracker)
+        full_exposure = AssetConfig(
+            name="eth", hedge_symbol="ETH", leverage=3, max_exposure=1.0
+        )
+        report = calculate_capacity_internal(
+            w3, SPOT, "0xMM", tracker, asset_config=full_exposure
+        )
 
         mock_hedge.get_withdrawable.assert_not_called()
         mock_hedge.get_account_value.assert_not_called()
         assert report.capacity_usd == pytest.approx(50_000.0, rel=0.01)
         assert report.capacity_eth == pytest.approx(25.0, rel=0.01)
         assert report.status == "active"
+
+
+class TestSharedPoolMaxExposure:
+    """Test the shared pool with per-asset max exposure model."""
+
+    @patch("src.capacity.hedge_executor")
+    @patch("src.capacity.config")
+    def test_max_exposure_caps_asset(self, mock_config, mock_hedge):
+        """Asset capacity is capped by max_exposure * total_capital."""
+        mock_config.HEDGE_MODE = "simulate"
+        mock_config.USDC_ADDRESS = "0xUSDC"
+        mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
+        mock_config.MAX_AMOUNT = 100 * 10**8
+
+        # $100k total capital
+        w3 = _mock_w3(100_000 * 10**6, 100_000 * 10**6)
+
+        tracker = MagicMock()
+        tracker.open_positions.return_value = []
+        tracker.total_premium_paid.return_value = 0.0
+        # Nothing deployed yet
+        tracker.deployed_usd.return_value = 0.0
+
+        report = calculate_capacity_internal(
+            w3, SPOT, "0xMM", tracker, asset_config=ETH_CONFIG
+        )
+
+        # max_exposure=0.8 * 100k = 80k, available_global=100k
+        # min(80k, 100k) = 80k → 80k/2000 = 40 ETH
+        assert report.capacity_usd == pytest.approx(80_000.0, rel=0.01)
+        assert report.capacity_eth == pytest.approx(40.0, rel=0.01)
+
+    @patch("src.capacity.hedge_executor")
+    @patch("src.capacity.config")
+    def test_deployed_reduces_available(self, mock_config, mock_hedge):
+        """Deployed capital across all assets reduces available_global."""
+        mock_config.HEDGE_MODE = "simulate"
+        mock_config.USDC_ADDRESS = "0xUSDC"
+        mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
+        mock_config.MAX_AMOUNT = 100 * 10**8
+
+        w3 = _mock_w3(100_000 * 10**6, 100_000 * 10**6)
+
+        tracker = MagicMock()
+        tracker.open_positions.return_value = []
+        tracker.total_premium_paid.return_value = 0.0
+        # $40k deployed across all assets, $30k in ETH
+        tracker.deployed_usd.side_effect = lambda underlying=None: (
+            30_000.0 if underlying == "eth" else 40_000.0
+        )
+
+        report = calculate_capacity_internal(
+            w3, SPOT, "0xMM", tracker, asset_config=ETH_CONFIG
+        )
+
+        # total_capital = 100k
+        # max_for_eth = 0.8 * 100k - 30k = 50k
+        # available_global = 100k - 40k = 60k
+        # min(50k, 60k) = 50k
+        assert report.capacity_usd == pytest.approx(50_000.0, rel=0.01)
+
+    @patch("src.capacity.hedge_executor")
+    @patch("src.capacity.config")
+    def test_global_constraint_limits_asset(self, mock_config, mock_hedge):
+        """When available_global < asset cap, global wins."""
+        mock_config.HEDGE_MODE = "simulate"
+        mock_config.USDC_ADDRESS = "0xUSDC"
+        mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
+        mock_config.MAX_AMOUNT = 100 * 10**8
+
+        w3 = _mock_w3(100_000 * 10**6, 100_000 * 10**6)
+
+        tracker = MagicMock()
+        tracker.open_positions.return_value = []
+        tracker.total_premium_paid.return_value = 0.0
+        # $90k deployed total, $10k in BTC
+        tracker.deployed_usd.side_effect = lambda underlying=None: (
+            10_000.0 if underlying == "btc" else 90_000.0
+        )
+
+        report = calculate_capacity_internal(
+            w3, SPOT, "0xMM", tracker, asset_config=BTC_CONFIG
+        )
+
+        # total_capital = 100k
+        # max_for_btc = 0.8 * 100k - 10k = 70k
+        # available_global = 100k - 90k = 10k
+        # min(70k, 10k) = 10k
+        assert report.capacity_usd == pytest.approx(10_000.0, rel=0.01)

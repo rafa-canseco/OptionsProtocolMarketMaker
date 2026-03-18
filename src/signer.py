@@ -55,16 +55,12 @@ def sign_quote(
     return "0x" + signed.signature.hex()
 
 
-def read_maker_nonce(
-    w3: Web3, settler_address: str, mm_address: str
-) -> int:
+def read_maker_nonce(w3: Web3, settler_address: str, mm_address: str) -> int:
     """Read makerNonce from the BatchSettler contract."""
     settler = w3.eth.contract(
         address=Web3.to_checksum_address(settler_address),
         abi=SETTLER_ABI,
     )
-    nonce = settler.functions.makerNonce(
-        Web3.to_checksum_address(mm_address)
-    ).call()
+    nonce = settler.functions.makerNonce(Web3.to_checksum_address(mm_address)).call()
     log.info("makerNonce=%d for %s", nonce, mm_address)
     return nonce

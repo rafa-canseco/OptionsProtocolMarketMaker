@@ -26,9 +26,9 @@ def ws_url(path: str, **params: str) -> str:
     return urlunparse((scheme, parsed.netloc, parsed.path, "", query, ""))
 
 
-def get_market_data() -> dict[str, Any]:
+def get_market_data(asset: str = "eth") -> dict[str, Any]:
     """GET /mm/market — spot, IV, available oTokens, protocol fee."""
-    resp = _SESSION.get(_url("/mm/market"), timeout=_TIMEOUT)
+    resp = _SESSION.get(_url("/mm/market"), params={"asset": asset}, timeout=_TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 
