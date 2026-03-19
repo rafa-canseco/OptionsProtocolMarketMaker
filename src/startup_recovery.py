@@ -66,7 +66,7 @@ def recover_positions(tracker: PositionTracker) -> int:
 
 def _event_to_position(ev: dict[str, Any]) -> Position:
     """Convert a position_opened event back into a Position object."""
-    underlying = ev.get("underlying", "eth")
+    underlying = ev.get("underlying") or "eth"
     asset_cfg = config.ASSET_MAP.get(underlying)
     hedge_symbol = asset_cfg.hedge_symbol if asset_cfg else underlying.upper()
 
