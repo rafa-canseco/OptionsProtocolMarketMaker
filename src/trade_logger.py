@@ -207,7 +207,7 @@ def read_events() -> list[dict[str, Any]]:
 
 
 def read_events_from_supabase() -> list[dict[str, Any]]:
-    """Read all events from Supabase mm_trade_history table."""
+    """Read position events from Supabase mm_trade_history table."""
     client = _get_supabase()
     if not client:
         return []
@@ -215,6 +215,7 @@ def read_events_from_supabase() -> list[dict[str, Any]]:
         resp = (
             client.table("mm_trade_history")
             .select("*")
+            .in_("event", ["position_opened", "position_expired"])
             .order("ts", desc=False)
             .execute()
         )
