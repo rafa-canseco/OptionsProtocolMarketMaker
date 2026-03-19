@@ -122,7 +122,7 @@ class TestCalculateCapacityInternal:
     @patch("src.capacity.hedge_executor")
     @patch("src.capacity.config")
     def test_min_of_premium_and_hedge(self, mock_config, mock_hedge):
-        """Effective capacity is min(premium_pool, hedge_notional)."""
+        """Effective capacity is min(premium_notional, hedge_notional)."""
         mock_config.HEDGE_MODE = "live"
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
@@ -138,15 +138,15 @@ class TestCalculateCapacityInternal:
 
         tracker = MagicMock()
         tracker.open_positions.return_value = []
-        tracker.total_premium_paid.return_value = 0.0
         tracker.deployed_usd.return_value = 0.0
 
         report = calculate_capacity_internal(
             w3, SPOT, "0xMM", tracker, asset_config=ETH_CONFIG
         )
 
-        # min(50000, 45000) = 45000
-        # max_exposure 0.8 * 45000 = 36000 → 36000/2000 = 18 ETH
+        # premium_notional = 50k * 3 = 150k, hedge_notional = 45k
+        # min(150k, 45k) = 45k
+        # max_exposure 0.8 * 45k = 36k → 36k/2000 = 18 ETH
         assert report.capacity_usd == pytest.approx(36_000.0, rel=0.01)
         assert report.capacity_eth == pytest.approx(18.0, rel=0.01)
         assert report.premium_pool_usd == pytest.approx(50_000.0, rel=0.01)
@@ -154,14 +154,14 @@ class TestCalculateCapacityInternal:
     @patch("src.capacity.hedge_executor")
     @patch("src.capacity.config")
     def test_premium_pool_is_bottleneck(self, mock_config, mock_hedge):
-        """When premium pool < hedge notional, premium pool limits."""
+        """When premium_notional < hedge_notional, premium limits."""
         mock_config.HEDGE_MODE = "live"
         mock_config.CAPACITY_RESERVE_RATIO = 0.25
         mock_config.USDC_ADDRESS = "0xUSDC"
         mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
         mock_config.MAX_AMOUNT = 100 * 10**8
 
-        # 10k USDC → premium pool = 10k
+        # 10k USDC → premium pool = 10k → premium_notional = 30k (3x)
         w3 = _mock_w3(10_000 * 10**6, 10_000 * 10**6)
 
         # Hedge: withdrawable $50k × 3 × 0.75 = $112.5k
@@ -170,7 +170,6 @@ class TestCalculateCapacityInternal:
 
         tracker = MagicMock()
         tracker.open_positions.return_value = []
-        tracker.total_premium_paid.return_value = 0.0
         tracker.deployed_usd.return_value = 0.0
 
         full_exposure = AssetConfig(
@@ -180,8 +179,9 @@ class TestCalculateCapacityInternal:
             w3, SPOT, "0xMM", tracker, asset_config=full_exposure
         )
 
-        assert report.capacity_usd == pytest.approx(10_000.0, rel=0.01)
-        assert report.capacity_eth == pytest.approx(5.0, rel=0.01)
+        # premium_notional = 10k * 3 = 30k (leveraged)
+        assert report.capacity_usd == pytest.approx(30_000.0, rel=0.01)
+        assert report.capacity_eth == pytest.approx(15.0, rel=0.01)
 
     @patch("src.capacity.hedge_executor")
     @patch("src.capacity.config")
@@ -201,7 +201,6 @@ class TestCalculateCapacityInternal:
 
         tracker = MagicMock()
         tracker.open_positions.return_value = []
-        tracker.total_premium_paid.return_value = 0.0
         tracker.deployed_usd.return_value = 0.0
 
         full_exposure = AssetConfig(
@@ -212,7 +211,8 @@ class TestCalculateCapacityInternal:
         )
 
         assert report.premium_pool_usd == pytest.approx(5_000.0, rel=0.01)
-        assert report.capacity_usd == pytest.approx(5_000.0, rel=0.01)
+        # premium_notional = 5k * 3 = 15k (leveraged)
+        assert report.capacity_usd == pytest.approx(15_000.0, rel=0.01)
 
     @patch("src.capacity.hedge_executor")
     @patch("src.capacity.config")
@@ -230,9 +230,11 @@ class TestCalculateCapacityInternal:
         mock_hedge.get_withdrawable.return_value = 50_000.0
         mock_hedge.get_account_value.return_value = 60_000.0
 
+        # Mock open positions with real premium_paid_usd values
+        pos1 = MagicMock(premium_paid_usd=4_000.0)
+        pos2 = MagicMock(premium_paid_usd=4_000.0)
         tracker = MagicMock()
-        tracker.open_positions.return_value = [MagicMock(), MagicMock()]
-        tracker.total_premium_paid.return_value = 8_000.0  # $8k committed
+        tracker.open_positions.return_value = [pos1, pos2]
         tracker.deployed_usd.return_value = 0.0
 
         full_exposure = AssetConfig(
@@ -262,7 +264,6 @@ class TestCalculateCapacityInternal:
 
         tracker = MagicMock()
         tracker.open_positions.return_value = []
-        tracker.total_premium_paid.return_value = 0.0
         tracker.deployed_usd.return_value = 0.0
 
         full_exposure = AssetConfig(
@@ -290,7 +291,6 @@ class TestCalculateCapacityInternal:
 
         tracker = MagicMock()
         tracker.open_positions.return_value = []
-        tracker.total_premium_paid.return_value = 0.0
         tracker.deployed_usd.return_value = 0.0
 
         report = calculate_capacity_internal(
@@ -320,7 +320,6 @@ class TestCalculateCapacityInternal:
 
         tracker = MagicMock()
         tracker.open_positions.return_value = []
-        tracker.total_premium_paid.return_value = 0.0
         tracker.deployed_usd.return_value = 0.0
 
         report = calculate_capacity_internal(
@@ -343,7 +342,6 @@ class TestCalculateCapacityInternal:
 
         tracker = MagicMock()
         tracker.open_positions.return_value = []
-        tracker.total_premium_paid.return_value = 0.0
         tracker.deployed_usd.return_value = 0.0
 
         full_exposure = AssetConfig(
@@ -377,7 +375,6 @@ class TestSharedPoolMaxExposure:
 
         tracker = MagicMock()
         tracker.open_positions.return_value = []
-        tracker.total_premium_paid.return_value = 0.0
         # Nothing deployed yet
         tracker.deployed_usd.return_value = 0.0
 
@@ -403,7 +400,6 @@ class TestSharedPoolMaxExposure:
 
         tracker = MagicMock()
         tracker.open_positions.return_value = []
-        tracker.total_premium_paid.return_value = 0.0
         # $40k deployed across all assets, $30k in ETH
         tracker.deployed_usd.side_effect = lambda underlying=None: (
             30_000.0 if underlying == "eth" else 40_000.0
@@ -432,7 +428,6 @@ class TestSharedPoolMaxExposure:
 
         tracker = MagicMock()
         tracker.open_positions.return_value = []
-        tracker.total_premium_paid.return_value = 0.0
         # $90k deployed total, $10k in BTC
         tracker.deployed_usd.side_effect = lambda underlying=None: (
             10_000.0 if underlying == "btc" else 90_000.0

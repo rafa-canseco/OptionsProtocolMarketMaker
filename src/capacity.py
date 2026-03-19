@@ -136,19 +136,27 @@ def calculate_capacity_internal(
     if asset_config is None:
         asset_config = config.ASSET_MAP.get("eth", config.ASSETS[0])
 
-    total_premium_committed = tracker.total_premium_paid()
+    # Only count premiums from OPEN positions. Closed/expired premiums
+    # are already reflected in the USDC balance; subtracting them again
+    # would double-count and drain premium_pool over time.
+    total_premium_committed = sum(
+        p.premium_paid_usd for p in tracker.open_positions()
+    )
     premium_pool, hedge_pool_value, withdrawable = _compute_global_pools(
         w3, mm_address, total_premium_committed
     )
 
-    # Compute total capital.  Per-asset leverage is intentional:
-    # higher-leverage assets see more notional headroom, but
-    # max_exposure caps and the global available_global constraint
-    # prevent over-allocation across the shared pool.
+    leverage = max(asset_config.leverage, 1)
+
+    # Compute total_capital in NOTIONAL terms.
+    # premium_pool is absolute capital; with leverage each dollar of
+    # capital supports `leverage` dollars of notional, so we scale up.
+    # hedge_notional is already in notional terms.
     if config.HEDGE_MODE == "live":
         reserve = config.CAPACITY_RESERVE_RATIO
-        hedge_notional = withdrawable * asset_config.leverage * (1.0 - reserve)
-        total_capital = min(premium_pool, hedge_notional)
+        hedge_notional = withdrawable * leverage * (1.0 - reserve)
+        premium_notional = premium_pool * leverage
+        total_capital = min(premium_notional, hedge_notional)
     else:
         total_capital = premium_pool
 
