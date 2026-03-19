@@ -68,6 +68,8 @@ def capacity_status(
 ) -> str:
     if capacity_usd < FULL_THRESHOLD_USD:
         return "full"
+    if premium_pool_usd < FULL_THRESHOLD_USD:
+        return "full"
     if (
         hedge_live
         and premium_pool_usd > 0
@@ -92,19 +94,18 @@ def _read_usdc_allowance(w3: Web3, mm_address: str) -> float:
     return int.from_bytes(raw, "big") / 10**USDC_DECIMALS
 
 
-def _compute_global_pools(
+def _read_pools(
     w3: Web3,
     mm_address: str,
-    total_premium_committed: float,
 ) -> tuple[float, float, float]:
-    """Compute premium pool and hedge pool (global, shared across assets).
+    """Read on-chain USDC and hedge pool state.
 
     Returns:
-        (premium_pool_usd, hedge_pool_value_usd, hedge_withdrawable_usd)
+        (usdc_available, hedge_pool_value_usd, hedge_withdrawable_usd)
     """
     usdc_balance = _read_usdc_balance(w3, mm_address)
     usdc_allowance = _read_usdc_allowance(w3, mm_address)
-    premium_pool = max(min(usdc_balance, usdc_allowance) - total_premium_committed, 0.0)
+    usdc_available = min(usdc_balance, usdc_allowance)
 
     if config.HEDGE_MODE == "live":
         withdrawable = hedge_executor.get_withdrawable()
@@ -113,7 +114,64 @@ def _compute_global_pools(
         withdrawable = 0.0
         hedge_pool_value = 0.0
 
-    return premium_pool, hedge_pool_value, withdrawable
+    return usdc_available, hedge_pool_value, withdrawable
+
+
+def _live_capacity(
+    premium_pool: float,
+    withdrawable: float,
+    spot: float,
+    leverage: int,
+    max_exposure: float,
+) -> tuple[float, float]:
+    """Compute capacity in live mode using premium-ratio conversion.
+
+    In live mode both pools self-track: USDC balance already reflects
+    premium paid and Hyperliquid withdrawable already reflects hedge
+    margin locked. We convert premium dollars to ETH capacity using the
+    premium/collateral ratio from MM-ECONOMICS.md.
+
+    Returns:
+        (effective_eth, effective_usd)
+    """
+    premium_per_eth = config.CAPACITY_PREMIUM_RATIO * spot
+    max_eth_premium = premium_pool / premium_per_eth if premium_per_eth > 0 else 0.0
+
+    reserve = config.CAPACITY_RESERVE_RATIO
+    usable_hedge = withdrawable * (1.0 - reserve)
+    hedge_margin_per_eth = config.CAPACITY_AVG_DELTA * spot / leverage
+    max_eth_hedge = (
+        usable_hedge / hedge_margin_per_eth if hedge_margin_per_eth > 0 else 0.0
+    )
+
+    capacity_eth = min(max_eth_premium, max_eth_hedge)
+    effective_eth = capacity_eth * max_exposure
+    return effective_eth, effective_eth * spot
+
+
+def _simulate_capacity(
+    usdc_available: float,
+    spot: float,
+    max_exposure: float,
+    tracker,
+    asset_name: str,
+) -> tuple[float, float, float]:
+    """Compute capacity in simulate mode (no self-tracking).
+
+    Returns:
+        (premium_pool, effective_eth, effective_usd)
+    """
+    total_premium = sum(p.premium_paid_usd for p in tracker.open_positions())
+    premium_pool = max(usdc_available - total_premium, 0.0)
+    total_capital = premium_pool
+
+    deployed_total = tracker.deployed_usd()
+    deployed_this = tracker.deployed_usd(underlying=asset_name)
+    available_global = max(total_capital - deployed_total, 0.0)
+    max_for_asset = max(max_exposure * total_capital - deployed_this, 0.0)
+    effective_usd = min(max_for_asset, available_global)
+    effective_eth = effective_usd / spot if spot > 0 else 0.0
+    return premium_pool, effective_eth, effective_usd
 
 
 def calculate_capacity_internal(
@@ -123,53 +181,41 @@ def calculate_capacity_internal(
     tracker,
     asset_config: AssetConfig | None = None,
 ) -> CapacityReport:
-    """Calculate MM capacity for a specific asset using shared pool model.
+    """Calculate MM capacity for a specific asset.
 
-    Shared pool with per-asset max exposure:
-        total_capital = min(premium_pool, hedge_notional)
-        deployed_total = sum(notional across ALL open positions)
-        deployed_this = sum(notional for THIS asset)
-        available_global = total_capital - deployed_total
-        capacity = min(max_exposure * total_capital - deployed_this,
-                       available_global)
+    Live mode: pools self-track (USDC balance and Hyperliquid
+    withdrawable already reflect open positions). Premium dollars
+    are converted to ETH capacity using the premium/collateral ratio.
+
+    Simulate mode: pools don't self-track, so deployed notional
+    is subtracted manually.
     """
     if asset_config is None:
         asset_config = config.ASSET_MAP.get("eth", config.ASSETS[0])
 
-    # Only count premiums from OPEN positions. Closed/expired premiums
-    # are already reflected in the USDC balance; subtracting them again
-    # would double-count and drain premium_pool over time.
-    total_premium_committed = sum(
-        p.premium_paid_usd for p in tracker.open_positions()
-    )
-    premium_pool, hedge_pool_value, withdrawable = _compute_global_pools(
-        w3, mm_address, total_premium_committed
-    )
-
+    usdc_available, hedge_pool_value, withdrawable = _read_pools(w3, mm_address)
     leverage = max(asset_config.leverage, 1)
 
-    # Compute total_capital in NOTIONAL terms.
-    # premium_pool is absolute capital; with leverage each dollar of
-    # capital supports `leverage` dollars of notional, so we scale up.
-    # hedge_notional is already in notional terms.
     if config.HEDGE_MODE == "live":
-        reserve = config.CAPACITY_RESERVE_RATIO
-        hedge_notional = withdrawable * leverage * (1.0 - reserve)
-        premium_notional = premium_pool * leverage
-        total_capital = min(premium_notional, hedge_notional)
+        premium_pool = usdc_available
+        effective_eth, effective_usd = _live_capacity(
+            premium_pool,
+            withdrawable,
+            spot,
+            leverage,
+            asset_config.max_exposure,
+        )
     else:
-        total_capital = premium_pool
-
-    # Shared pool with max exposure cap
-    deployed_total = tracker.deployed_usd()
-    deployed_this = tracker.deployed_usd(underlying=asset_config.name)
-    available_global = max(total_capital - deployed_total, 0.0)
-    max_for_asset = max(asset_config.max_exposure * total_capital - deployed_this, 0.0)
-    effective_usd = min(max_for_asset, available_global)
+        premium_pool, effective_eth, effective_usd = _simulate_capacity(
+            usdc_available,
+            spot,
+            asset_config.max_exposure,
+            tracker,
+            asset_config.name,
+        )
 
     # Apply MAX_AMOUNT ceiling
     max_eth_ceiling = config.MAX_AMOUNT / 10**OTOKEN_DECIMALS
-    effective_eth = effective_usd / spot if spot > 0 else 0.0
     effective_eth = min(effective_eth, max_eth_ceiling)
     effective_usd = min(effective_usd, max_eth_ceiling * spot)
 
