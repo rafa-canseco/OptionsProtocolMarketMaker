@@ -36,7 +36,7 @@ RPC_URL: str = _require("RPC_URL")
 REFRESH_INTERVAL: int = int(os.getenv("REFRESH_INTERVAL", "60"))
 SPREAD_BPS: int = int(os.getenv("SPREAD_BPS", "200"))
 MAX_AMOUNT: int = int(os.getenv("MAX_AMOUNT", "500000000"))
-DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "300"))
+DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "180"))
 CHAIN_ID: int = int(os.getenv("CHAIN_ID", "84532"))
 BATCH_SETTLER: str = os.getenv(
     "BATCH_SETTLER",
