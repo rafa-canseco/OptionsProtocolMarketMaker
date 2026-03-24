@@ -4,7 +4,7 @@ import time
 from typing import Any
 
 from src import config
-from src.pricer import calculate_spread, price_with_spread
+from src.pricer import apply_vol_skew, calculate_spread, price_with_spread
 
 
 def build_quotes(
@@ -52,13 +52,15 @@ def build_quotes(
             utilization=utilization,
         )
 
+        skewed_iv = apply_vol_skew(iv, spot, strike, is_put)
+
         bid_usd = price_with_spread(
             is_put=is_put,
             S=spot,
             K=strike,
             T=T,
             r=config.RISK_FREE_RATE,
-            sigma=iv,
+            sigma=skewed_iv,
             spread_bps=spread_bps,
         )
 
