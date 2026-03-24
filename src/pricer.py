@@ -152,7 +152,7 @@ def check_iv_divergence(
 
     returns = []
     for i in range(1, len(spot_history)):
-        if spot_history[i - 1] > 0:
+        if spot_history[i - 1] > 0 and spot_history[i] > 0:
             returns.append(
                 math.log(spot_history[i] / spot_history[i - 1])
             )
