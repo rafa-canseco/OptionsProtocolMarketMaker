@@ -3,6 +3,7 @@
 import time
 from unittest.mock import patch
 
+from src.pricer import calculate_spread
 from src.quote_builder import build_quotes
 
 
@@ -112,3 +113,81 @@ def test_build_quotes_default_asset_is_eth(mock_config):
     quotes = build_quotes(market, maker_nonce=0)
 
     assert quotes[0]["asset"] == "eth"
+
+
+def test_calculate_spread_base_only():
+    """No inventory or utilization → base spread returned."""
+    result = calculate_spread(200, is_put=True, T=7 / 365)
+    assert result == 200
+
+
+def test_calculate_spread_put_heavy_widens_puts():
+    """Put-heavy inventory widens put spread."""
+    base = calculate_spread(200, is_put=True, T=7 / 365)
+    skewed = calculate_spread(
+        200, is_put=True, T=7 / 365, inventory_imbalance=0.8
+    )
+    assert skewed > base
+
+
+def test_calculate_spread_put_heavy_narrows_calls():
+    """Put-heavy inventory narrows call spread to attract balancing."""
+    base = calculate_spread(200, is_put=False, T=7 / 365)
+    skewed = calculate_spread(
+        200, is_put=False, T=7 / 365, inventory_imbalance=0.8
+    )
+    assert skewed < base
+
+
+def test_calculate_spread_near_expiry_surcharge():
+    """Options expiring in < 1 day get extra spread."""
+    far = calculate_spread(200, is_put=True, T=7 / 365)
+    near = calculate_spread(200, is_put=True, T=0.5 / 365)
+    assert near > far
+
+
+def test_calculate_spread_utilization_surcharge():
+    """High utilization (>80%) widens spread."""
+    normal = calculate_spread(200, is_put=True, T=7 / 365)
+    high_util = calculate_spread(
+        200, is_put=True, T=7 / 365, utilization=0.95
+    )
+    assert high_util > normal
+
+
+def test_calculate_spread_floor():
+    """Spread never drops below 50bps even with heavy narrowing."""
+    result = calculate_spread(
+        60, is_put=True, T=7 / 365, inventory_imbalance=-1.0
+    )
+    assert result >= 50
+
+
+@patch("src.quote_builder.config")
+def test_build_quotes_inventory_widens_put_spread(mock_config):
+    """Put-heavy inventory produces higher bid (lower premium for user)."""
+    mock_config.RISK_FREE_RATE = 0.05
+    mock_config.SPREAD_BPS = 200
+    mock_config.DEADLINE_SECONDS = 300
+    mock_config.MAX_AMOUNT = 500_000_000
+
+    market = {
+        "spot": 2000.0,
+        "iv": 0.6,
+        "available_otokens": [
+            {
+                "address": "0xTOKEN",
+                "strike_price": 1900.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": True,
+            }
+        ],
+    }
+
+    neutral = build_quotes(market, maker_nonce=0)
+    skewed = build_quotes(
+        market, maker_nonce=0, inventory_imbalance=0.9
+    )
+
+    # Wider spread = lower bid price (we pay less)
+    assert skewed[0]["bidPrice"] < neutral[0]["bidPrice"]

@@ -4,7 +4,7 @@ import time
 from typing import Any
 
 from src import config
-from src.pricer import price_with_spread
+from src.pricer import calculate_spread, price_with_spread
 
 
 def build_quotes(
@@ -12,6 +12,8 @@ def build_quotes(
     maker_nonce: int,
     max_amount_raw: int | None = None,
     asset: str = "eth",
+    inventory_imbalance: float = 0.0,
+    utilization: float = 0.0,
 ) -> list[dict[str, Any]]:
     """Price each oToken and build a list of quote dicts ready for signing.
 
@@ -42,6 +44,14 @@ def build_quotes(
 
         T = seconds_to_expiry / (365 * 86400)
 
+        spread_bps = calculate_spread(
+            base_bps=config.SPREAD_BPS,
+            is_put=is_put,
+            T=T,
+            inventory_imbalance=inventory_imbalance,
+            utilization=utilization,
+        )
+
         bid_usd = price_with_spread(
             is_put=is_put,
             S=spot,
@@ -49,7 +59,7 @@ def build_quotes(
             T=T,
             r=config.RISK_FREE_RATE,
             sigma=iv,
-            spread_bps=config.SPREAD_BPS,
+            spread_bps=spread_bps,
         )
 
         # Convert to USDC raw (6 decimals), floor at 1

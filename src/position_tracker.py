@@ -265,6 +265,21 @@ class PositionTracker:
             self.total_premium_paid(),
         )
 
+    def inventory_imbalance(self, underlying: str | None = None) -> float:
+        """Ratio from -1 (all calls) to +1 (all puts). 0 = balanced."""
+        put_delta = 0.0
+        call_delta = 0.0
+        for pos in self.open_positions(underlying=underlying):
+            contribution = abs(pos.current_delta * pos.num_options)
+            if pos.is_put:
+                put_delta += contribution
+            else:
+                call_delta += contribution
+        total = put_delta + call_delta
+        if total == 0:
+            return 0.0
+        return (put_delta - call_delta) / total
+
     def rebalance_hedge(
         self, spot: float, underlying: str, hedge_symbol: str
     ) -> dict | None:
