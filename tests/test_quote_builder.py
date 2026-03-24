@@ -76,8 +76,8 @@ def test_build_quotes_includes_asset_field(mock_config):
         "available_otokens": [
             {
                 "address": "0xBTC_TOKEN",
-                "strike_price": 55000.0,
-                "expiry": int(time.time()) + 86400,
+                "strike_price": 45000.0,
+                "expiry": int(time.time()) + 7 * 86400,
                 "is_put": True,
             }
         ],
@@ -226,3 +226,72 @@ def test_vol_skew_zero_inputs():
     """Zero/invalid inputs return sigma unchanged."""
     assert apply_vol_skew(0.6, S=0, K=2000.0, is_put=True) == 0.6
     assert apply_vol_skew(0.0, S=2000.0, K=2000.0, is_put=True) == 0.0
+
+
+@patch("src.quote_builder.config")
+def test_skip_deep_itm_options(mock_config):
+    """Deep ITM options (|delta| > 0.9) are not quoted."""
+    mock_config.RISK_FREE_RATE = 0.05
+    mock_config.SPREAD_BPS = 200
+    mock_config.DEADLINE_SECONDS = 300
+    mock_config.MAX_AMOUNT = 500_000_000
+
+    market = {
+        "spot": 2000.0,
+        "iv": 0.6,
+        "available_otokens": [
+            {
+                "address": "0xDEEP_ITM",
+                "strike_price": 2500.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": True,
+            },
+            {
+                "address": "0xOTM",
+                "strike_price": 1800.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": True,
+            },
+        ],
+    }
+
+    quotes = build_quotes(market, maker_nonce=0)
+
+    # Deep ITM put (strike 2500 vs spot 2000) should be filtered
+    addresses = [q["oToken"] for q in quotes]
+    assert "0xDEEP_ITM" not in addresses
+    assert "0xOTM" in addresses
+
+
+@patch("src.quote_builder.config")
+def test_skip_very_short_dated(mock_config):
+    """Options expiring in < 2 hours are not quoted."""
+    mock_config.RISK_FREE_RATE = 0.05
+    mock_config.SPREAD_BPS = 200
+    mock_config.DEADLINE_SECONDS = 300
+    mock_config.MAX_AMOUNT = 500_000_000
+
+    market = {
+        "spot": 2000.0,
+        "iv": 0.6,
+        "available_otokens": [
+            {
+                "address": "0xTOO_SHORT",
+                "strike_price": 1900.0,
+                "expiry": int(time.time()) + 3600,  # 1 hour
+                "is_put": True,
+            },
+            {
+                "address": "0xOK",
+                "strike_price": 1900.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": True,
+            },
+        ],
+    }
+
+    quotes = build_quotes(market, maker_nonce=0)
+
+    addresses = [q["oToken"] for q in quotes]
+    assert "0xTOO_SHORT" not in addresses
+    assert "0xOK" in addresses

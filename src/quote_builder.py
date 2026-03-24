@@ -4,7 +4,19 @@ import time
 from typing import Any
 
 from src import config
-from src.pricer import apply_vol_skew, calculate_spread, price_with_spread
+import logging
+
+from src.pricer import (
+    apply_vol_skew,
+    bs_delta,
+    calculate_spread,
+    price_with_spread,
+)
+
+log = logging.getLogger(__name__)
+
+SKIP_DELTA_THRESHOLD = 0.90
+MIN_HOURS_TO_EXPIRY = 2
 
 
 def build_quotes(
@@ -43,6 +55,18 @@ def build_quotes(
             continue
 
         T = seconds_to_expiry / (365 * 86400)
+
+        # Skip very short-dated options (high gamma, hard to hedge)
+        hours_left = seconds_to_expiry / 3600
+        if hours_left < MIN_HOURS_TO_EXPIRY:
+            log.debug("Skip %s: %.1fh to expiry", ot["address"][:10], hours_left)
+            continue
+
+        # Skip deep ITM options (unstable delta, high gamma)
+        delta = bs_delta(is_put, spot, strike, T, config.RISK_FREE_RATE, iv)
+        if abs(delta) > SKIP_DELTA_THRESHOLD:
+            log.debug("Skip %s: |delta|=%.2f > %.2f", ot["address"][:10], abs(delta), SKIP_DELTA_THRESHOLD)
+            continue
 
         spread_bps = calculate_spread(
             base_bps=config.SPREAD_BPS,
