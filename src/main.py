@@ -127,7 +127,9 @@ def _run_asset_cycle(
     # Validate IV before quoting
     if not validate_iv(mkt.iv, label=asset_name.upper()):
         return
-    check_iv_divergence(mkt.iv, _spot_history.get(asset_name, []), label=asset_name.upper())
+    check_iv_divergence(
+        mkt.iv, _spot_history.get(asset_name, []), label=asset_name.upper()
+    )
 
     # Cache oToken details for position tracking
     if otokens:

@@ -1,11 +1,10 @@
 """Build quote structs from market data and BS prices."""
 
+import logging
 import time
 from typing import Any
 
 from src import config
-import logging
-
 from src.pricer import (
     apply_vol_skew,
     bs_delta,
@@ -65,7 +64,10 @@ def build_quotes(
         # Skip deep ITM options (unstable delta, high gamma)
         delta = bs_delta(is_put, spot, strike, T, config.RISK_FREE_RATE, iv)
         if abs(delta) > SKIP_DELTA_THRESHOLD:
-            log.debug("Skip %s: |delta|=%.2f > %.2f", ot["address"][:10], abs(delta), SKIP_DELTA_THRESHOLD)
+            log.debug(
+                "Skip %s: |delta|=%.2f > %.2f",
+                ot["address"][:10], abs(delta), SKIP_DELTA_THRESHOLD,
+            )
             continue
 
         spread_bps = calculate_spread(

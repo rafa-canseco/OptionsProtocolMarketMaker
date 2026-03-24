@@ -121,10 +121,14 @@ def validate_iv(iv: float, label: str = "") -> bool:
         _log.warning("[IV CHECK] %s IV=0, skipping quotes", label)
         return False
     if iv < IV_MIN_VALID:
-        _log.warning("[IV CHECK] %s IV=%.4f below minimum %.2f", label, iv, IV_MIN_VALID)
+        _log.warning(
+            "[IV CHECK] %s IV=%.4f below min %.2f", label, iv, IV_MIN_VALID
+        )
         return False
     if iv > IV_MAX_VALID:
-        _log.warning("[IV CHECK] %s IV=%.4f above maximum %.2f", label, iv, IV_MAX_VALID)
+        _log.warning(
+            "[IV CHECK] %s IV=%.4f above max %.2f", label, iv, IV_MAX_VALID
+        )
         return False
     return True
 
