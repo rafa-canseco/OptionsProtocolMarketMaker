@@ -14,6 +14,7 @@ from web3 import Web3
 from src import api_client, config, fill_listener, hedge_executor, trade_logger
 from src.capacity import calculate_capacity_internal
 from src.position_tracker import PositionTracker
+from src.pricer import check_iv_divergence, validate_iv
 from src.quote_builder import build_quotes, to_api_payload
 from src.signer import build_domain, read_maker_nonce, sign_quote
 from src.startup_recovery import recover_positions
@@ -36,8 +37,11 @@ class MarketSnapshot:
 
 _tracker = PositionTracker()
 _market: dict[str, MarketSnapshot] = {}
+_spot_history: dict[str, list[float]] = {}
 _seen_tx_hashes: set[str] = set()
 _fill_lock = threading.Lock()
+
+SPOT_HISTORY_MAX = 100
 
 
 def _get_market(asset: str) -> MarketSnapshot:
@@ -111,6 +115,19 @@ def _run_asset_cycle(
         mkt.iv,
         len(otokens),
     )
+
+    # Track spot history for realized vol comparison
+    if asset_name not in _spot_history:
+        _spot_history[asset_name] = []
+    if mkt.spot > 0:
+        _spot_history[asset_name].append(mkt.spot)
+        if len(_spot_history[asset_name]) > SPOT_HISTORY_MAX:
+            _spot_history[asset_name] = _spot_history[asset_name][-SPOT_HISTORY_MAX:]
+
+    # Validate IV before quoting
+    if not validate_iv(mkt.iv, label=asset_name.upper()):
+        return
+    check_iv_divergence(mkt.iv, _spot_history.get(asset_name, []), label=asset_name.upper())
 
     # Cache oToken details for position tracking
     if otokens:

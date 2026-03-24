@@ -3,6 +3,7 @@
 Adapted from backend/src/pricing/black_scholes.py — standalone, no backend imports.
 """
 
+import logging
 import math
 
 from scipy.stats import norm
@@ -106,6 +107,71 @@ def bs_theta(
         return (term1 + term2) / 365
     term2 = -r * K * math.exp(-r * T) * norm.cdf(d2)
     return (term1 + term2) / 365
+
+
+IV_DIVERGENCE_WARN = 0.30
+IV_MIN_VALID = 0.05
+IV_MAX_VALID = 3.0
+
+
+def validate_iv(iv: float, label: str = "") -> bool:
+    """Check that IV is within a sane range. Returns True if valid."""
+    _log = logging.getLogger(__name__)
+    if iv <= 0:
+        _log.warning("[IV CHECK] %s IV=0, skipping quotes", label)
+        return False
+    if iv < IV_MIN_VALID:
+        _log.warning("[IV CHECK] %s IV=%.4f below minimum %.2f", label, iv, IV_MIN_VALID)
+        return False
+    if iv > IV_MAX_VALID:
+        _log.warning("[IV CHECK] %s IV=%.4f above maximum %.2f", label, iv, IV_MAX_VALID)
+        return False
+    return True
+
+
+def check_iv_divergence(
+    iv: float, spot_history: list[float], label: str = ""
+) -> float | None:
+    """Compare implied vol against realized vol from spot history.
+
+    Args:
+        iv: Current implied volatility (annualized).
+        spot_history: Recent spot prices (chronological order).
+        label: Label for log messages.
+
+    Returns:
+        Realized vol if computed, None if insufficient data.
+    """
+    _log = logging.getLogger(__name__)
+    if len(spot_history) < 2:
+        return None
+
+    returns = []
+    for i in range(1, len(spot_history)):
+        if spot_history[i - 1] > 0:
+            returns.append(
+                math.log(spot_history[i] / spot_history[i - 1])
+            )
+
+    if not returns:
+        return None
+
+    mean_r = sum(returns) / len(returns)
+    variance = sum((r - mean_r) ** 2 for r in returns) / len(returns)
+    realized_vol = math.sqrt(variance * 365)
+
+    if realized_vol > 0:
+        divergence = abs(iv - realized_vol) / realized_vol
+        if divergence > IV_DIVERGENCE_WARN:
+            _log.warning(
+                "[IV CHECK] %s IV=%.4f vs realized=%.4f (%.0f%% divergence)",
+                label,
+                iv,
+                realized_vol,
+                divergence * 100,
+            )
+
+    return realized_vol
 
 
 VOL_SKEW_SLOPE = 0.15

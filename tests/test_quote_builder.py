@@ -3,7 +3,12 @@
 import time
 from unittest.mock import patch
 
-from src.pricer import apply_vol_skew, calculate_spread
+from src.pricer import (
+    apply_vol_skew,
+    calculate_spread,
+    check_iv_divergence,
+    validate_iv,
+)
 from src.quote_builder import build_quotes
 
 
@@ -295,3 +300,40 @@ def test_skip_very_short_dated(mock_config):
     addresses = [q["oToken"] for q in quotes]
     assert "0xTOO_SHORT" not in addresses
     assert "0xOK" in addresses
+
+
+def test_validate_iv_rejects_zero():
+    assert not validate_iv(0.0)
+
+
+def test_validate_iv_rejects_too_low():
+    assert not validate_iv(0.01)
+
+
+def test_validate_iv_accepts_normal():
+    assert validate_iv(0.6)
+
+
+def test_validate_iv_rejects_too_high():
+    assert not validate_iv(5.0)
+
+
+def test_check_iv_divergence_insufficient_data():
+    assert check_iv_divergence(0.6, []) is None
+    assert check_iv_divergence(0.6, [2000.0]) is None
+
+
+def test_check_iv_divergence_returns_realized_vol():
+    # Stable prices → low realized vol
+    spots = [2000.0] * 20
+    rv = check_iv_divergence(0.6, spots)
+    assert rv is not None
+    assert rv < 0.1  # nearly zero realized vol
+
+
+def test_check_iv_divergence_volatile_prices():
+    # Alternating prices → high realized vol
+    spots = [2000.0, 2100.0] * 20
+    rv = check_iv_divergence(0.6, spots)
+    assert rv is not None
+    assert rv > 0.5  # significant realized vol
