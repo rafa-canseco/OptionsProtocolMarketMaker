@@ -3,7 +3,7 @@
 import time
 from unittest.mock import patch
 
-from src.pricer import calculate_spread
+from src.pricer import apply_vol_skew, calculate_spread
 from src.quote_builder import build_quotes
 
 
@@ -191,3 +191,38 @@ def test_build_quotes_inventory_widens_put_spread(mock_config):
 
     # Wider spread = lower bid price (we pay less)
     assert skewed[0]["bidPrice"] < neutral[0]["bidPrice"]
+
+
+def test_vol_skew_atm_unchanged():
+    """ATM options get approximately unchanged IV."""
+    result = apply_vol_skew(0.6, S=2000.0, K=2000.0, is_put=True)
+    assert abs(result - 0.6) < 0.01
+
+
+def test_vol_skew_otm_put_higher():
+    """OTM puts get higher IV (skew)."""
+    atm = apply_vol_skew(0.6, S=2000.0, K=2000.0, is_put=True)
+    otm_put = apply_vol_skew(0.6, S=2000.0, K=1800.0, is_put=True)
+    assert otm_put > atm
+
+
+def test_vol_skew_otm_call_higher():
+    """OTM calls also get higher IV but less than puts."""
+    otm_put = apply_vol_skew(0.6, S=2000.0, K=1800.0, is_put=True)
+    otm_call = apply_vol_skew(0.6, S=2000.0, K=2200.0, is_put=False)
+    atm = apply_vol_skew(0.6, S=2000.0, K=2000.0, is_put=False)
+    assert otm_call > atm
+    # Put skew should be stronger than call skew at same distance
+    assert otm_put > otm_call
+
+
+def test_vol_skew_clamped():
+    """Extreme moneyness is clamped to max multiplier."""
+    result = apply_vol_skew(0.6, S=2000.0, K=500.0, is_put=True)
+    assert result <= 0.6 * 1.5  # VOL_SKEW_MAX_MULT
+
+
+def test_vol_skew_zero_inputs():
+    """Zero/invalid inputs return sigma unchanged."""
+    assert apply_vol_skew(0.6, S=0, K=2000.0, is_put=True) == 0.6
+    assert apply_vol_skew(0.0, S=2000.0, K=2000.0, is_put=True) == 0.0

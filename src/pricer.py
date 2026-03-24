@@ -76,11 +76,59 @@ def bs_delta(
     return norm.cdf(d1)
 
 
+VOL_SKEW_SLOPE = 0.15
+VOL_SKEW_PUT_BIAS = 0.05
+VOL_SKEW_MIN_MULT = 0.8
+VOL_SKEW_MAX_MULT = 1.5
+
 SKEW_MAX_BPS = 200
 GAMMA_NEAR_DAYS = 3
 GAMMA_NEAR_BPS = 50
 GAMMA_VERY_NEAR_DAYS = 1
 GAMMA_VERY_NEAR_BPS = 100
+
+
+def apply_vol_skew(
+    sigma: float,
+    S: float,
+    K: float,
+    is_put: bool,
+) -> float:
+    """Adjust IV by moneyness to approximate a volatility smile.
+
+    OTM puts get higher IV (demand for downside protection).
+    OTM calls get slightly higher IV (tail risk).
+    ATM options are unchanged.
+
+    Args:
+        sigma: Base implied volatility.
+        S: Spot price.
+        K: Strike price.
+        is_put: True for puts.
+
+    Returns:
+        Adjusted IV.
+    """
+    if S <= 0 or K <= 0 or sigma <= 0:
+        return sigma
+
+    moneyness = math.log(K / S)
+    # moneyness < 0: OTM put / ITM call (strike below spot)
+    # moneyness > 0: ITM put / OTM call (strike above spot)
+
+    # Symmetric component: both tails get higher vol
+    adjustment = VOL_SKEW_SLOPE * moneyness**2
+
+    # Asymmetric component: OTM puts get extra vol (put skew)
+    if is_put and moneyness < 0:
+        adjustment += VOL_SKEW_PUT_BIAS * abs(moneyness)
+    elif not is_put and moneyness > 0:
+        adjustment += VOL_SKEW_PUT_BIAS * abs(moneyness) * 0.5
+
+    multiplier = 1.0 + adjustment
+    multiplier = max(VOL_SKEW_MIN_MULT, min(VOL_SKEW_MAX_MULT, multiplier))
+
+    return sigma * multiplier
 
 
 def calculate_spread(
