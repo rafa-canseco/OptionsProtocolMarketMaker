@@ -76,6 +76,38 @@ def bs_delta(
     return norm.cdf(d1)
 
 
+def bs_gamma(S: float, K: float, T: float, r: float, sigma: float) -> float:
+    """Black-Scholes gamma (same for puts and calls)."""
+    if sigma <= 0 or T <= 0 or S <= 0:
+        return 0.0
+    d1 = _d1(S, K, T, r, sigma)
+    return norm.pdf(d1) / (S * sigma * math.sqrt(T))
+
+
+def bs_vega(S: float, K: float, T: float, r: float, sigma: float) -> float:
+    """Black-Scholes vega (per 1.0 vol change, same for puts and calls)."""
+    if sigma <= 0 or T <= 0 or S <= 0:
+        return 0.0
+    d1 = _d1(S, K, T, r, sigma)
+    return S * norm.pdf(d1) * math.sqrt(T)
+
+
+def bs_theta(
+    is_put: bool, S: float, K: float, T: float, r: float, sigma: float
+) -> float:
+    """Black-Scholes theta (daily decay in USD)."""
+    if sigma <= 0 or T <= 0 or S <= 0:
+        return 0.0
+    d1 = _d1(S, K, T, r, sigma)
+    d2 = _d2(S, K, T, r, sigma)
+    term1 = -(S * norm.pdf(d1) * sigma) / (2 * math.sqrt(T))
+    if is_put:
+        term2 = r * K * math.exp(-r * T) * norm.cdf(-d2)
+        return (term1 + term2) / 365
+    term2 = -r * K * math.exp(-r * T) * norm.cdf(d2)
+    return (term1 + term2) / 365
+
+
 VOL_SKEW_SLOPE = 0.15
 VOL_SKEW_PUT_BIAS = 0.05
 VOL_SKEW_MIN_MULT = 0.8

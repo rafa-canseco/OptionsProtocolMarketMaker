@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src import hedge_executor, trade_logger
-from src.pricer import bs_delta, bs_price
+from src.pricer import bs_delta, bs_gamma, bs_price, bs_theta, bs_vega
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +32,9 @@ class Position:
     underlying: str = "eth"
     hedge_symbol: str = "ETH"
     current_delta: float = 0.0
+    current_gamma: float = 0.0
+    current_vega: float = 0.0
+    current_theta: float = 0.0
     closed: bool = False
     settlement_pnl: float = 0.0
     hedge_pnl: float = 0.0
@@ -120,6 +123,9 @@ class PositionTracker:
 
         T = max((expiry - int(time.time())) / (365 * 86400), 0.0)
         delta = bs_delta(is_put, spot, strike, T, risk_free_rate, iv)
+        gamma = bs_gamma(spot, strike, T, risk_free_rate, iv)
+        vega = bs_vega(spot, strike, T, risk_free_rate, iv)
+        theta = bs_theta(is_put, spot, strike, T, risk_free_rate, iv)
         theo = bs_price(is_put, spot, strike, T, risk_free_rate, iv)
 
         amount_raw = int(fill.get("amount", 0))
@@ -140,6 +146,9 @@ class PositionTracker:
             underlying=underlying,
             hedge_symbol=hedge_symbol,
             current_delta=delta,
+            current_gamma=gamma,
+            current_vega=vega,
+            current_theta=theta,
         )
         self.positions.append(pos)
 
@@ -176,6 +185,11 @@ class PositionTracker:
             T = pos.time_to_expiry_years()
             old_delta = pos.current_delta
             pos.current_delta = bs_delta(
+                pos.is_put, spot, pos.strike, T, risk_free_rate, iv
+            )
+            pos.current_gamma = bs_gamma(spot, pos.strike, T, risk_free_rate, iv)
+            pos.current_vega = bs_vega(spot, pos.strike, T, risk_free_rate, iv)
+            pos.current_theta = bs_theta(
                 pos.is_put, spot, pos.strike, T, risk_free_rate, iv
             )
             new_hedge = pos.hedge_size
@@ -240,6 +254,27 @@ class PositionTracker:
     def net_delta_usd(self, spot: float, underlying: str | None = None) -> float:
         return self.net_delta(underlying=underlying) * spot
 
+    def portfolio_greeks(
+        self, underlying: str | None = None
+    ) -> dict[str, float]:
+        """Aggregate Greeks across open positions."""
+        delta = 0.0
+        gamma = 0.0
+        vega = 0.0
+        theta = 0.0
+        for pos in self.open_positions(underlying=underlying):
+            n = pos.num_options
+            delta += pos.current_delta * n
+            gamma += pos.current_gamma * n
+            vega += pos.current_vega * n
+            theta += pos.current_theta * n
+        return {
+            "delta": delta,
+            "gamma": gamma,
+            "vega": vega,
+            "theta": theta,
+        }
+
     def deployed_usd(self, underlying: str | None = None) -> float:
         return sum(p.notional_usd for p in self.open_positions(underlying=underlying))
 
@@ -253,15 +288,19 @@ class PositionTracker:
         open_pos = self.open_positions()
         if not open_pos:
             return
-        net_d = self.net_delta()
+        g = self.portfolio_greeks()
         log.info(
             "\n[PORTFOLIO]\n"
             "  Open positions: %d\n"
-            "  Net delta: %.4f ($%.2f exposure)\n"
+            "  Delta: %.4f ($%.2f exposure)\n"
+            "  Gamma: %.6f | Vega: $%.2f | Theta: $%.2f/day\n"
             "  Total premium paid: $%.2f",
             len(open_pos),
-            net_d,
-            abs(net_d) * spot,
+            g["delta"],
+            abs(g["delta"]) * spot,
+            g["gamma"],
+            g["vega"],
+            g["theta"],
             self.total_premium_paid(),
         )
 
