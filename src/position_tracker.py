@@ -75,10 +75,14 @@ class Position:
         return int(time.time()) >= self.expiry
 
 
+HEDGE_REBALANCE_THRESHOLD = 0.001  # minimum ETH diff to trigger rebalance
+
+
 class PositionTracker:
     def __init__(self) -> None:
         self.positions: list[Position] = []
         self._otoken_cache: dict[str, dict[str, Any]] = {}
+        self._simulated_hedge: dict[str, float] = {}
 
     def cache_otokens(
         self, otokens: list[dict[str, Any]], underlying: str | None = None
@@ -142,13 +146,6 @@ class PositionTracker:
         spread_usd = pos.premium_paid_usd - theo * pos.num_options
         _log_position_open(pos, spot, theo, spread_usd)
 
-        # Execute hedge
-        is_buy = not pos.is_put  # long for calls, short for puts
-        hedge_fill = hedge_executor.open_hedge(pos.hedge_symbol, is_buy, pos.hedge_size)
-        if hedge_fill:
-            pos.hedge_fill_size = hedge_fill["size"]
-            pos.hedge_fill_price = hedge_fill["avg_price"]
-
         trade_logger.log_position_opened(
             otoken=pos.otoken_address,
             strike=pos.strike,
@@ -183,32 +180,20 @@ class PositionTracker:
             )
             new_hedge = pos.hedge_size
             if abs(pos.current_delta - old_delta) > 0.02:
+                old_hedge = abs(old_delta) * pos.num_options
                 log.info(
                     "[DELTA CHANGE] %s delta %.3f -> %.3f",
                     _option_label(pos),
                     old_delta,
                     pos.current_delta,
                 )
-                # Use actual exchange position so skipped adjustments
-                # accumulate until they cross the exchange minimum
-                actual_hedge = pos.hedge_fill_size
-                is_buy = not pos.is_put
-                adj_fill = hedge_executor.adjust_hedge(
-                    pos.hedge_symbol, actual_hedge, new_hedge, is_buy
-                )
-                fill_price = 0.0
-                if adj_fill:
-                    pos.hedge_fill_size = actual_hedge + adj_fill["size"]
-                    pos.hedge_fill_price = adj_fill["avg_price"]
-                    fill_price = adj_fill["avg_price"]
-
                 trade_logger.log_delta_rebalanced(
                     otoken=pos.otoken_address,
                     old_delta=old_delta,
                     new_delta=pos.current_delta,
-                    old_hedge=actual_hedge,
+                    old_hedge=old_hedge,
                     new_hedge=new_hedge,
-                    hedge_fill_price=fill_price,
+                    hedge_fill_price=0.0,
                     underlying=pos.underlying,
                 )
 
@@ -219,12 +204,6 @@ class PositionTracker:
         for pos in self.open_positions(underlying=underlying):
             if pos.is_expired():
                 pos.closed = True
-                # Close hedge on Hyperliquid
-                close_fill = hedge_executor.close_hedge(
-                    pos.hedge_symbol, size=pos.hedge_fill_size or None
-                )
-                if close_fill:
-                    pos.hedge_close_price = close_fill["avg_price"]
                 _calculate_expiry_pnl(pos, spot)
                 _log_expiry(pos, spot)
 
@@ -285,6 +264,64 @@ class PositionTracker:
             abs(net_d) * spot,
             self.total_premium_paid(),
         )
+
+    def rebalance_hedge(
+        self, spot: float, underlying: str, hedge_symbol: str
+    ) -> dict | None:
+        """Adjust aggregate hedge to match portfolio net delta.
+
+        Instead of hedging each position individually, maintains ONE
+        hedge per underlying on Hyperliquid sized to net portfolio delta.
+        """
+        from src import config
+
+        net_d = self.net_delta(underlying=underlying)
+
+        if config.HEDGE_MODE == "live":
+            hl_positions = hedge_executor.get_positions()
+            current_pos = next(
+                (p for p in hl_positions if p["coin"] == hedge_symbol),
+                None,
+            )
+            current_size = current_pos["size"] if current_pos else 0.0
+        else:
+            current_size = self._simulated_hedge.get(underlying, 0.0)
+
+        diff = net_d - current_size
+
+        if abs(diff) < HEDGE_REBALANCE_THRESHOLD:
+            return None
+
+        is_buy = diff > 0
+        fill = hedge_executor.open_hedge(
+            hedge_symbol, is_buy, abs(diff)
+        )
+
+        if fill:
+            log.info(
+                "[AGGREGATE HEDGE] %s %s %.4f filled @ $%.2f"
+                " (net_delta=%.4f current=%.4f)",
+                "BUY" if is_buy else "SELL",
+                hedge_symbol,
+                fill["size"],
+                fill["avg_price"],
+                net_d,
+                current_size,
+            )
+        else:
+            log.info(
+                "[AGGREGATE HEDGE] %s %s %.4f (simulated)"
+                " (net_delta=%.4f current=%.4f)",
+                "BUY" if is_buy else "SELL",
+                hedge_symbol,
+                abs(diff),
+                net_d,
+                current_size,
+            )
+            if config.HEDGE_MODE != "live":
+                self._simulated_hedge[underlying] = net_d
+
+        return fill
 
 
 def _option_label(pos: Position) -> str:

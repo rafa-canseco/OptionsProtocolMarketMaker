@@ -145,13 +145,19 @@ def test_adjust_hedge_skip_tiny():
 
 @patch("src.config.HEDGE_MODE", "live")
 def test_full_lifecycle_with_mock_hyperliquid():
-    """Full flow: fill → open hedge → delta recalc → expiry → close.
+    """Full flow: fill → aggregate hedge → expiry → hedge closed.
 
-    Verifies real fill prices are used in P&L when available.
+    Verifies aggregate hedging opens/closes via rebalance_hedge.
     """
     _setup_live_mode()
     hedge_executor._exchange.market_open.return_value = MOCK_OPEN_RESULT
     hedge_executor._exchange.market_close.return_value = MOCK_CLOSE_RESULT
+    # No existing HL positions initially
+    hedge_executor._info.user_state.return_value = {
+        "marginSummary": {"accountValue": "30000.0"},
+        "withdrawable": "12500.50",
+        "assetPositions": [],
+    }
 
     tracker = PositionTracker()
     tracker.cache_otokens(
@@ -178,31 +184,48 @@ def test_full_lifecycle_with_mock_hyperliquid():
         RF,
     )
 
-    # Verify hedge was executed
+    # add_position no longer hedges individually
     assert pos is not None
+    hedge_executor._exchange.market_open.assert_not_called()
+
+    # Aggregate rebalance opens the hedge
+    tracker.rebalance_hedge(SPOT, "eth", "ETH")
     hedge_executor._exchange.market_open.assert_called_once()
     call_args = hedge_executor._exchange.market_open.call_args
     assert call_args[0][0] == "ETH"
-    assert call_args[0][1] is False  # short for puts
-    assert pos.hedge_fill_price == 1973.50
-    assert pos.hedge_fill_size == 1.08
+    assert not call_args[0][1]  # SHORT for negative net delta
 
     # Wait for expiry
     time.sleep(3)
 
+    # Simulate HL having the short position
+    hedge_size = pos.hedge_size
+    hedge_executor._info.user_state.return_value = {
+        "marginSummary": {"accountValue": "30000.0"},
+        "withdrawable": "12500.50",
+        "assetPositions": [
+            {
+                "position": {
+                    "coin": "ETH",
+                    "szi": str(-hedge_size),
+                    "entryPx": "1973.50",
+                    "unrealizedPnl": "100.0",
+                    "leverage": {"type": "cross", "value": 3},
+                }
+            }
+        ],
+    }
+    hedge_executor._exchange.market_open.reset_mock()
+
     expired = tracker.check_expiries(spot=1850.0)
     assert len(expired) == 1
 
-    # Verify hedge was closed
-    hedge_executor._exchange.market_close.assert_called_once()
-
-    # P&L uses real fill prices
-    p = expired[0]
-    assert p.hedge_fill_price == 1973.50
-    assert p.hedge_close_price == 1850.25
-    # Short entry 1973.50, exit 1850.25 → profit
-    expected_hedge_pnl = (1973.50 - 1850.25) * 1.08
-    assert abs(p.hedge_pnl - expected_hedge_pnl) < 0.01
+    # Aggregate rebalance after expiry closes the hedge
+    # net_delta=0, current=-hedge_size → buy to close
+    tracker.rebalance_hedge(1850.0, "eth", "ETH")
+    hedge_executor._exchange.market_open.assert_called_once()
+    close_args = hedge_executor._exchange.market_open.call_args
+    assert close_args[0][1]  # BUY to close short
 
 
 @patch("src.config.HEDGE_MODE", "live")

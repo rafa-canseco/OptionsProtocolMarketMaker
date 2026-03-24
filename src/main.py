@@ -73,6 +73,9 @@ def run_cycle(
                     len(expired),
                     asset_cfg.name.upper(),
                 )
+                _tracker.rebalance_hedge(
+                    mkt.spot, asset_cfg.name, asset_cfg.hedge_symbol
+                )
 
     # 4. Per-asset: fetch market data, quote, capacity
     for asset_cfg in config.ASSETS:
@@ -119,6 +122,7 @@ def _run_asset_cycle(
         _tracker.recalculate_deltas(
             mkt.spot, mkt.iv, config.RISK_FREE_RATE, underlying=asset_name
         )
+        _tracker.rebalance_hedge(mkt.spot, asset_name, asset_cfg.hedge_symbol)
         _tracker.log_portfolio(mkt.spot)
 
     # Log capacity snapshot
@@ -338,6 +342,7 @@ def _handle_fill(fill: dict) -> None:
             underlying=underlying,
             hedge_symbol=hedge_symbol,
         )
+        _tracker.rebalance_hedge(mkt.spot, underlying, hedge_symbol)
         _tracker.log_portfolio(mkt.spot)
 
 
