@@ -316,3 +316,88 @@ def test_unknown_otoken_ignored():
 
     assert pos is None
     assert len(tracker.positions) == 0
+
+
+def test_greeks_computed_on_open():
+    """Position has gamma, vega, theta set after add_position."""
+    tracker = PositionTracker()
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xPUT_G",
+                "strike_price": 1900.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": True,
+            }
+        ]
+    )
+    pos = tracker.add_position(
+        {
+            "otoken_address": "0xPUT_G",
+            "amount": 100000000,
+            "gross_premium": 20000000,
+            "user_address": "0xU",
+            "tx_hash": "0xT",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
+    assert pos.current_gamma > 0
+    assert pos.current_vega > 0
+    assert pos.current_theta < 0  # theta is negative (time decay)
+
+
+def test_portfolio_greeks_aggregation():
+    """Portfolio Greeks aggregate across positions."""
+    tracker = PositionTracker()
+    expiry = int(time.time()) + 7 * 86400
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xPUT_A",
+                "strike_price": 1900.0,
+                "expiry": expiry,
+                "is_put": True,
+            },
+            {
+                "address": "0xCALL_A",
+                "strike_price": 2100.0,
+                "expiry": expiry,
+                "is_put": False,
+            },
+        ]
+    )
+    tracker.add_position(
+        {
+            "otoken_address": "0xPUT_A",
+            "amount": 100000000,
+            "gross_premium": 20000000,
+            "user_address": "0xU1",
+            "tx_hash": "0xT1",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
+    tracker.add_position(
+        {
+            "otoken_address": "0xCALL_A",
+            "amount": 100000000,
+            "gross_premium": 30000000,
+            "user_address": "0xU2",
+            "tx_hash": "0xT2",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
+
+    g = tracker.portfolio_greeks()
+    assert "delta" in g
+    assert "gamma" in g
+    assert "vega" in g
+    assert "theta" in g
+    assert g["gamma"] > 0  # gamma is always positive
+    assert g["vega"] > 0
+    assert g["theta"] < 0  # selling options: theta works against us
