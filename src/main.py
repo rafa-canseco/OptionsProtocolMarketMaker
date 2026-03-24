@@ -169,13 +169,24 @@ def _run_asset_cycle(
     # Read makerNonce from chain
     nonce = read_maker_nonce(w3, config.BATCH_SETTLER, mm_address)
 
-    # Price and build quotes (dynamic maxAmount)
+    # Price and build quotes (dynamic maxAmount + spread)
     max_amount_raw = None
+    utilization = 0.0
     if cap:
         max_amount_raw = int(cap.capacity_eth * 10**OTOKEN_DECIMALS)
         max_amount_raw = min(max_amount_raw, config.MAX_AMOUNT)
+        if cap.capacity_usd > 0 and cap.open_positions_notional_usd > 0:
+            utilization = cap.open_positions_notional_usd / (
+                cap.capacity_usd + cap.open_positions_notional_usd
+            )
+    imbalance = _tracker.inventory_imbalance(underlying=asset_name)
     quotes = build_quotes(
-        market, nonce, max_amount_raw=max_amount_raw, asset=asset_name
+        market,
+        nonce,
+        max_amount_raw=max_amount_raw,
+        asset=asset_name,
+        inventory_imbalance=imbalance,
+        utilization=utilization,
     )
     if not quotes:
         log.warning("No valid quotes for %s", asset_name.upper())

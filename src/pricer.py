@@ -76,6 +76,59 @@ def bs_delta(
     return norm.cdf(d1)
 
 
+SKEW_MAX_BPS = 200
+GAMMA_NEAR_DAYS = 3
+GAMMA_NEAR_BPS = 50
+GAMMA_VERY_NEAR_DAYS = 1
+GAMMA_VERY_NEAR_BPS = 100
+
+
+def calculate_spread(
+    base_bps: int,
+    is_put: bool,
+    T: float,
+    inventory_imbalance: float = 0.0,
+    utilization: float = 0.0,
+) -> int:
+    """Dynamic spread adjusted for inventory, gamma risk, and utilization.
+
+    Args:
+        base_bps: Base spread in basis points.
+        is_put: True for put options.
+        T: Time to expiry in years.
+        inventory_imbalance: -1 (all calls) to +1 (all puts).
+        utilization: 0 to 1, fraction of capacity deployed.
+
+    Returns:
+        Adjusted spread in basis points (minimum 50).
+    """
+    spread = float(base_bps)
+
+    # 1. Inventory skew — widen on overweight side, narrow on underweight
+    if inventory_imbalance != 0:
+        if is_put and inventory_imbalance > 0:
+            spread += inventory_imbalance * SKEW_MAX_BPS
+        elif not is_put and inventory_imbalance < 0:
+            spread += abs(inventory_imbalance) * SKEW_MAX_BPS
+        elif is_put and inventory_imbalance < 0:
+            spread -= abs(inventory_imbalance) * SKEW_MAX_BPS * 0.5
+        elif not is_put and inventory_imbalance > 0:
+            spread -= inventory_imbalance * SKEW_MAX_BPS * 0.5
+
+    # 2. Near-expiry gamma surcharge
+    days = T * 365
+    if days < GAMMA_VERY_NEAR_DAYS:
+        spread += GAMMA_VERY_NEAR_BPS
+    elif days < GAMMA_NEAR_DAYS:
+        spread += GAMMA_NEAR_BPS
+
+    # 3. Utilization surcharge (kicks in above 80%)
+    if utilization > 0.8:
+        spread += (utilization - 0.8) * 500
+
+    return max(int(spread), 50)
+
+
 def price_with_spread(
     is_put: bool,
     S: float,
