@@ -129,18 +129,14 @@ def test_calculate_spread_base_only():
 def test_calculate_spread_put_heavy_widens_puts():
     """Put-heavy inventory widens put spread."""
     base = calculate_spread(200, is_put=True, T=7 / 365)
-    skewed = calculate_spread(
-        200, is_put=True, T=7 / 365, inventory_imbalance=0.8
-    )
+    skewed = calculate_spread(200, is_put=True, T=7 / 365, inventory_imbalance=0.8)
     assert skewed > base
 
 
 def test_calculate_spread_put_heavy_narrows_calls():
     """Put-heavy inventory narrows call spread to attract balancing."""
     base = calculate_spread(200, is_put=False, T=7 / 365)
-    skewed = calculate_spread(
-        200, is_put=False, T=7 / 365, inventory_imbalance=0.8
-    )
+    skewed = calculate_spread(200, is_put=False, T=7 / 365, inventory_imbalance=0.8)
     assert skewed < base
 
 
@@ -154,17 +150,13 @@ def test_calculate_spread_near_expiry_surcharge():
 def test_calculate_spread_utilization_surcharge():
     """High utilization (>80%) widens spread."""
     normal = calculate_spread(200, is_put=True, T=7 / 365)
-    high_util = calculate_spread(
-        200, is_put=True, T=7 / 365, utilization=0.95
-    )
+    high_util = calculate_spread(200, is_put=True, T=7 / 365, utilization=0.95)
     assert high_util > normal
 
 
 def test_calculate_spread_floor():
     """Spread never drops below 50bps even with heavy narrowing."""
-    result = calculate_spread(
-        60, is_put=True, T=7 / 365, inventory_imbalance=-1.0
-    )
+    result = calculate_spread(60, is_put=True, T=7 / 365, inventory_imbalance=-1.0)
     assert result >= 50
 
 
@@ -190,9 +182,7 @@ def test_build_quotes_inventory_widens_put_spread(mock_config):
     }
 
     neutral = build_quotes(market, maker_nonce=0)
-    skewed = build_quotes(
-        market, maker_nonce=0, inventory_imbalance=0.9
-    )
+    skewed = build_quotes(market, maker_nonce=0, inventory_imbalance=0.9)
 
     # Wider spread = lower bid price (we pay less)
     assert skewed[0]["bidPrice"] < neutral[0]["bidPrice"]

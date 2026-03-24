@@ -254,9 +254,7 @@ class PositionTracker:
     def net_delta_usd(self, spot: float, underlying: str | None = None) -> float:
         return self.net_delta(underlying=underlying) * spot
 
-    def portfolio_greeks(
-        self, underlying: str | None = None
-    ) -> dict[str, float]:
+    def portfolio_greeks(self, underlying: str | None = None) -> dict[str, float]:
         """Aggregate Greeks across open positions."""
         delta = 0.0
         gamma = 0.0
@@ -332,7 +330,22 @@ class PositionTracker:
         net_d = self.net_delta(underlying=underlying)
 
         if config.HEDGE_MODE == "live":
-            hl_positions = hedge_executor.get_positions()
+            try:
+                hl_positions = hedge_executor.get_positions()
+            except Exception:
+                log.error(
+                    "[AGGREGATE HEDGE] Failed to read HL positions"
+                    " for %s, skipping rebalance",
+                    hedge_symbol,
+                )
+                return None
+            if not hl_positions and self._simulated_hedge.get(underlying):
+                log.warning(
+                    "[AGGREGATE HEDGE] HL returned empty positions"
+                    " but expected hedge for %s, skipping",
+                    hedge_symbol,
+                )
+                return None
             current_pos = next(
                 (p for p in hl_positions if p["coin"] == hedge_symbol),
                 None,
@@ -347,9 +360,7 @@ class PositionTracker:
             return None
 
         is_buy = diff > 0
-        fill = hedge_executor.open_hedge(
-            hedge_symbol, is_buy, abs(diff)
-        )
+        fill = hedge_executor.open_hedge(hedge_symbol, is_buy, abs(diff))
 
         if fill:
             log.info(
@@ -359,6 +370,16 @@ class PositionTracker:
                 hedge_symbol,
                 fill["size"],
                 fill["avg_price"],
+                net_d,
+                current_size,
+            )
+        elif config.HEDGE_MODE == "live":
+            log.error(
+                "[AGGREGATE HEDGE] LIVE HEDGE FAILED %s %s %.4f"
+                " (net_delta=%.4f current=%.4f)",
+                "BUY" if is_buy else "SELL",
+                hedge_symbol,
+                abs(diff),
                 net_d,
                 current_size,
             )
@@ -372,8 +393,7 @@ class PositionTracker:
                 net_d,
                 current_size,
             )
-            if config.HEDGE_MODE != "live":
-                self._simulated_hedge[underlying] = net_d
+            self._simulated_hedge[underlying] = net_d
 
         return fill
 

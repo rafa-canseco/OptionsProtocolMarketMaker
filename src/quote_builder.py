@@ -66,7 +66,9 @@ def build_quotes(
         if abs(delta) > SKIP_DELTA_THRESHOLD:
             log.debug(
                 "Skip %s: |delta|=%.2f > %.2f",
-                ot["address"][:10], abs(delta), SKIP_DELTA_THRESHOLD,
+                ot["address"][:10],
+                abs(delta),
+                SKIP_DELTA_THRESHOLD,
             )
             continue
 
