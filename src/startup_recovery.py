@@ -29,34 +29,44 @@ def recover_positions(tracker: PositionTracker) -> int:
 
     log.info("Loaded %d events from %s", len(events), source)
 
-    opened: dict[str, dict[str, Any]] = {}
-    closed: set[str] = set()
+    opens_by_otoken: dict[str, list[dict[str, Any]]] = {}
+    close_counts: dict[str, int] = {}
+    seen_tx: set[str] = set()
 
     for ev in events:
         event_type = ev.get("event")
         otoken = ev.get("otoken", "")
         if event_type == "position_opened":
-            opened[otoken] = ev
+            tx = ev.get("tx_hash", "")
+            if tx and tx in seen_tx:
+                continue
+            if tx:
+                seen_tx.add(tx)
+            opens_by_otoken.setdefault(otoken, []).append(ev)
         elif event_type == "position_expired":
-            closed.add(otoken)
+            close_counts[otoken] = close_counts.get(otoken, 0) + 1
 
     restored = 0
-    for otoken, ev in opened.items():
-        if otoken in closed:
-            continue
-        if ev.get("expiry", 0) < int(time.time()):
-            log.info("Skipping expired-but-unlogged position: %s", otoken[:10])
-            continue
-        pos = _event_to_position(ev)
-        tracker.positions.append(pos)
-        restored += 1
-        log.info(
-            "[RECOVERED] %s strike=%.0f hedge=%.4f %s",
-            otoken[:10],
-            pos.strike,
-            pos.hedge_fill_size,
-            pos.underlying.upper(),
-        )
+    for otoken, opens in opens_by_otoken.items():
+        n_closed = close_counts.get(otoken, 0)
+        still_open = opens[n_closed:]
+        for ev in still_open:
+            if ev.get("expiry", 0) < int(time.time()):
+                log.info(
+                    "Skipping expired-but-unlogged position: %s",
+                    otoken[:10],
+                )
+                continue
+            pos = _event_to_position(ev)
+            tracker.positions.append(pos)
+            restored += 1
+            log.info(
+                "[RECOVERED] %s strike=%.0f hedge=%.4f %s",
+                otoken[:10],
+                pos.strike,
+                pos.hedge_fill_size,
+                pos.underlying.upper(),
+            )
 
     if restored:
         _verify_hedges(tracker)

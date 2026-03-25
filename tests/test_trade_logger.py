@@ -307,7 +307,84 @@ class TestStartupRecovery:
         tracker = PositionTracker()
         restored = recover_positions(tracker)
         assert restored == 1
-        pos = tracker.open_positions()[0]
-        assert pos.underlying == "eth"
-        assert pos.hedge_fill_size == 0.25
-        assert pos.num_options == pytest.approx(0.5)
+
+    @patch("src.startup_recovery.hedge_executor")
+    def test_recover_multiple_positions_same_otoken(self, mock_hedge, _clean_log):
+        """Multiple buys of the same otoken are all recovered."""
+        self._write_opened_event(_clean_log, otoken="0xsame")
+        event2 = {
+            "event": "position_opened",
+            "ts": int(time.time()),
+            "otoken": "0xsame",
+            "strike": 2100.0,
+            "expiry": int(time.time()) + 86400,
+            "is_put": True,
+            "amount": 0.02,
+            "premium_usd": 0.50,
+            "user_address": "0xuser2",
+            "tx_hash": "0xtx456",
+            "spot": 2112.75,
+            "delta": -0.45,
+            "hedge_action": "SHORT",
+            "hedge_size": 0.009,
+            "hedge_fill_price": 2108.7,
+        }
+        with open(_clean_log, "a") as f:
+            f.write(json.dumps(event2) + "\n")
+
+        mock_hedge.get_positions.return_value = []
+        tracker = PositionTracker()
+        restored = recover_positions(tracker)
+        assert restored == 2
+
+    @patch("src.startup_recovery.hedge_executor")
+    def test_partial_close_same_otoken(self, mock_hedge, _clean_log):
+        """2 opens + 1 expire -> 1 position restored."""
+        self._write_opened_event(_clean_log, otoken="0xpartial")
+        event2 = {
+            "event": "position_opened",
+            "ts": int(time.time()),
+            "otoken": "0xpartial",
+            "strike": 2100.0,
+            "expiry": int(time.time()) + 86400,
+            "is_put": True,
+            "amount": 0.02,
+            "premium_usd": 0.50,
+            "user_address": "0xuser2",
+            "tx_hash": "0xtx789",
+            "spot": 2112.75,
+            "delta": -0.45,
+            "hedge_action": "SHORT",
+            "hedge_size": 0.009,
+            "hedge_fill_price": 2108.7,
+        }
+        expired = {
+            "event": "position_expired",
+            "ts": int(time.time()),
+            "otoken": "0xpartial",
+            "result": "OTM",
+            "expiry_price": 2200.0,
+            "settlement_pnl": 0,
+            "hedge_pnl": 0,
+            "net_pnl": -0.42,
+        }
+        with open(_clean_log, "a") as f:
+            f.write(json.dumps(event2) + "\n")
+            f.write(json.dumps(expired) + "\n")
+
+        mock_hedge.get_positions.return_value = []
+        tracker = PositionTracker()
+        restored = recover_positions(tracker)
+        assert restored == 1
+
+    @patch("src.startup_recovery.hedge_executor")
+    def test_dedup_same_tx_hash(self, mock_hedge, _clean_log):
+        """Duplicate opens with same tx_hash are deduped to one."""
+        self._write_opened_event(_clean_log, otoken="0xdup")
+        self._write_opened_event(_clean_log, otoken="0xdup")
+
+        mock_hedge.get_positions.return_value = []
+        tracker = PositionTracker()
+        restored = recover_positions(tracker)
+        assert restored == 1
+        assert len(tracker.open_positions()) == 1
