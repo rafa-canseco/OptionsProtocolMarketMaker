@@ -121,14 +121,10 @@ def validate_iv(iv: float, label: str = "") -> bool:
         _log.warning("[IV CHECK] %s IV=0, skipping quotes", label)
         return False
     if iv < IV_MIN_VALID:
-        _log.warning(
-            "[IV CHECK] %s IV=%.4f below min %.2f", label, iv, IV_MIN_VALID
-        )
+        _log.warning("[IV CHECK] %s IV=%.4f below min %.2f", label, iv, IV_MIN_VALID)
         return False
     if iv > IV_MAX_VALID:
-        _log.warning(
-            "[IV CHECK] %s IV=%.4f above max %.2f", label, iv, IV_MAX_VALID
-        )
+        _log.warning("[IV CHECK] %s IV=%.4f above max %.2f", label, iv, IV_MAX_VALID)
         return False
     return True
 
@@ -152,10 +148,8 @@ def check_iv_divergence(
 
     returns = []
     for i in range(1, len(spot_history)):
-        if spot_history[i - 1] > 0:
-            returns.append(
-                math.log(spot_history[i] / spot_history[i - 1])
-            )
+        if spot_history[i - 1] > 0 and spot_history[i] > 0:
+            returns.append(math.log(spot_history[i] / spot_history[i - 1]))
 
     if not returns:
         return None
@@ -255,15 +249,13 @@ def calculate_spread(
     spread = float(base_bps)
 
     # 1. Inventory skew — widen on overweight side, narrow on underweight
+    # same_side: option type matches imbalance direction
+    same_side = (is_put and inventory_imbalance > 0) or (
+        not is_put and inventory_imbalance < 0
+    )
     if inventory_imbalance != 0:
-        if is_put and inventory_imbalance > 0:
-            spread += inventory_imbalance * SKEW_MAX_BPS
-        elif not is_put and inventory_imbalance < 0:
-            spread += abs(inventory_imbalance) * SKEW_MAX_BPS
-        elif is_put and inventory_imbalance < 0:
-            spread -= abs(inventory_imbalance) * SKEW_MAX_BPS * 0.5
-        elif not is_put and inventory_imbalance > 0:
-            spread -= inventory_imbalance * SKEW_MAX_BPS * 0.5
+        magnitude = abs(inventory_imbalance) * SKEW_MAX_BPS
+        spread += magnitude if same_side else -magnitude * 0.5
 
     # 2. Near-expiry gamma surcharge
     days = T * 365

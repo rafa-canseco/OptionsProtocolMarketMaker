@@ -70,15 +70,22 @@ def run_cycle(
     for asset_cfg in config.ASSETS:
         mkt = _get_market(asset_cfg.name)
         if mkt.spot > 0:
-            expired = _tracker.check_expiries(mkt.spot, underlying=asset_cfg.name)
-            if expired:
-                log.info(
-                    "Settled %d expired %s positions",
-                    len(expired),
+            try:
+                expired = _tracker.check_expiries(mkt.spot, underlying=asset_cfg.name)
+                if expired:
+                    log.info(
+                        "Settled %d expired %s positions",
+                        len(expired),
+                        asset_cfg.name.upper(),
+                    )
+                    _tracker.rebalance_hedge(
+                        mkt.spot, asset_cfg.name, asset_cfg.hedge_symbol
+                    )
+            except Exception:
+                log.error(
+                    "Expiry check failed for %s",
                     asset_cfg.name.upper(),
-                )
-                _tracker.rebalance_hedge(
-                    mkt.spot, asset_cfg.name, asset_cfg.hedge_symbol
+                    exc_info=True,
                 )
 
     # 4. Per-asset: fetch market data, quote, capacity
@@ -93,125 +100,26 @@ def run_cycle(
             )
 
 
-def _run_asset_cycle(
-    w3: Web3,
-    domain: dict,
-    mm_address: str,
-    asset_cfg: config.AssetConfig,
-) -> None:
-    """Quote-refresh for a single asset."""
-    asset_name = asset_cfg.name
-    mkt = _get_market(asset_name)
-
-    # Fetch market data
-    market = api_client.get_market_data(asset=asset_name)
-    otokens = market.get("available_otokens", [])
-    mkt.spot = market["spot"]
-    mkt.iv = market["iv"]
-    log.info(
-        "Market [%s]: spot=%.2f iv=%.4f oTokens=%d",
-        asset_name.upper(),
-        mkt.spot,
-        mkt.iv,
-        len(otokens),
-    )
-
-    # Track spot history for realized vol comparison
+def _track_spot(asset_name: str, spot: float) -> None:
+    """Append spot to history and check IV divergence."""
     if asset_name not in _spot_history:
         _spot_history[asset_name] = []
-    if mkt.spot > 0:
-        _spot_history[asset_name].append(mkt.spot)
+    if spot > 0:
+        _spot_history[asset_name].append(spot)
         if len(_spot_history[asset_name]) > SPOT_HISTORY_MAX:
             _spot_history[asset_name] = _spot_history[asset_name][-SPOT_HISTORY_MAX:]
 
-    # Validate IV before quoting
-    if not validate_iv(mkt.iv, label=asset_name.upper()):
-        return
-    check_iv_divergence(
-        mkt.iv, _spot_history.get(asset_name, []), label=asset_name.upper()
-    )
 
-    # Cache oToken details for position tracking
-    if otokens:
-        _tracker.cache_otokens(otokens, underlying=asset_name)
-
-    # Recalculate deltas on open positions for this asset
-    asset_positions = _tracker.open_positions(underlying=asset_name)
-    if asset_positions:
-        _tracker.recalculate_deltas(
-            mkt.spot, mkt.iv, config.RISK_FREE_RATE, underlying=asset_name
+def _compute_utilization(cap) -> float:
+    if cap and cap.capacity_usd > 0 and cap.open_positions_notional_usd > 0:
+        return cap.open_positions_notional_usd / (
+            cap.capacity_usd + cap.open_positions_notional_usd
         )
-        _tracker.rebalance_hedge(mkt.spot, asset_name, asset_cfg.hedge_symbol)
-        _tracker.log_portfolio(mkt.spot)
+    return 0.0
 
-    # Log capacity snapshot
-    _log_capacity_snapshot(asset_cfg)
 
-    if not otokens:
-        log.warning("No oTokens for %s, skipping", asset_name.upper())
-        return
-
-    # Calculate capacity
-    try:
-        cap = calculate_capacity_internal(
-            w3, mkt.spot, mm_address, _tracker, asset_config=asset_cfg
-        )
-        is_internal = config.MM_TYPE == "internal"
-        cap_payload = cap.to_dict(internal=is_internal)
-        log.info(
-            "Capacity [%s]: %.2f units ($%.0f) status=%s",
-            asset_name.upper(),
-            cap.capacity_eth,
-            cap.capacity_usd,
-            cap.status,
-        )
-    except Exception:
-        log.warning(
-            "Failed to calculate capacity for %s, skipping quotes",
-            asset_name.upper(),
-            exc_info=True,
-        )
-        return
-
-    # Report capacity to backend
-    if cap_payload:
-        try:
-            api_client.report_capacity(cap_payload)
-        except Exception:
-            log.warning("Failed to report capacity", exc_info=True)
-
-    # Skip quoting if full
-    if cap and cap.status == "full":
-        log.warning("Capacity full for %s, skipping quotes", asset_name.upper())
-        return
-
-    # Read makerNonce from chain
-    nonce = read_maker_nonce(w3, config.BATCH_SETTLER, mm_address)
-
-    # Price and build quotes (dynamic maxAmount + spread)
-    max_amount_raw = None
-    utilization = 0.0
-    if cap:
-        max_amount_raw = int(cap.capacity_eth * 10**OTOKEN_DECIMALS)
-        max_amount_raw = min(max_amount_raw, config.MAX_AMOUNT)
-        if cap.capacity_usd > 0 and cap.open_positions_notional_usd > 0:
-            utilization = cap.open_positions_notional_usd / (
-                cap.capacity_usd + cap.open_positions_notional_usd
-            )
-    imbalance = _tracker.inventory_imbalance(underlying=asset_name)
-    quotes = build_quotes(
-        market,
-        nonce,
-        max_amount_raw=max_amount_raw,
-        asset=asset_name,
-        inventory_imbalance=imbalance,
-        utilization=utilization,
-    )
-    if not quotes:
-        log.warning("No valid quotes for %s", asset_name.upper())
-        return
-
-    # Sign each quote
+def _sign_quotes(quotes: list[dict], domain: dict) -> list[dict]:
+    """Sign quotes and convert to API payloads."""
     payloads = []
     for q in quotes:
         eip712_data = {
@@ -224,8 +132,81 @@ def _run_asset_cycle(
         }
         sig = sign_quote(config.MM_PRIVATE_KEY, domain, eip712_data)
         payloads.append(to_api_payload(q, sig))
+    return payloads
 
-    # Submit quotes
+
+def _run_asset_cycle(
+    w3: Web3,
+    domain: dict,
+    mm_address: str,
+    asset_cfg: config.AssetConfig,
+) -> None:
+    """Quote-refresh for a single asset."""
+    asset_name = asset_cfg.name
+    mkt = _get_market(asset_name)
+
+    market = api_client.get_market_data(asset=asset_name)
+    otokens = market.get("available_otokens", [])
+    mkt.spot = market["spot"]
+    mkt.iv = market["iv"]
+    log.info(
+        "Market [%s]: spot=%.2f iv=%.4f oTokens=%d",
+        asset_name.upper(),
+        mkt.spot,
+        mkt.iv,
+        len(otokens),
+    )
+
+    _track_spot(asset_name, mkt.spot)
+
+    if not validate_iv(mkt.iv, label=asset_name.upper()):
+        return
+    check_iv_divergence(
+        mkt.iv,
+        _spot_history.get(asset_name, []),
+        label=asset_name.upper(),
+    )
+
+    if otokens:
+        _tracker.cache_otokens(otokens, underlying=asset_name)
+
+    asset_positions = _tracker.open_positions(underlying=asset_name)
+    if asset_positions:
+        _tracker.recalculate_deltas(
+            mkt.spot,
+            mkt.iv,
+            config.RISK_FREE_RATE,
+            underlying=asset_name,
+        )
+        _tracker.rebalance_hedge(mkt.spot, asset_name, asset_cfg.hedge_symbol)
+        _tracker.log_portfolio(mkt.spot)
+
+    _log_capacity_snapshot(asset_cfg)
+
+    if not otokens:
+        log.warning("No oTokens for %s, skipping", asset_name.upper())
+        return
+
+    cap = _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg)
+    if cap is None or cap.status == "full":
+        return
+
+    nonce = read_maker_nonce(w3, config.BATCH_SETTLER, mm_address)
+
+    max_amount_raw = min(int(cap.capacity_eth * 10**OTOKEN_DECIMALS), config.MAX_AMOUNT)
+    quotes = build_quotes(
+        market,
+        nonce,
+        max_amount_raw=max_amount_raw,
+        asset=asset_name,
+        inventory_imbalance=_tracker.inventory_imbalance(underlying=asset_name),
+        utilization=_compute_utilization(cap),
+    )
+    if not quotes:
+        log.warning("No valid quotes for %s", asset_name.upper())
+        return
+
+    payloads = _sign_quotes(quotes, domain)
     result = api_client.submit_quotes(payloads)
     log.info(
         "Submitted %d %s quotes: accepted=%s rejected=%s errors=%s",
@@ -235,6 +216,45 @@ def _run_asset_cycle(
         result.get("rejected"),
         result.get("errors"),
     )
+
+
+def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg):
+    """Calculate capacity, report to backend. Returns cap or None."""
+    try:
+        cap = calculate_capacity_internal(
+            w3, mkt.spot, mm_address, _tracker, asset_config=asset_cfg
+        )
+    except Exception:
+        log.warning(
+            "Failed to calculate capacity for %s, skipping quotes",
+            asset_cfg.name.upper(),
+            exc_info=True,
+        )
+        return None
+
+    is_internal = config.MM_TYPE == "internal"
+    cap_payload = cap.to_dict(internal=is_internal)
+    log.info(
+        "Capacity [%s]: %.2f units ($%.0f) status=%s",
+        asset_cfg.name.upper(),
+        cap.capacity_eth,
+        cap.capacity_usd,
+        cap.status,
+    )
+
+    if cap_payload:
+        try:
+            api_client.report_capacity(cap_payload)
+        except Exception:
+            log.warning("Failed to report capacity", exc_info=True)
+
+    if cap.status == "full":
+        log.warning(
+            "Capacity full for %s, skipping quotes",
+            asset_cfg.name.upper(),
+        )
+
+    return cap
 
 
 def log_monitoring() -> None:
@@ -319,7 +339,10 @@ def _poll_fills_rest() -> None:
         tx = fill.get("tx_hash", "")
         if tx and tx not in _seen_tx_hashes:
             log.info("New fill via REST poll: %s", tx[:16])
-            _handle_fill(fill)
+            try:
+                _handle_fill(fill)
+            except Exception:
+                log.error("Failed to handle fill %s", tx[:16], exc_info=True)
 
 
 def _resolve_underlying(otoken_addr: str) -> tuple[str, str]:
@@ -363,17 +386,20 @@ def _handle_fill(fill: dict) -> None:
             )
             return
 
-        _seen_tx_hashes.add(tx)
-        _tracker.add_position(
-            fill,
-            mkt.spot,
-            mkt.iv,
-            config.RISK_FREE_RATE,
-            underlying=underlying,
-            hedge_symbol=hedge_symbol,
-        )
-        _tracker.rebalance_hedge(mkt.spot, underlying, hedge_symbol)
-        _tracker.log_portfolio(mkt.spot)
+        try:
+            _tracker.add_position(
+                fill,
+                mkt.spot,
+                mkt.iv,
+                config.RISK_FREE_RATE,
+                underlying=underlying,
+                hedge_symbol=hedge_symbol,
+            )
+            _seen_tx_hashes.add(tx)
+            _tracker.rebalance_hedge(mkt.spot, underlying, hedge_symbol)
+            _tracker.log_portfolio(mkt.spot)
+        except Exception:
+            log.error("Failed to process fill %s", tx[:16], exc_info=True)
 
 
 def main() -> None:
