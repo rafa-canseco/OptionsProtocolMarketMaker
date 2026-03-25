@@ -359,8 +359,8 @@ class PositionTracker:
         if abs(diff) < HEDGE_REBALANCE_THRESHOLD:
             return None
 
-        is_buy = diff > 0
-        fill = hedge_executor.open_hedge(hedge_symbol, is_buy, abs(diff))
+        is_buy = bool(diff > 0)
+        fill = hedge_executor.open_hedge(hedge_symbol, is_buy, float(abs(diff)))
 
         if fill:
             log.info(
