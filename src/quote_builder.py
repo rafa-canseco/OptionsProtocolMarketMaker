@@ -1,10 +1,21 @@
 """Build quote structs from market data and BS prices."""
 
+import logging
 import time
 from typing import Any
 
 from src import config
-from src.pricer import price_with_spread
+from src.pricer import (
+    apply_vol_skew,
+    bs_delta,
+    calculate_spread,
+    price_with_spread,
+)
+
+log = logging.getLogger(__name__)
+
+SKIP_DELTA_THRESHOLD = 0.90
+MIN_HOURS_TO_EXPIRY = 2
 
 
 def build_quotes(
@@ -12,6 +23,8 @@ def build_quotes(
     maker_nonce: int,
     max_amount_raw: int | None = None,
     asset: str = "eth",
+    inventory_imbalance: float = 0.0,
+    utilization: float = 0.0,
 ) -> list[dict[str, Any]]:
     """Price each oToken and build a list of quote dicts ready for signing.
 
@@ -42,14 +55,41 @@ def build_quotes(
 
         T = seconds_to_expiry / (365 * 86400)
 
+        # Skip very short-dated options (high gamma, hard to hedge)
+        hours_left = seconds_to_expiry / 3600
+        if hours_left < MIN_HOURS_TO_EXPIRY:
+            log.debug("Skip %s: %.1fh to expiry", ot["address"][:10], hours_left)
+            continue
+
+        # Skip deep ITM options (unstable delta, high gamma)
+        delta = bs_delta(is_put, spot, strike, T, config.RISK_FREE_RATE, iv)
+        if abs(delta) > SKIP_DELTA_THRESHOLD:
+            log.debug(
+                "Skip %s: |delta|=%.2f > %.2f",
+                ot["address"][:10],
+                abs(delta),
+                SKIP_DELTA_THRESHOLD,
+            )
+            continue
+
+        spread_bps = calculate_spread(
+            base_bps=config.SPREAD_BPS,
+            is_put=is_put,
+            T=T,
+            inventory_imbalance=inventory_imbalance,
+            utilization=utilization,
+        )
+
+        skewed_iv = apply_vol_skew(iv, spot, strike, is_put)
+
         bid_usd = price_with_spread(
             is_put=is_put,
             S=spot,
             K=strike,
             T=T,
             r=config.RISK_FREE_RATE,
-            sigma=iv,
-            spread_bps=config.SPREAD_BPS,
+            sigma=skewed_iv,
+            spread_bps=spread_bps,
         )
 
         # Convert to USDC raw (6 decimals), floor at 1

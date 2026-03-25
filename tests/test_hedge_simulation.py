@@ -7,6 +7,7 @@ No backend/frontend needed.
 
 import logging
 import time
+from unittest.mock import patch
 
 from src.position_tracker import PositionTracker
 
@@ -316,3 +317,214 @@ def test_unknown_otoken_ignored():
 
     assert pos is None
     assert len(tracker.positions) == 0
+
+
+def test_greeks_computed_on_open():
+    """Position has gamma, vega, theta set after add_position."""
+    tracker = PositionTracker()
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xPUT_G",
+                "strike_price": 1900.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": True,
+            }
+        ]
+    )
+    pos = tracker.add_position(
+        {
+            "otoken_address": "0xPUT_G",
+            "amount": 100000000,
+            "gross_premium": 20000000,
+            "user_address": "0xU",
+            "tx_hash": "0xT",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
+    assert pos.current_gamma > 0
+    assert pos.current_vega > 0
+    assert pos.current_theta < 0  # theta is negative (time decay)
+
+
+def test_portfolio_greeks_aggregation():
+    """Portfolio Greeks aggregate across positions."""
+    tracker = PositionTracker()
+    expiry = int(time.time()) + 7 * 86400
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xPUT_A",
+                "strike_price": 1900.0,
+                "expiry": expiry,
+                "is_put": True,
+            },
+            {
+                "address": "0xCALL_A",
+                "strike_price": 2100.0,
+                "expiry": expiry,
+                "is_put": False,
+            },
+        ]
+    )
+    tracker.add_position(
+        {
+            "otoken_address": "0xPUT_A",
+            "amount": 100000000,
+            "gross_premium": 20000000,
+            "user_address": "0xU1",
+            "tx_hash": "0xT1",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
+    tracker.add_position(
+        {
+            "otoken_address": "0xCALL_A",
+            "amount": 100000000,
+            "gross_premium": 30000000,
+            "user_address": "0xU2",
+            "tx_hash": "0xT2",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
+
+    g = tracker.portfolio_greeks()
+    assert "delta" in g
+    assert "gamma" in g
+    assert "vega" in g
+    assert "theta" in g
+    assert g["gamma"] > 0  # gamma is always positive
+    assert g["vega"] > 0
+    assert g["theta"] < 0  # selling options: theta works against us
+
+
+def test_inventory_imbalance_all_puts():
+    """All-put portfolio returns positive imbalance."""
+    tracker = PositionTracker()
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xP",
+                "strike_price": 1900.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": True,
+            }
+        ]
+    )
+    tracker.add_position(
+        {
+            "otoken_address": "0xP",
+            "amount": 100000000,
+            "gross_premium": 20000000,
+            "user_address": "0xU",
+            "tx_hash": "0xT",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
+    assert tracker.inventory_imbalance() > 0.9
+
+
+def test_inventory_imbalance_balanced():
+    """Balanced put+call portfolio returns near zero."""
+    tracker = PositionTracker()
+    expiry = int(time.time()) + 7 * 86400
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xP",
+                "strike_price": 1900.0,
+                "expiry": expiry,
+                "is_put": True,
+            },
+            {
+                "address": "0xC",
+                "strike_price": 2100.0,
+                "expiry": expiry,
+                "is_put": False,
+            },
+        ]
+    )
+    tracker.add_position(
+        {
+            "otoken_address": "0xP",
+            "amount": 100000000,
+            "gross_premium": 20000000,
+            "user_address": "0xU",
+            "tx_hash": "0xT1",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
+    tracker.add_position(
+        {
+            "otoken_address": "0xC",
+            "amount": 100000000,
+            "gross_premium": 30000000,
+            "user_address": "0xU",
+            "tx_hash": "0xT2",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
+    assert abs(tracker.inventory_imbalance()) < 0.5
+
+
+def test_inventory_imbalance_empty():
+    """Empty portfolio returns 0."""
+    assert PositionTracker().inventory_imbalance() == 0.0
+
+
+@patch("src.config.HEDGE_MODE", "simulate")
+def test_rebalance_hedge_simulated_mode():
+    """Simulated mode tracks hedge state internally."""
+    from src import hedge_executor
+
+    hedge_executor._exchange = None
+    hedge_executor._info = None
+    hedge_executor._address = ""
+
+    tracker = PositionTracker()
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xP",
+                "strike_price": 1900.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": True,
+            }
+        ]
+    )
+    tracker.add_position(
+        {
+            "otoken_address": "0xP",
+            "amount": 100000000,
+            "gross_premium": 20000000,
+            "user_address": "0xU",
+            "tx_hash": "0xT",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
+    tracker.rebalance_hedge(SPOT, "eth", "ETH")
+    assert "eth" in tracker._simulated_hedge
+    expected = tracker.net_delta(underlying="eth")
+    assert abs(tracker._simulated_hedge["eth"] - expected) < 0.001
+
+
+def test_rebalance_hedge_threshold_skips_tiny():
+    """Diff below threshold does not trigger hedge."""
+    tracker = PositionTracker()
+    tracker._simulated_hedge["eth"] = -0.001
+    tracker.rebalance_hedge(SPOT, "eth", "ETH")
+    assert tracker._simulated_hedge["eth"] == -0.001
