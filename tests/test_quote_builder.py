@@ -260,7 +260,7 @@ def test_skip_deep_itm_options(mock_config):
 
 @patch("src.quote_builder.config")
 def test_skip_very_short_dated(mock_config):
-    """Options expiring in < 2 hours are not quoted."""
+    """Options expiring in < 1 hour are not quoted."""
     mock_config.RISK_FREE_RATE = 0.05
     mock_config.SPREAD_BPS = 200
     mock_config.DEADLINE_SECONDS = 300
@@ -273,7 +273,7 @@ def test_skip_very_short_dated(mock_config):
             {
                 "address": "0xTOO_SHORT",
                 "strike_price": 1900.0,
-                "expiry": int(time.time()) + 3600,  # 1 hour
+                "expiry": int(time.time()) + 1800,  # 30 min
                 "is_put": True,
             },
             {

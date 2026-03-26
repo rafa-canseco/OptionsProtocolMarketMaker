@@ -528,3 +528,89 @@ def test_rebalance_hedge_threshold_skips_tiny():
     tracker._simulated_hedge["eth"] = -0.001
     tracker.rebalance_hedge(SPOT, "eth", "ETH")
     assert tracker._simulated_hedge["eth"] == -0.001
+
+
+@patch("src.main.config")
+def test_pick_refresh_interval_no_positions(mock_config):
+    """No positions → normal interval."""
+    mock_config.REFRESH_INTERVAL = 60
+    mock_config.REFRESH_INTERVAL_FAST = 30
+    mock_config.FAST_REFRESH_HOURS = 6
+    from src.main import _pick_refresh_interval, _tracker
+
+    _tracker.positions.clear()
+    assert _pick_refresh_interval() == 60
+
+
+@patch("src.main.config")
+def test_pick_refresh_interval_near_expiry(mock_config):
+    """Position near expiry → fast interval."""
+    mock_config.REFRESH_INTERVAL = 60
+    mock_config.REFRESH_INTERVAL_FAST = 30
+    mock_config.FAST_REFRESH_HOURS = 6
+    from src.main import _pick_refresh_interval, _tracker
+
+    _tracker.positions.clear()
+    tracker = PositionTracker()
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xNEAR",
+                "strike_price": 1900.0,
+                "expiry": int(time.time()) + 3600,  # 1h away
+                "is_put": True,
+            }
+        ]
+    )
+    tracker.add_position(
+        {
+            "otoken_address": "0xNEAR",
+            "amount": 100000000,
+            "gross_premium": 20000000,
+            "user_address": "0xU",
+            "tx_hash": "0xT",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
+    _tracker.positions.extend(tracker.positions)
+    assert _pick_refresh_interval() == 30
+    _tracker.positions.clear()
+
+
+@patch("src.main.config")
+def test_pick_refresh_interval_far_expiry(mock_config):
+    """Position far from expiry → normal interval."""
+    mock_config.REFRESH_INTERVAL = 60
+    mock_config.REFRESH_INTERVAL_FAST = 30
+    mock_config.FAST_REFRESH_HOURS = 6
+    from src.main import _pick_refresh_interval, _tracker
+
+    _tracker.positions.clear()
+    tracker = PositionTracker()
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xFAR",
+                "strike_price": 1900.0,
+                "expiry": int(time.time()) + 30 * 86400,  # 30d away
+                "is_put": True,
+            }
+        ]
+    )
+    tracker.add_position(
+        {
+            "otoken_address": "0xFAR",
+            "amount": 100000000,
+            "gross_premium": 20000000,
+            "user_address": "0xU",
+            "tx_hash": "0xT",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
+    _tracker.positions.extend(tracker.positions)
+    assert _pick_refresh_interval() == 60
+    _tracker.positions.clear()

@@ -402,6 +402,15 @@ def _handle_fill(fill: dict) -> None:
             log.error("Failed to process fill %s", tx[:16], exc_info=True)
 
 
+def _pick_refresh_interval() -> int:
+    """Use fast refresh when any position is near expiry."""
+    threshold = int(time.time()) + config.FAST_REFRESH_HOURS * 3600
+    for pos in _tracker.open_positions():
+        if pos.expiry <= threshold:
+            return config.REFRESH_INTERVAL_FAST
+    return config.REFRESH_INTERVAL
+
+
 def main() -> None:
     mm_address = Account.from_key(config.MM_PRIVATE_KEY).address
     w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
@@ -413,7 +422,12 @@ def main() -> None:
     log.info("  RPC:         %s", config.RPC_URL)
     log.info("  Assets:      %s", [a.name for a in config.ASSETS])
     log.info("  Spread:      %d bps", config.SPREAD_BPS)
-    log.info("  Refresh:     %ds", config.REFRESH_INTERVAL)
+    log.info(
+        "  Refresh:     %ds (fast=%ds when <%dh to expiry)",
+        config.REFRESH_INTERVAL,
+        config.REFRESH_INTERVAL_FAST,
+        config.FAST_REFRESH_HOURS,
+    )
     log.info("  Max amount:  %d (raw)", config.MAX_AMOUNT)
     log.info("  Deadline:    %ds", config.DEADLINE_SECONDS)
     log.info("  Hedge mode:  %s", config.HEDGE_MODE)
@@ -464,8 +478,12 @@ def main() -> None:
         if cycle % 5 == 0:
             log_monitoring()
 
-        log.info("Sleeping %ds...", config.REFRESH_INTERVAL)
-        time.sleep(config.REFRESH_INTERVAL)
+        try:
+            interval = _pick_refresh_interval()
+        except Exception:
+            interval = config.REFRESH_INTERVAL
+        log.info("Sleeping %ds...", interval)
+        time.sleep(interval)
 
 
 if __name__ == "__main__":
