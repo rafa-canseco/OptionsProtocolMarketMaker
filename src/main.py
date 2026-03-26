@@ -422,7 +422,12 @@ def main() -> None:
     log.info("  RPC:         %s", config.RPC_URL)
     log.info("  Assets:      %s", [a.name for a in config.ASSETS])
     log.info("  Spread:      %d bps", config.SPREAD_BPS)
-    log.info("  Refresh:     %ds", config.REFRESH_INTERVAL)
+    log.info(
+        "  Refresh:     %ds (fast=%ds when <%dh to expiry)",
+        config.REFRESH_INTERVAL,
+        config.REFRESH_INTERVAL_FAST,
+        config.FAST_REFRESH_HOURS,
+    )
     log.info("  Max amount:  %d (raw)", config.MAX_AMOUNT)
     log.info("  Deadline:    %ds", config.DEADLINE_SECONDS)
     log.info("  Hedge mode:  %s", config.HEDGE_MODE)
@@ -473,7 +478,10 @@ def main() -> None:
         if cycle % 5 == 0:
             log_monitoring()
 
-        interval = _pick_refresh_interval()
+        try:
+            interval = _pick_refresh_interval()
+        except Exception:
+            interval = config.REFRESH_INTERVAL
         log.info("Sleeping %ds...", interval)
         time.sleep(interval)
 
