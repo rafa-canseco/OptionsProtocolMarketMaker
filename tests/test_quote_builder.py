@@ -273,7 +273,7 @@ def test_skip_very_short_dated(mock_config):
             {
                 "address": "0xTOO_SHORT",
                 "strike_price": 1900.0,
-                "expiry": int(time.time()) + 3600,  # 1 hour
+                "expiry": int(time.time()) + 1800,  # 30 min
                 "is_put": True,
             },
             {

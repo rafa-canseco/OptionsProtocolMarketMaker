@@ -402,6 +402,15 @@ def _handle_fill(fill: dict) -> None:
             log.error("Failed to process fill %s", tx[:16], exc_info=True)
 
 
+def _pick_refresh_interval() -> int:
+    """Use fast refresh when any position is near expiry."""
+    threshold = int(time.time()) + config.FAST_REFRESH_HOURS * 3600
+    for pos in _tracker.open_positions():
+        if pos.expiry <= threshold:
+            return config.REFRESH_INTERVAL_FAST
+    return config.REFRESH_INTERVAL
+
+
 def main() -> None:
     mm_address = Account.from_key(config.MM_PRIVATE_KEY).address
     w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
@@ -464,8 +473,9 @@ def main() -> None:
         if cycle % 5 == 0:
             log_monitoring()
 
-        log.info("Sleeping %ds...", config.REFRESH_INTERVAL)
-        time.sleep(config.REFRESH_INTERVAL)
+        interval = _pick_refresh_interval()
+        log.info("Sleeping %ds...", interval)
+        time.sleep(interval)
 
 
 if __name__ == "__main__":
