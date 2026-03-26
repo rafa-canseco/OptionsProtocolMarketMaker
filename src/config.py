@@ -38,7 +38,7 @@ REFRESH_INTERVAL_FAST: int = max(int(os.getenv("REFRESH_INTERVAL_FAST", "30")), 
 FAST_REFRESH_HOURS: int = max(int(os.getenv("FAST_REFRESH_HOURS", "6")), 1)
 SPREAD_BPS: int = int(os.getenv("SPREAD_BPS", "200"))
 MAX_AMOUNT: int = int(os.getenv("MAX_AMOUNT", "500000000"))
-DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "180"))
+DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "300"))
 CHAIN_ID: int = int(os.getenv("CHAIN_ID", "84532"))
 BATCH_SETTLER: str = os.getenv(
     "BATCH_SETTLER",
