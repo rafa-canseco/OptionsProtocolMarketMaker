@@ -34,6 +34,8 @@ RPC_URL: str = _require("RPC_URL")
 
 # --- Optional with defaults ---
 REFRESH_INTERVAL: int = int(os.getenv("REFRESH_INTERVAL", "60"))
+REFRESH_INTERVAL_FAST: int = int(os.getenv("REFRESH_INTERVAL_FAST", "30"))
+FAST_REFRESH_HOURS: int = int(os.getenv("FAST_REFRESH_HOURS", "6"))
 SPREAD_BPS: int = int(os.getenv("SPREAD_BPS", "200"))
 MAX_AMOUNT: int = int(os.getenv("MAX_AMOUNT", "500000000"))
 DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "180"))

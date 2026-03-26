@@ -15,7 +15,7 @@ from src.pricer import (
 log = logging.getLogger(__name__)
 
 SKIP_DELTA_THRESHOLD = 0.90
-MIN_HOURS_TO_EXPIRY = 2
+MIN_HOURS_TO_EXPIRY = 1
 
 
 def build_quotes(
@@ -81,6 +81,17 @@ def build_quotes(
         )
 
         skewed_iv = apply_vol_skew(iv, spot, strike, is_put)
+
+        log.debug(
+            "Quote %s K=%.0f %s: spread=%dbps iv=%.4f->%.4f T=%.2fd",
+            ot["address"][:10],
+            strike,
+            "PUT" if is_put else "CALL",
+            spread_bps,
+            iv,
+            skewed_iv,
+            T * 365,
+        )
 
         bid_usd = price_with_spread(
             is_put=is_put,
