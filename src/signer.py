@@ -86,6 +86,7 @@ _NONCE_OFFSET = 8 + 32  # discriminator + maker pubkey
 
 def build_solana_quote_message(
     otoken_mint: bytes,
+    *,
     bid_price: int,
     deadline: int,
     quote_id: int,
@@ -148,14 +149,32 @@ def read_maker_nonce_solana(
         timeout=10,
     )
     resp.raise_for_status()
-    result = resp.json().get("result", {})
-    value = result.get("value")
-    if value is None:
-        log.warning("MakerState PDA not found for %s, returning nonce=0", maker_pubkey)
-        return 0
+    body = resp.json()
 
-    data_b64 = value["data"][0]
-    data = base64.b64decode(data_b64)
+    # Check for JSON-RPC level errors (HTTP 200 but RPC failure)
+    if "error" in body:
+        rpc_err = body["error"]
+        raise RuntimeError(
+            f"Solana RPC error {rpc_err.get('code')}: "
+            f"{rpc_err.get('message')} "
+            f"(method=getAccountInfo, account={pda})"
+        )
+
+    value = body.get("result", {}).get("value")
+    if value is None:
+        raise ValueError(
+            f"MakerState PDA not found for maker {maker_pubkey} "
+            f"under program {program_id}. Maker may not be "
+            f"registered on-chain. Check SOLANA_BATCH_SETTLER "
+            f"and SOLANA_PRIVATE_KEY."
+        )
+
+    data_field = value.get("data")
+    if not isinstance(data_field, list) or len(data_field) < 1:
+        raise ValueError(
+            f"Unexpected data format from getAccountInfo for PDA {pda}: {data_field}"
+        )
+    data = base64.b64decode(data_field[0])
 
     # Validate discriminator
     if data[:8] != MAKER_STATE_DISCRIMINATOR:
@@ -163,6 +182,15 @@ def read_maker_nonce_solana(
             f"MakerState discriminator mismatch: "
             f"expected {MAKER_STATE_DISCRIMINATOR.hex()}, "
             f"got {data[:8].hex()}"
+        )
+
+    # Bounds check before struct unpacking
+    min_size = _NONCE_OFFSET + 8
+    if len(data) < min_size:
+        raise ValueError(
+            f"MakerState data too short: {len(data)} bytes, "
+            f"expected >= {min_size}. Account {pda} may "
+            f"belong to a different program."
         )
 
     nonce = struct.unpack_from("<Q", data, _NONCE_OFFSET)[0]

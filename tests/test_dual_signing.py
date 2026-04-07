@@ -54,7 +54,12 @@ def test_solana_message_field_order():
     maker_nonce = 7
 
     msg = build_solana_quote_message(
-        mint, bid_price, deadline, quote_id, max_amount, maker_nonce
+        mint,
+        bid_price=bid_price,
+        deadline=deadline,
+        quote_id=quote_id,
+        max_amount=max_amount,
+        maker_nonce=maker_nonce,
     )
 
     # Unpack and verify each field
@@ -72,7 +77,14 @@ def test_solana_message_field_order():
 def test_sign_quote_solana_returns_64_bytes():
     """ed25519 signature is exactly 64 bytes."""
     kp = Keypair()
-    msg = build_solana_quote_message(bytes(Pubkey.new_unique()), 100, 999999, 1, 100, 0)
+    msg = build_solana_quote_message(
+        bytes(Pubkey.new_unique()),
+        bid_price=100,
+        deadline=999999,
+        quote_id=1,
+        max_amount=100,
+        maker_nonce=0,
+    )
     sig = sign_quote_solana(kp, msg)
     assert len(sig) == 64
 
@@ -81,7 +93,12 @@ def test_sign_quote_solana_verifiable():
     """Signature can be verified against the signer's pubkey."""
     kp = Keypair()
     msg = build_solana_quote_message(
-        bytes(Pubkey.new_unique()), 500, 1700000000, 10, 1000, 3
+        bytes(Pubkey.new_unique()),
+        bid_price=500,
+        deadline=1700000000,
+        quote_id=10,
+        max_amount=1000,
+        maker_nonce=3,
     )
     sig = sign_quote_solana(kp, msg)
 
@@ -224,7 +241,131 @@ def test_full_round_trip_build_sign_verify():
     assert struct.unpack_from("<q", msg, 40)[0] == deadline
 
 
-# --- 6. Base ECDSA regression ---
+# --- 6. read_maker_nonce_solana RPC deserialization ---
+
+
+def _make_maker_state_data(nonce: int) -> bytes:
+    """Build a realistic MakerState account blob."""
+    import hashlib
+
+    disc = hashlib.sha256(b"account:MakerState").digest()[:8]
+    maker = bytes(Pubkey.new_unique())  # 32 bytes
+    nonce_bytes = struct.pack("<Q", nonce)
+    whitelisted = b"\x01"
+    bump = b"\x07"
+    return disc + maker + nonce_bytes + whitelisted + bump
+
+
+def test_read_maker_nonce_solana_happy_path():
+    """Deserializes nonce from a valid MakerState account."""
+    from unittest.mock import patch, MagicMock
+    import base64
+
+    account_data = _make_maker_state_data(nonce=42)
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+            "value": {
+                "data": [base64.b64encode(account_data).decode(), "base64"],
+                "owner": str(Pubkey.new_unique()),
+            }
+        },
+    }
+    mock_resp.raise_for_status = MagicMock()
+
+    from src.signer import read_maker_nonce_solana
+
+    with patch("src.signer.requests.post", return_value=mock_resp):
+        nonce = read_maker_nonce_solana(
+            "http://fake-rpc",
+            "GpR6id2cHu5fUGsFm7NUKkB4NzfuEDa6brPzkSrgAzvS",
+            str(Keypair().pubkey()),
+        )
+    assert nonce == 42
+
+
+def test_read_maker_nonce_solana_pda_not_found():
+    """Raises ValueError when PDA does not exist."""
+    from unittest.mock import patch, MagicMock
+    import pytest
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {"value": None},
+    }
+    mock_resp.raise_for_status = MagicMock()
+
+    from src.signer import read_maker_nonce_solana
+
+    with patch("src.signer.requests.post", return_value=mock_resp):
+        with pytest.raises(ValueError, match="PDA not found"):
+            read_maker_nonce_solana(
+                "http://fake-rpc",
+                "GpR6id2cHu5fUGsFm7NUKkB4NzfuEDa6brPzkSrgAzvS",
+                str(Keypair().pubkey()),
+            )
+
+
+def test_read_maker_nonce_solana_rpc_error():
+    """Raises RuntimeError on JSON-RPC level errors."""
+    from unittest.mock import patch, MagicMock
+    import pytest
+
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {"code": -32005, "message": "Node is behind"},
+    }
+    mock_resp.raise_for_status = MagicMock()
+
+    from src.signer import read_maker_nonce_solana
+
+    with patch("src.signer.requests.post", return_value=mock_resp):
+        with pytest.raises(RuntimeError, match="Solana RPC error"):
+            read_maker_nonce_solana(
+                "http://fake-rpc",
+                "GpR6id2cHu5fUGsFm7NUKkB4NzfuEDa6brPzkSrgAzvS",
+                str(Keypair().pubkey()),
+            )
+
+
+def test_read_maker_nonce_solana_wrong_discriminator():
+    """Raises ValueError on discriminator mismatch."""
+    from unittest.mock import patch, MagicMock
+    import base64
+    import pytest
+
+    bad_data = b"\x00" * 50  # wrong discriminator
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+            "value": {
+                "data": [base64.b64encode(bad_data).decode(), "base64"],
+                "owner": str(Pubkey.new_unique()),
+            }
+        },
+    }
+    mock_resp.raise_for_status = MagicMock()
+
+    from src.signer import read_maker_nonce_solana
+
+    with patch("src.signer.requests.post", return_value=mock_resp):
+        with pytest.raises(ValueError, match="discriminator mismatch"):
+            read_maker_nonce_solana(
+                "http://fake-rpc",
+                "GpR6id2cHu5fUGsFm7NUKkB4NzfuEDa6brPzkSrgAzvS",
+                str(Keypair().pubkey()),
+            )
+
+
+# --- 7. Base ECDSA regression ---
 
 
 def test_base_eip712_signing_unchanged():

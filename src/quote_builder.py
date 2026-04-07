@@ -28,6 +28,7 @@ _CHAIN_OFFSET = {"base": 0, "solana": 100_000}
 def build_quotes(
     market_data: dict[str, Any],
     maker_nonce: int,
+    *,
     max_amount_raw: int | None = None,
     asset: str = "eth",
     inventory_imbalance: float = 0.0,

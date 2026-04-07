@@ -26,7 +26,7 @@ class AssetConfig:
 @dataclass(frozen=True)
 class ChainConfig:
     name: str  # "base" | "solana"
-    assets: list[AssetConfig]
+    assets: tuple[AssetConfig, ...]
 
 
 # --- Required ---
@@ -139,13 +139,25 @@ def _parse_solana_assets() -> list[AssetConfig]:
             continue
         prefix = name.upper()
         leverage = int(os.getenv(f"{prefix}_HEDGE_LEVERAGE", "3"))
+        if leverage < 1:
+            print(
+                f"FATAL: {prefix}_HEDGE_LEVERAGE must be >= 1, got {leverage}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         max_exp = float(os.getenv(f"{prefix}_MAX_EXPOSURE", "1.0"))
+        if not 0.0 < max_exp <= 1.0:
+            print(
+                f"FATAL: {prefix}_MAX_EXPOSURE must be in (0, 1], got {max_exp}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         assets.append(
             AssetConfig(
                 name=name,
                 hedge_symbol=os.getenv(f"{prefix}_HEDGE_SYMBOL", name.upper()),
-                leverage=max(leverage, 1),
-                max_exposure=min(max(max_exp, 0.01), 1.0),
+                leverage=leverage,
+                max_exposure=max_exp,
             )
         )
     return assets
@@ -155,7 +167,7 @@ SOLANA_ASSETS: list[AssetConfig] = _parse_solana_assets() if SOLANA_PRIVATE_KEY 
 SOLANA_ASSET_MAP: dict[str, AssetConfig] = {a.name: a for a in SOLANA_ASSETS}
 
 # --- Chain configs ---
-CHAINS: list[ChainConfig] = [ChainConfig(name="base", assets=ASSETS)]
+CHAINS: list[ChainConfig] = [ChainConfig(name="base", assets=tuple(ASSETS))]
 if SOLANA_PRIVATE_KEY:
     if not SOLANA_RPC_URL:
         print(
@@ -163,4 +175,4 @@ if SOLANA_PRIVATE_KEY:
             file=sys.stderr,
         )
         sys.exit(1)
-    CHAINS.append(ChainConfig(name="solana", assets=SOLANA_ASSETS))
+    CHAINS.append(ChainConfig(name="solana", assets=tuple(SOLANA_ASSETS)))

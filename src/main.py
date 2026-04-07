@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from eth_account import Account
 from web3 import Web3
 
+from solders.pubkey import Pubkey  # type: ignore[import-untyped]
+
 from src import api_client, config, fill_listener, hedge_executor, trade_logger
 from src.capacity import calculate_capacity_internal
 from src.position_tracker import PositionTracker
@@ -57,10 +59,11 @@ _fill_lock = threading.Lock()
 SPOT_HISTORY_MAX = 100
 
 
-def _get_market(asset: str) -> MarketSnapshot:
-    if asset not in _market:
-        _market[asset] = MarketSnapshot()
-    return _market[asset]
+def _get_market(asset: str, chain: str = "base") -> MarketSnapshot:
+    key = f"{chain}/{asset}"
+    if key not in _market:
+        _market[key] = MarketSnapshot()
+    return _market[key]
 
 
 def run_cycle(
@@ -69,12 +72,17 @@ def run_cycle(
     mm_address: str,
 ) -> None:
     """Single quote-refresh cycle across all chains and assets."""
-    # 1. Delete stale quotes from previous cycle
-    try:
-        deleted = api_client.delete_quotes()
-        log.info("Deleted previous quotes: %s", deleted)
-    except Exception:
-        log.warning("Failed to delete stale quotes", exc_info=True)
+    # 1. Delete stale quotes from previous cycle (per-chain)
+    for chain_cfg in config.CHAINS:
+        try:
+            deleted = api_client.delete_quotes(chain=chain_cfg.name)
+            log.info("Deleted previous %s quotes: %s", chain_cfg.name, deleted)
+        except Exception:
+            log.warning(
+                "Failed to delete stale %s quotes",
+                chain_cfg.name,
+                exc_info=True,
+            )
 
     # 2. Poll fills via REST as fallback (WS may miss events)
     _poll_fills_rest()
@@ -158,8 +166,10 @@ def _sign_quotes_base(quotes: list[dict], domain: dict) -> list[dict]:
 
 def _sign_quotes_solana(quotes: list[dict]) -> list[dict]:
     """Sign Solana quotes with ed25519 and convert to API payloads."""
-    from solders.pubkey import Pubkey  # type: ignore[import-untyped]
-
+    if _solana_keypair is None:
+        raise RuntimeError(
+            "Solana keypair not initialized — call _init_solana() before signing"
+        )
     payloads = []
     for q in quotes:
         otoken_bytes = bytes(Pubkey.from_string(q["oToken"]))
@@ -186,7 +196,7 @@ def _run_asset_cycle(
     """Quote-refresh for a single asset on a given chain."""
     asset_name = asset_cfg.name
     chain_label = f"{chain}/{asset_name}".upper()
-    mkt = _get_market(asset_name)
+    mkt = _get_market(asset_name, chain)
 
     market = api_client.get_market_data(asset=asset_name, chain=chain)
     otokens = market.get("available_otokens", [])
@@ -230,9 +240,27 @@ def _run_asset_cycle(
         log.warning("No oTokens for %s, skipping", chain_label)
         return
 
-    # Capacity (Base only for now — Solana capacity is a separate ticket)
+    _quote_and_submit(w3, domain, mm_address, market, asset_cfg, chain)
+
+
+def _quote_and_submit(
+    w3,
+    domain,
+    mm_address,
+    market,
+    asset_cfg,
+    chain,
+) -> None:
+    """Build quotes, sign per-chain, and submit to backend."""
+    asset_name = asset_cfg.name
+    chain_label = f"{chain}/{asset_name}".upper()
+
+    # Capacity (Base only — Solana capacity is a separate ticket)
+    cap = None
     if chain == "base" and w3 is not None:
-        cap = _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg)
+        cap = _calculate_and_report_capacity(
+            w3, _get_market(asset_name, chain), mm_address, asset_cfg
+        )
         if cap is None or cap.status == "full":
             return
         max_amount_raw = min(
@@ -257,14 +285,13 @@ def _run_asset_cycle(
         max_amount_raw=max_amount_raw,
         asset=asset_name,
         inventory_imbalance=_tracker.inventory_imbalance(underlying=asset_name),
-        utilization=_compute_utilization(None),
+        utilization=_compute_utilization(cap) if chain == "base" else 0.0,
         chain=chain,
     )
     if not quotes:
         log.warning("No valid quotes for %s", chain_label)
         return
 
-    # Sign per chain
     if chain == "solana":
         payloads = _sign_quotes_solana(quotes)
     else:
@@ -494,9 +521,18 @@ def main() -> None:
     w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
     domain = build_domain(config.CHAIN_ID, config.BATCH_SETTLER)
 
-    # Init Solana if configured
+    # Init Solana if configured — failure disables Solana, Base continues
     if config.SOLANA_PRIVATE_KEY:
-        _init_solana()
+        try:
+            _init_solana()
+        except Exception:
+            log.error(
+                "Failed to init Solana keypair. Expected "
+                "SOLANA_PRIVATE_KEY as base58 string or JSON "
+                "byte array [1,2,...,64]. Solana disabled.",
+                exc_info=True,
+            )
+            config.CHAINS = [c for c in config.CHAINS if c.name != "solana"]
 
     log.info("b1nary Market Maker starting")
     log.info("  MM address:  %s", mm_address)
