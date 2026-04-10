@@ -255,19 +255,20 @@ def _quote_and_submit(
     asset_name = asset_cfg.name
     chain_label = f"{chain}/{asset_name}".upper()
 
-    # Capacity (Base only — Solana capacity is a separate ticket)
-    cap = None
-    if chain == "base" and w3 is not None:
-        cap = _calculate_and_report_capacity(
-            w3, _get_market(asset_name, chain), mm_address, asset_cfg
-        )
-        if cap is None or cap.status == "full":
-            return
-        max_amount_raw = min(
-            int(cap.capacity_eth * 10**OTOKEN_DECIMALS), config.MAX_AMOUNT
-        )
-    else:
-        max_amount_raw = config.MAX_AMOUNT
+    # Capacity — calculate for all chains
+    solana_addr = _solana_maker_pubkey if chain == "solana" else None
+    cap = _calculate_and_report_capacity(
+        w3,
+        _get_market(asset_name, chain),
+        solana_addr or mm_address,
+        asset_cfg,
+        chain,
+    )
+    if cap is None or cap.status == "full":
+        return
+    max_amount_raw = min(
+        int(cap.capacity_eth * 10**OTOKEN_DECIMALS), config.MAX_AMOUNT
+    )
 
     # Read nonce per chain
     if chain == "solana":
@@ -285,7 +286,7 @@ def _quote_and_submit(
         max_amount_raw=max_amount_raw,
         asset=asset_name,
         inventory_imbalance=_tracker.inventory_imbalance(underlying=asset_name),
-        utilization=_compute_utilization(cap) if chain == "base" else 0.0,
+        utilization=_compute_utilization(cap),
         chain=chain,
     )
     if not quotes:
@@ -308,11 +309,12 @@ def _quote_and_submit(
     )
 
 
-def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg):
+def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg, chain="base"):
     """Calculate capacity, report to backend. Returns cap or None."""
     try:
         cap = calculate_capacity_internal(
-            w3, mkt.spot, mm_address, _tracker, asset_config=asset_cfg
+            w3, mkt.spot, mm_address, _tracker,
+            asset_config=asset_cfg, chain=chain,
         )
     except Exception:
         log.warning(

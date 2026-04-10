@@ -128,6 +128,7 @@ SOLANA_BATCH_SETTLER: str = os.getenv(
     "SOLANA_BATCH_SETTLER",
     "GpR6id2cHu5fUGsFm7NUKkB4NzfuEDa6brPzkSrgAzvS",  # devnet
 )
+SOLANA_USDC_MINT: str | None = os.getenv("SOLANA_USDC_MINT")
 
 
 def _parse_solana_assets() -> list[AssetConfig]:
