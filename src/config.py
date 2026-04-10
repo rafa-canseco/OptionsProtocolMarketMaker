@@ -23,6 +23,12 @@ class AssetConfig:
     max_exposure: float  # 0.0–1.0, fraction of total capital
 
 
+@dataclass(frozen=True)
+class ChainConfig:
+    name: str  # "base" | "solana"
+    assets: tuple[AssetConfig, ...]
+
+
 # --- Required ---
 MM_PRIVATE_KEY: str = _require("MM_PRIVATE_KEY")
 MM_API_KEY: str = _require("MM_API_KEY")
@@ -38,7 +44,7 @@ REFRESH_INTERVAL_FAST: int = max(int(os.getenv("REFRESH_INTERVAL_FAST", "30")), 
 FAST_REFRESH_HOURS: int = max(int(os.getenv("FAST_REFRESH_HOURS", "6")), 1)
 SPREAD_BPS: int = int(os.getenv("SPREAD_BPS", "200"))
 MAX_AMOUNT: int = int(os.getenv("MAX_AMOUNT", "500000000"))
-DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "180"))
+DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "300"))
 CHAIN_ID: int = int(os.getenv("CHAIN_ID", "84532"))
 BATCH_SETTLER: str = os.getenv(
     "BATCH_SETTLER",
@@ -114,3 +120,60 @@ if not ASSETS:
     print("FATAL: no assets configured (check ASSETS env var)", file=sys.stderr)
     sys.exit(1)
 ASSET_MAP: dict[str, AssetConfig] = {a.name: a for a in ASSETS}
+
+# --- Solana (optional — disabled when SOLANA_PRIVATE_KEY is unset) ---
+SOLANA_PRIVATE_KEY: str | None = os.getenv("SOLANA_PRIVATE_KEY")
+SOLANA_RPC_URL: str | None = os.getenv("SOLANA_RPC_URL")
+SOLANA_BATCH_SETTLER: str = os.getenv(
+    "SOLANA_BATCH_SETTLER",
+    "GpR6id2cHu5fUGsFm7NUKkB4NzfuEDa6brPzkSrgAzvS",  # devnet
+)
+SOLANA_USDC_MINT: str | None = os.getenv("SOLANA_USDC_MINT")
+
+
+def _parse_solana_assets() -> list[AssetConfig]:
+    raw = os.getenv("SOLANA_ASSETS", "sol")
+    assets = []
+    for name in raw.split(","):
+        name = name.strip().lower()
+        if not name:
+            continue
+        prefix = name.upper()
+        leverage = int(os.getenv(f"{prefix}_HEDGE_LEVERAGE", "3"))
+        if leverage < 1:
+            print(
+                f"FATAL: {prefix}_HEDGE_LEVERAGE must be >= 1, got {leverage}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        max_exp = float(os.getenv(f"{prefix}_MAX_EXPOSURE", "1.0"))
+        if not 0.0 < max_exp <= 1.0:
+            print(
+                f"FATAL: {prefix}_MAX_EXPOSURE must be in (0, 1], got {max_exp}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        assets.append(
+            AssetConfig(
+                name=name,
+                hedge_symbol=os.getenv(f"{prefix}_HEDGE_SYMBOL", name.upper()),
+                leverage=leverage,
+                max_exposure=max_exp,
+            )
+        )
+    return assets
+
+
+SOLANA_ASSETS: list[AssetConfig] = _parse_solana_assets() if SOLANA_PRIVATE_KEY else []
+SOLANA_ASSET_MAP: dict[str, AssetConfig] = {a.name: a for a in SOLANA_ASSETS}
+
+# --- Chain configs ---
+CHAINS: list[ChainConfig] = [ChainConfig(name="base", assets=tuple(ASSETS))]
+if SOLANA_PRIVATE_KEY:
+    if not SOLANA_RPC_URL:
+        print(
+            "FATAL: SOLANA_RPC_URL required when SOLANA_PRIVATE_KEY is set",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    CHAINS.append(ChainConfig(name="solana", assets=tuple(SOLANA_ASSETS)))

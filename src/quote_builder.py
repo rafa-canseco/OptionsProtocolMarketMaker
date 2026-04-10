@@ -17,20 +17,29 @@ log = logging.getLogger(__name__)
 SKIP_DELTA_THRESHOLD = 0.90
 MIN_HOURS_TO_EXPIRY = 1
 
+# Solana BatchSettler uses PRICE_SCALE = 10^8; Base uses USDC raw (10^6)
+PRICE_SCALE_BASE = 1_000_000
+PRICE_SCALE_SOLANA = 100_000_000
+
+# Chain index offset to avoid quote ID collisions across chains
+_CHAIN_OFFSET = {"base": 0, "solana": 100_000}
+
 
 def build_quotes(
     market_data: dict[str, Any],
     maker_nonce: int,
+    *,
     max_amount_raw: int | None = None,
     asset: str = "eth",
     inventory_imbalance: float = 0.0,
     utilization: float = 0.0,
+    chain: str = "base",
 ) -> list[dict[str, Any]]:
     """Price each oToken and build a list of quote dicts ready for signing.
 
     Returns:
-        List of dicts with keys matching the EIP-712 Quote struct
-        plus metadata fields for the API (strike_price, expiry, is_put, asset).
+        List of dicts with signing fields + metadata
+        (strike_price, expiry, is_put, asset, chain).
     """
     spot: float = market_data["spot"]
     iv: float = market_data["iv"]
@@ -38,10 +47,13 @@ def build_quotes(
     now = int(time.time())
     effective_max = max_amount_raw if max_amount_raw is not None else config.MAX_AMOUNT
 
-    # Offset quote_ids per asset so multi-asset quotes don't collide
-    # in the backend's upsert (on_conflict=mm_address,quote_id)
-    asset_index = next((i for i, a in enumerate(config.ASSETS) if a.name == asset), 0)
-    quote_id_offset = asset_index * 1000
+    # Pick price scale by chain
+    price_scale = PRICE_SCALE_SOLANA if chain == "solana" else PRICE_SCALE_BASE
+
+    # Offset quote_ids per chain + asset so quotes don't collide
+    all_assets = config.SOLANA_ASSETS if chain == "solana" else config.ASSETS
+    asset_index = next((i for i, a in enumerate(all_assets) if a.name == asset), 0)
+    quote_id_offset = _CHAIN_OFFSET.get(chain, 0) + asset_index * 1000
 
     quotes: list[dict[str, Any]] = []
     for idx, ot in enumerate(otokens):
@@ -103,23 +115,22 @@ def build_quotes(
             spread_bps=spread_bps,
         )
 
-        # Convert to USDC raw (6 decimals), floor at 1
-        bid_price_raw = max(int(bid_usd * 1e6), 1)
+        bid_price_raw = max(int(bid_usd * price_scale), 1)
 
         quotes.append(
             {
-                # EIP-712 fields
                 "oToken": ot["address"],
                 "bidPrice": bid_price_raw,
                 "deadline": now + config.DEADLINE_SECONDS,
                 "quoteId": quote_id_offset + idx,
                 "maxAmount": effective_max,
                 "makerNonce": maker_nonce,
-                # API metadata
+                # Metadata
                 "strike_price": strike,
                 "expiry": expiry,
                 "is_put": is_put,
                 "asset": asset,
+                "chain": chain,
             }
         )
 
@@ -127,7 +138,7 @@ def build_quotes(
 
 
 def to_api_payload(quote: dict[str, Any], signature: str) -> dict[str, Any]:
-    """Convert a quote dict + signature into the POST /mm/quotes format."""
+    """Convert a Base quote dict + signature into the POST /mm/quotes format."""
     return {
         "otoken_address": quote["oToken"],
         "bid_price": quote["bidPrice"],
@@ -140,4 +151,30 @@ def to_api_payload(quote: dict[str, Any], signature: str) -> dict[str, Any]:
         "expiry": quote["expiry"],
         "is_put": quote["is_put"],
         "asset": quote.get("asset", "eth"),
+        "chain": quote.get("chain", "base"),
+    }
+
+
+def to_solana_api_payload(
+    quote: dict[str, Any],
+    signature: bytes,
+    maker_pubkey: str,
+) -> dict[str, Any]:
+    """Convert a Solana quote dict + ed25519 signature to API format."""
+    import base58
+
+    return {
+        "otoken_address": quote["oToken"],
+        "bid_price": quote["bidPrice"],
+        "deadline": quote["deadline"],
+        "quote_id": quote["quoteId"],
+        "max_amount": quote["maxAmount"],
+        "maker_nonce": quote["makerNonce"],
+        "signature": base58.b58encode(signature).decode(),
+        "maker": maker_pubkey,
+        "strike_price": quote["strike_price"],
+        "expiry": quote["expiry"],
+        "is_put": quote["is_put"],
+        "asset": quote.get("asset", "sol"),
+        "chain": "solana",
     }
