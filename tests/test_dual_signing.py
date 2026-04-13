@@ -3,7 +3,7 @@
 Covers:
 1. Solana message layout (exactly 72 bytes, correct field order)
 2. ed25519 sign + verify round-trip
-3. Price scale separation (1e8 Solana vs 1e6 Base)
+3. Solana/Base price scale parity (USDC raw, 1e6)
 4. MakerState PDA derivation matches Rust program
 5. Full round-trip: build → sign → verify (simulates on-chain verifier)
 6. Base quote regression (no changes to existing ECDSA path)
@@ -35,7 +35,7 @@ def test_solana_message_is_72_bytes():
     mint = bytes(Pubkey.new_unique())  # 32 bytes
     msg = build_solana_quote_message(
         otoken_mint=mint,
-        bid_price=5_00000000,
+        bid_price=5_000000,
         deadline=1_700_000_000,
         quote_id=42,
         max_amount=1_00000000,
@@ -110,12 +110,12 @@ def test_sign_quote_solana_verifiable():
     vk.verify(msg, sig)
 
 
-# --- 3. Price scale separation ---
+# --- 3. Price scale parity ---
 
 
 @patch("src.quote_builder.config")
-def test_solana_quotes_use_1e8_price_scale(mock_config):
-    """Solana quotes use PRICE_SCALE=10^8, not USDC 10^6."""
+def test_solana_quotes_use_usdc_raw_price_scale(mock_config):
+    """Solana quotes use USDC raw (10^6), matching the on-chain program."""
     mock_config.RISK_FREE_RATE = 0.05
     mock_config.SPREAD_BPS = 200
     mock_config.DEADLINE_SECONDS = 300
@@ -141,10 +141,8 @@ def test_solana_quotes_use_1e8_price_scale(mock_config):
     assert len(base_quotes) == 1
     assert len(sol_quotes) == 1
 
-    # Same USD price, different raw encoding
-    # Solana raw should be ~100x the Base raw (1e8 / 1e6 = 100)
-    ratio = sol_quotes[0]["bidPrice"] / base_quotes[0]["bidPrice"]
-    assert 95 < ratio < 105, f"Expected ~100x ratio, got {ratio}"
+    # Same USD premium should produce the same USDC raw encoding on both chains.
+    assert sol_quotes[0]["bidPrice"] == base_quotes[0]["bidPrice"]
 
 
 @patch("src.quote_builder.config")
@@ -209,7 +207,7 @@ def test_full_round_trip_build_sign_verify():
     kp = Keypair()
     otoken_mint = Pubkey.new_unique()
 
-    bid_price = 5_00000000  # $5.00 at 1e8 scale
+    bid_price = 5_000000  # $5.00 at USDC 1e6 scale
     deadline = int(time.time()) + 300
     quote_id = 42
     max_amount = 1_00000000  # 1.0 oToken at 8 decimals

@@ -17,9 +17,9 @@ log = logging.getLogger(__name__)
 SKIP_DELTA_THRESHOLD = 0.90
 MIN_HOURS_TO_EXPIRY = 1
 
-# Solana BatchSettler uses PRICE_SCALE = 10^8; Base uses USDC raw (10^6)
+# Base and Solana BatchSettler both expect bidPrice as USDC raw per contract.
 PRICE_SCALE_BASE = 1_000_000
-PRICE_SCALE_SOLANA = 100_000_000
+PRICE_SCALE_SOLANA = 1_000_000
 
 # Chain index offset to avoid quote ID collisions across chains
 _CHAIN_OFFSET = {"base": 0, "solana": 100_000}
