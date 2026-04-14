@@ -17,12 +17,13 @@ log = logging.getLogger(__name__)
 SKIP_DELTA_THRESHOLD = 0.90
 MIN_HOURS_TO_EXPIRY = 1
 
-# Base and Solana BatchSettler both expect bidPrice as USDC raw per contract.
+# All chains use USDC (6 decimals) for bidPrice.
 PRICE_SCALE_BASE = 1_000_000
 PRICE_SCALE_SOLANA = 1_000_000
+PRICE_SCALE_XLAYER = 1_000_000
 
 # Chain index offset to avoid quote ID collisions across chains
-_CHAIN_OFFSET = {"base": 0, "solana": 100_000}
+_CHAIN_OFFSET = {"base": 0, "solana": 100_000, "xlayer": 200_000}
 
 
 def build_quotes(
@@ -48,10 +49,20 @@ def build_quotes(
     effective_max = max_amount_raw if max_amount_raw is not None else config.MAX_AMOUNT
 
     # Pick price scale by chain
-    price_scale = PRICE_SCALE_SOLANA if chain == "solana" else PRICE_SCALE_BASE
+    _price_scales = {
+        "base": PRICE_SCALE_BASE,
+        "solana": PRICE_SCALE_SOLANA,
+        "xlayer": PRICE_SCALE_XLAYER,
+    }
+    price_scale = _price_scales.get(chain, PRICE_SCALE_BASE)
 
     # Offset quote_ids per chain + asset so quotes don't collide
-    all_assets = config.SOLANA_ASSETS if chain == "solana" else config.ASSETS
+    _chain_asset_map = {
+        "base": config.ASSETS,
+        "solana": config.SOLANA_ASSETS,
+        "xlayer": config.XLAYER_ASSETS,
+    }
+    all_assets = _chain_asset_map.get(chain, config.ASSETS)
     asset_index = next((i for i, a in enumerate(all_assets) if a.name == asset), 0)
     quote_id_offset = _CHAIN_OFFSET.get(chain, 0) + asset_index * 1000
 

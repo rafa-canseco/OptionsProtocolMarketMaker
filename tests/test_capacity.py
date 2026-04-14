@@ -42,6 +42,7 @@ def _live_config(mock_config, max_amount=100 * 10**8):
     mock_config.CAPACITY_AVG_DELTA = 0.3
     mock_config.USDC_ADDRESS = "0xUSDC"
     mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
+    mock_config.EVM_CONFIGS = {}
     mock_config.MAX_AMOUNT = max_amount
 
 
@@ -368,6 +369,7 @@ class TestSimulateModeCapacity:
         mock_config.HEDGE_MODE = "simulate"
         mock_config.USDC_ADDRESS = "0xUSDC"
         mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
+        mock_config.EVM_CONFIGS = {}
         mock_config.MAX_AMOUNT = 100 * 10**8
 
         w3 = _mock_w3(50_000 * 10**6, 50_000 * 10**6)
@@ -403,6 +405,7 @@ class TestSharedPoolMaxExposure:
         mock_config.HEDGE_MODE = "simulate"
         mock_config.USDC_ADDRESS = "0xUSDC"
         mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
+        mock_config.EVM_CONFIGS = {}
         mock_config.MAX_AMOUNT = 100 * 10**8
 
         w3 = _mock_w3(100_000 * 10**6, 100_000 * 10**6)
@@ -426,6 +429,7 @@ class TestSharedPoolMaxExposure:
         mock_config.HEDGE_MODE = "simulate"
         mock_config.USDC_ADDRESS = "0xUSDC"
         mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
+        mock_config.EVM_CONFIGS = {}
         mock_config.MAX_AMOUNT = 100 * 10**8
 
         w3 = _mock_w3(100_000 * 10**6, 100_000 * 10**6)
@@ -452,6 +456,7 @@ class TestSharedPoolMaxExposure:
         mock_config.HEDGE_MODE = "simulate"
         mock_config.USDC_ADDRESS = "0xUSDC"
         mock_config.MARGIN_POOL_ADDRESS = "0xMARGIN"
+        mock_config.EVM_CONFIGS = {}
         mock_config.MAX_AMOUNT = 100 * 10**8
 
         w3 = _mock_w3(100_000 * 10**6, 100_000 * 10**6)

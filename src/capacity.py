@@ -81,32 +81,50 @@ def capacity_status(
     return "active"
 
 
-def _read_usdc_balance(w3: Web3, mm_address: str) -> float:
+def _read_usdc_balance(
+    w3: Web3,
+    mm_address: str,
+    usdc_address: str | None = None,
+) -> float:
+    usdc = usdc_address or config.USDC_ADDRESS
     addr_padded = mm_address.lower().replace("0x", "").zfill(64)
     data = _BALANCE_OF_SIG + addr_padded
-    raw = w3.eth.call({"to": config.USDC_ADDRESS, "data": data})
+    raw = w3.eth.call({"to": usdc, "data": data})
     return int.from_bytes(raw, "big") / 10**USDC_DECIMALS
 
 
-def _read_usdc_allowance(w3: Web3, mm_address: str) -> float:
+def _read_usdc_allowance(
+    w3: Web3,
+    mm_address: str,
+    usdc_address: str | None = None,
+    margin_pool_address: str | None = None,
+) -> float:
+    usdc = usdc_address or config.USDC_ADDRESS
+    pool = margin_pool_address or config.MARGIN_POOL_ADDRESS
     owner = mm_address.lower().replace("0x", "").zfill(64)
-    spender = config.MARGIN_POOL_ADDRESS.lower().replace("0x", "").zfill(64)
+    spender = pool.lower().replace("0x", "").zfill(64)
     data = _ALLOWANCE_SIG + owner + spender
-    raw = w3.eth.call({"to": config.USDC_ADDRESS, "data": data})
+    raw = w3.eth.call({"to": usdc, "data": data})
     return int.from_bytes(raw, "big") / 10**USDC_DECIMALS
 
 
 def _read_pools(
     w3: Web3,
     mm_address: str,
+    *,
+    chain: str = "base",
 ) -> tuple[float, float, float]:
     """Read on-chain USDC and hedge pool state.
 
     Returns:
         (usdc_available, hedge_pool_value_usd, hedge_withdrawable_usd)
     """
-    usdc_balance = _read_usdc_balance(w3, mm_address)
-    usdc_allowance = _read_usdc_allowance(w3, mm_address)
+    evm_cfg = config.EVM_CONFIGS.get(chain)
+    usdc_addr = evm_cfg.usdc_address if evm_cfg else None
+    pool_addr = evm_cfg.margin_pool_address if evm_cfg else None
+
+    usdc_balance = _read_usdc_balance(w3, mm_address, usdc_addr)
+    usdc_allowance = _read_usdc_allowance(w3, mm_address, usdc_addr, pool_addr)
     usdc_available = min(usdc_balance, usdc_allowance)
 
     if config.HEDGE_MODE == "live":
@@ -145,8 +163,7 @@ def _read_solana_usdc_balance(
     if "error" in body:
         rpc_err = body["error"]
         raise RuntimeError(
-            f"Solana RPC error {rpc_err.get('code')}: "
-            f"{rpc_err.get('message')}"
+            f"Solana RPC error {rpc_err.get('code')}: {rpc_err.get('message')}"
         )
 
     accounts = body.get("result", {}).get("value", [])
@@ -172,9 +189,7 @@ def _read_pools_solana(
     Returns same shape as _read_pools:
         (usdc_available, hedge_pool_value_usd, hedge_withdrawable_usd)
     """
-    usdc_available = _read_solana_usdc_balance(
-        rpc_url, maker_pubkey, usdc_mint
-    )
+    usdc_available = _read_solana_usdc_balance(rpc_url, maker_pubkey, usdc_mint)
 
     if config.HEDGE_MODE == "live":
         withdrawable = hedge_executor.get_withdrawable()
@@ -265,16 +280,14 @@ def calculate_capacity_internal(
         asset_config = config.ASSET_MAP.get("eth", config.ASSETS[0])
 
     if chain == "solana":
-        usdc_available, hedge_pool_value, withdrawable = (
-            _read_pools_solana(
-                config.SOLANA_RPC_URL,
-                mm_address,
-                config.SOLANA_USDC_MINT,
-            )
+        usdc_available, hedge_pool_value, withdrawable = _read_pools_solana(
+            config.SOLANA_RPC_URL,
+            mm_address,
+            config.SOLANA_USDC_MINT,
         )
     else:
-        usdc_available, hedge_pool_value, withdrawable = (
-            _read_pools(w3, mm_address)
+        usdc_available, hedge_pool_value, withdrawable = _read_pools(
+            w3, mm_address, chain=chain
         )
     leverage = max(asset_config.leverage, 1)
 
