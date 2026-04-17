@@ -1,6 +1,7 @@
 """Tests for quote_builder with dynamic max_amount_raw and multi-asset."""
 
 import time
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from src.pricer import (
@@ -118,6 +119,123 @@ def test_build_quotes_default_asset_is_eth(mock_config):
     quotes = build_quotes(market, maker_nonce=0)
 
     assert quotes[0]["asset"] == "eth"
+
+
+@patch("src.quote_builder.config")
+def test_build_quotes_caps_calls_with_underlying_collateral(mock_config):
+    """Covered calls use the stricter underlying collateral cap."""
+    mock_config.RISK_FREE_RATE = 0.05
+    mock_config.SPREAD_BPS = 200
+    mock_config.DEADLINE_SECONDS = 300
+    mock_config.MAX_AMOUNT = 500_000_000
+    mock_config.SOLANA_ASSETS = [
+        SimpleNamespace(name="sol"),
+        SimpleNamespace(name="tslax"),
+    ]
+
+    market = {
+        "spot": 250.0,
+        "iv": 0.6,
+        "available_otokens": [
+            {
+                "address": "TSLAX_CALL",
+                "strike_price": 260.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": False,
+            },
+            {
+                "address": "TSLAX_PUT",
+                "strike_price": 240.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": True,
+            },
+        ],
+    }
+
+    quotes = build_quotes(
+        market,
+        maker_nonce=0,
+        max_amount_raw=500_000_000,
+        max_call_amount_raw=125_000_000,
+        asset="tslax",
+        chain="solana",
+    )
+
+    assert len(quotes) == 2
+    assert quotes[0]["maxAmount"] == 125_000_000
+    assert quotes[1]["maxAmount"] == 500_000_000
+
+
+@patch("src.quote_builder.config")
+def test_build_quotes_skips_calls_without_underlying_collateral(mock_config):
+    """Solana calls are not published when covered-call capacity is zero."""
+    mock_config.RISK_FREE_RATE = 0.05
+    mock_config.SPREAD_BPS = 200
+    mock_config.DEADLINE_SECONDS = 300
+    mock_config.MAX_AMOUNT = 500_000_000
+    mock_config.SOLANA_ASSETS = [SimpleNamespace(name="tslax")]
+
+    market = {
+        "spot": 250.0,
+        "iv": 0.6,
+        "available_otokens": [
+            {
+                "address": "TSLAX_CALL",
+                "strike_price": 260.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": False,
+            },
+            {
+                "address": "TSLAX_PUT",
+                "strike_price": 240.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": True,
+            },
+        ],
+    }
+
+    quotes = build_quotes(
+        market,
+        maker_nonce=0,
+        max_call_amount_raw=0,
+        asset="tslax",
+        chain="solana",
+    )
+
+    assert len(quotes) == 1
+    assert quotes[0]["is_put"] is True
+
+
+@patch("src.quote_builder.config")
+def test_solana_quote_ids_do_not_collide_between_sol_and_tslax(mock_config):
+    """Solana quote IDs include an asset offset."""
+    mock_config.RISK_FREE_RATE = 0.05
+    mock_config.SPREAD_BPS = 200
+    mock_config.DEADLINE_SECONDS = 300
+    mock_config.MAX_AMOUNT = 500_000_000
+    mock_config.SOLANA_ASSETS = [
+        SimpleNamespace(name="sol"),
+        SimpleNamespace(name="tslax"),
+    ]
+
+    market = {
+        "spot": 250.0,
+        "iv": 0.6,
+        "available_otokens": [
+            {
+                "address": "TOKEN",
+                "strike_price": 260.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": False,
+            }
+        ],
+    }
+
+    sol_quote = build_quotes(market, maker_nonce=0, asset="sol", chain="solana")[0]
+    tslax_quote = build_quotes(market, maker_nonce=0, asset="tslax", chain="solana")[0]
+
+    assert sol_quote["quoteId"] == 100_000
+    assert tslax_quote["quoteId"] == 101_000
 
 
 def test_calculate_spread_base_only():

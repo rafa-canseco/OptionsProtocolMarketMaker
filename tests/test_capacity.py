@@ -1,5 +1,6 @@
 """Tests for capacity calculation module."""
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -8,6 +9,7 @@ from src.capacity import (
     CapacityReport,
     calculate_capacity_internal,
     capacity_status,
+    solana_call_capacity_raw,
 )
 from src.config import AssetConfig
 
@@ -16,6 +18,33 @@ SPOT = 2000.0
 
 ETH_CONFIG = AssetConfig(name="eth", hedge_symbol="ETH", leverage=3, max_exposure=0.8)
 BTC_CONFIG = AssetConfig(name="btc", hedge_symbol="BTC", leverage=2, max_exposure=0.8)
+
+
+def _mock_solana_token_resp(ui_amount):
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+            "value": [
+                {
+                    "account": {
+                        "data": {
+                            "parsed": {
+                                "info": {
+                                    "tokenAmount": {
+                                        "uiAmount": ui_amount,
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+    }
+    return resp
 
 
 def _mock_w3(usdc_balance: int, usdc_allowance: int):
@@ -391,6 +420,58 @@ class TestSimulateModeCapacity:
         assert report.capacity_usd == pytest.approx(50_000.0, rel=0.01)
         assert report.capacity_eth == pytest.approx(25.0, rel=0.01)
         assert report.status == "active"
+
+
+class TestSolanaCallCapacity:
+    @patch("src.capacity.requests.post")
+    @patch("src.capacity.config")
+    def test_tslax_calls_are_capped_by_spl_balance(self, mock_config, mock_post):
+        """TSLAx covered-call capacity reads maker TSLAx SPL collateral."""
+        mock_config.SOLANA_RPC_URL = "http://solana-rpc"
+        mock_config.SOLANA_TSLAX_MINT = "TSLAX_MINT"
+        mock_post.return_value = _mock_solana_token_resp(3.5)
+
+        tracker = MagicMock()
+        tracker.open_positions.return_value = [
+            SimpleNamespace(is_put=False, num_options=1.25),
+            SimpleNamespace(is_put=True, num_options=10.0),
+        ]
+
+        cap = solana_call_capacity_raw("maker", "tslax", tracker)
+
+        assert cap == 225_000_000
+        call = mock_post.call_args.kwargs["json"]
+        assert call["params"][1] == {"mint": "TSLAX_MINT"}
+
+    @patch("src.capacity.requests.post")
+    @patch("src.capacity.config")
+    def test_tslax_calls_zero_when_no_spl_collateral(self, mock_config, mock_post):
+        """No TSLAx token account means no TSLAx call quotes."""
+        mock_config.SOLANA_RPC_URL = "http://solana-rpc"
+        mock_config.SOLANA_TSLAX_MINT = "TSLAX_MINT"
+        resp = MagicMock()
+        resp.raise_for_status = MagicMock()
+        resp.json.return_value = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {"value": []},
+        }
+        mock_post.return_value = resp
+
+        tracker = MagicMock()
+        tracker.open_positions.return_value = []
+
+        assert solana_call_capacity_raw("maker", "tslax", tracker) == 0
+
+    @patch("src.capacity.config")
+    def test_assets_without_mint_keep_legacy_call_capacity(self, mock_config):
+        """Assets without SOLANA_<ASSET>_MINT are not capped here."""
+        mock_config.SOLANA_RPC_URL = "http://solana-rpc"
+        mock_config.SOLANA_SOL_MINT = None
+
+        tracker = MagicMock()
+
+        assert solana_call_capacity_raw("maker", "sol", tracker) is None
 
 
 class TestSharedPoolMaxExposure:

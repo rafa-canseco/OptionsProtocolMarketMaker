@@ -530,6 +530,27 @@ def test_rebalance_hedge_threshold_skips_tiny():
     assert tracker._simulated_hedge["eth"] == -0.001
 
 
+def test_cache_otokens_preserves_chain_metadata():
+    """Cached oTokens keep chain context for fill resolution."""
+    tracker = PositionTracker()
+    tracker.cache_otokens(
+        [
+            {
+                "address": "SoToken",
+                "strike_price": 250.0,
+                "expiry": int(time.time()) + 86400,
+                "is_put": False,
+            }
+        ],
+        underlying="tslax",
+        chain="solana",
+    )
+
+    details = tracker.get_otoken_details("SoToken")
+    assert details["underlying"] == "tslax"
+    assert details["chain"] == "solana"
+
+
 @patch("src.main.config")
 def test_pick_refresh_interval_no_positions(mock_config):
     """No positions → normal interval."""
