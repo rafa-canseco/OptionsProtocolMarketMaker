@@ -172,16 +172,20 @@ def check_iv_divergence(
     return realized_vol
 
 
-VOL_SKEW_SLOPE = 0.15
-VOL_SKEW_PUT_BIAS = 0.05
+VOL_SKEW_SLOPE = 0.10
+VOL_SKEW_PUT_BIAS = 0.03
 VOL_SKEW_MIN_MULT = 0.8
-VOL_SKEW_MAX_MULT = 1.5
+VOL_SKEW_MAX_MULT = 1.3
 
 SKEW_MAX_BPS = 200
 GAMMA_NEAR_DAYS = 3
 GAMMA_NEAR_BPS = 50
 GAMMA_VERY_NEAR_DAYS = 1
 GAMMA_VERY_NEAR_BPS = 100
+
+IV_CALIBRATION_THRESHOLD = 1.30
+IV_CALIBRATION_CAP = 1.20
+MIN_SPREAD_BPS = 150
 
 
 def apply_vol_skew(
@@ -227,6 +231,53 @@ def apply_vol_skew(
     return sigma * multiplier
 
 
+def calibrate_iv(
+    iv: float,
+    spot_history: list[float],
+) -> float:
+    """Cap implied vol when it diverges far above realized vol.
+
+    Deribit IV reflects demand from large hedgers and can stay persistently
+    above the realized vol that options on b1nary actually resolve against.
+    When the MM pays a premium based on inflated IV, it consistently overpays.
+    This caps IV at IV_CALIBRATION_CAP * realized_30d when the ratio exceeds
+    IV_CALIBRATION_THRESHOLD. Returns the original IV if there is not enough
+    spot history or if the ratio is within range.
+    """
+    _log = logging.getLogger(__name__)
+    if iv <= 0 or len(spot_history) < 2:
+        return iv
+
+    returns = []
+    for i in range(1, len(spot_history)):
+        if spot_history[i - 1] > 0 and spot_history[i] > 0:
+            returns.append(math.log(spot_history[i] / spot_history[i - 1]))
+
+    if len(returns) < 2:
+        return iv
+
+    mean_r = sum(returns) / len(returns)
+    variance = sum((r - mean_r) ** 2 for r in returns) / (len(returns) - 1)
+    realized_vol = math.sqrt(variance * 365)
+
+    if realized_vol <= 0:
+        return iv
+
+    ratio = iv / realized_vol
+    if ratio <= IV_CALIBRATION_THRESHOLD:
+        return iv
+
+    capped = realized_vol * IV_CALIBRATION_CAP
+    _log.info(
+        "[IV CAL] iv=%.4f realized=%.4f ratio=%.2f -> capped=%.4f",
+        iv,
+        realized_vol,
+        ratio,
+        capped,
+    )
+    return capped
+
+
 def calculate_spread(
     base_bps: int,
     is_put: bool,
@@ -268,7 +319,7 @@ def calculate_spread(
     if utilization > 0.8:
         spread += (utilization - 0.8) * 500
 
-    return max(int(spread), 50)
+    return max(int(spread), MIN_SPREAD_BPS)
 
 
 def price_with_spread(
