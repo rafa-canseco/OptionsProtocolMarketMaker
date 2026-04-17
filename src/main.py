@@ -17,7 +17,7 @@ from solders.pubkey import Pubkey  # type: ignore[import-untyped]
 from src import api_client, config, fill_listener, hedge_executor, trade_logger
 from src.capacity import calculate_capacity_internal
 from src.position_tracker import PositionTracker
-from src.pricer import check_iv_divergence, validate_iv
+from src.pricer import MIN_SPREAD_BPS, check_iv_divergence, validate_iv
 from src.quote_builder import build_quotes, to_api_payload, to_solana_api_payload
 from src.signer import (
     build_domain,
@@ -43,6 +43,9 @@ log = logging.getLogger("mm")
 _solana_keypair = None  # solders.Keypair | None
 _solana_maker_pubkey: str = ""  # base58 pubkey string
 
+# Per-EVM-chain runtime state: {chain_name: (Web3, domain_dict)}
+_evm_chains: dict[str, tuple[Web3, dict]] = {}
+
 
 @dataclass
 class MarketSnapshot:
@@ -52,7 +55,7 @@ class MarketSnapshot:
 
 _tracker = PositionTracker()
 _market: dict[str, MarketSnapshot] = {}
-_spot_history: dict[str, list[float]] = {}
+_spot_history: dict[tuple[str, str], list[float]] = {}
 _seen_tx_hashes: set[str] = set()
 _fill_lock = threading.Lock()
 
@@ -111,11 +114,14 @@ def run_cycle(
 
     # 4. Per-chain, per-asset: fetch market data, quote, sign, submit
     for chain_cfg in config.CHAINS:
+        evm = _evm_chains.get(chain_cfg.name)
+        chain_w3 = evm[0] if evm else None
+        chain_domain = evm[1] if evm else None
         for asset_cfg in chain_cfg.assets:
             try:
                 _run_asset_cycle(
-                    w3=w3 if chain_cfg.name == "base" else None,
-                    domain=domain if chain_cfg.name == "base" else None,
+                    w3=chain_w3,
+                    domain=chain_domain,
                     mm_address=mm_address,
                     asset_cfg=asset_cfg,
                     chain=chain_cfg.name,
@@ -129,14 +135,20 @@ def run_cycle(
                 )
 
 
-def _track_spot(asset_name: str, spot: float) -> None:
-    """Append spot to history and check IV divergence."""
-    if asset_name not in _spot_history:
-        _spot_history[asset_name] = []
+def _track_spot(asset_name: str, spot: float, chain: str = "base") -> None:
+    """Append spot to the per-(chain, asset) history.
+
+    Keyed by (chain, asset) so OKB on XLayer never shares a history
+    buffer with a hypothetical OKB on another chain — the realized-vol
+    estimate used by calibrate_iv must be chain-local.
+    """
+    key = (chain, asset_name)
+    if key not in _spot_history:
+        _spot_history[key] = []
     if spot > 0:
-        _spot_history[asset_name].append(spot)
-        if len(_spot_history[asset_name]) > SPOT_HISTORY_MAX:
-            _spot_history[asset_name] = _spot_history[asset_name][-SPOT_HISTORY_MAX:]
+        _spot_history[key].append(spot)
+        if len(_spot_history[key]) > SPOT_HISTORY_MAX:
+            _spot_history[key] = _spot_history[key][-SPOT_HISTORY_MAX:]
 
 
 def _compute_utilization(cap) -> float:
@@ -210,13 +222,13 @@ def _run_asset_cycle(
         len(otokens),
     )
 
-    _track_spot(asset_name, mkt.spot)
+    _track_spot(asset_name, mkt.spot, chain=chain)
 
     if not validate_iv(mkt.iv, label=chain_label):
         return
     check_iv_divergence(
         mkt.iv,
-        _spot_history.get(asset_name, []),
+        _spot_history.get((chain, asset_name), []),
         label=chain_label,
     )
 
@@ -266,9 +278,7 @@ def _quote_and_submit(
     )
     if cap is None or cap.status == "full":
         return
-    max_amount_raw = min(
-        int(cap.capacity_eth * 10**OTOKEN_DECIMALS), config.MAX_AMOUNT
-    )
+    max_amount_raw = min(int(cap.capacity_eth * 10**OTOKEN_DECIMALS), config.MAX_AMOUNT)
 
     # Read nonce per chain
     if chain == "solana":
@@ -278,7 +288,17 @@ def _quote_and_submit(
             _solana_maker_pubkey,
         )
     else:
-        nonce = read_maker_nonce(w3, config.BATCH_SETTLER, mm_address)
+        evm_cfg = config.EVM_CONFIGS.get(chain)
+        if evm_cfg is None:
+            # CHAINS and EVM_CONFIGS must stay in sync. Falling back to
+            # config.BATCH_SETTLER would route XLayer-signed quotes at a
+            # Base settler address, which is a silent cross-chain routing
+            # bug. Prefer a loud failure.
+            raise RuntimeError(
+                f"chain={chain} is active but missing from EVM_CONFIGS; "
+                "fix config wiring"
+            )
+        nonce = read_maker_nonce(w3, evm_cfg.batch_settler, mm_address)
 
     quotes = build_quotes(
         market,
@@ -288,6 +308,7 @@ def _quote_and_submit(
         inventory_imbalance=_tracker.inventory_imbalance(underlying=asset_name),
         utilization=_compute_utilization(cap),
         chain=chain,
+        spot_history=_spot_history.get((chain, asset_name), []),
     )
     if not quotes:
         log.warning("No valid quotes for %s", chain_label)
@@ -313,8 +334,12 @@ def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg, chain="base")
     """Calculate capacity, report to backend. Returns cap or None."""
     try:
         cap = calculate_capacity_internal(
-            w3, mkt.spot, mm_address, _tracker,
-            asset_config=asset_cfg, chain=chain,
+            w3,
+            mkt.spot,
+            mm_address,
+            _tracker,
+            asset_config=asset_cfg,
+            chain=chain,
         )
     except Exception:
         log.warning(
@@ -519,9 +544,32 @@ def _init_solana() -> None:
 
 
 def main() -> None:
+    global _evm_chains  # noqa: PLW0603
     mm_address = Account.from_key(config.MM_PRIVATE_KEY).address
     w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
     domain = build_domain(config.CHAIN_ID, config.BATCH_SETTLER)
+
+    # Init all EVM chains (Base + XLayer etc.). RPC and Web3 construction
+    # raising a ConnectionError is recoverable — network hiccup during
+    # startup. Anything else (invalid address, KeyError, programmer bug)
+    # should crash fast so the operator fixes the config before the bot
+    # runs in a degraded state without noticing.
+    _evm_chains["base"] = (w3, domain)
+    for name, evm_cfg in config.EVM_CONFIGS.items():
+        if name == "base":
+            continue
+        try:
+            chain_w3 = Web3(Web3.HTTPProvider(evm_cfg.rpc_url))
+            chain_domain = build_domain(evm_cfg.chain_id, evm_cfg.batch_settler)
+            _evm_chains[name] = (chain_w3, chain_domain)
+            log.info("Initialized EVM chain: %s (id=%d)", name, evm_cfg.chain_id)
+        except (ConnectionError, TimeoutError, OSError):
+            log.error(
+                "Network error initializing %s chain, disabling for this run",
+                name,
+                exc_info=True,
+            )
+            config.CHAINS = [c for c in config.CHAINS if c.name != name]
 
     # Init Solana if configured — failure disables Solana, Base continues
     if config.SOLANA_PRIVATE_KEY:
@@ -539,14 +587,33 @@ def main() -> None:
     log.info("b1nary Market Maker starting")
     log.info("  MM address:  %s", mm_address)
     log.info("  Backend:     %s", config.BACKEND_URL)
-    log.info("  RPC:         %s", config.RPC_URL)
     log.info("  Chains:      %s", [c.name for c in config.CHAINS])
-    log.info("  Base assets: %s", [a.name for a in config.ASSETS])
+    for name, evm_cfg in config.EVM_CONFIGS.items():
+        log.info(
+            "  %s: rpc=%s chainId=%d settler=%s",
+            name.upper(),
+            evm_cfg.rpc_url,
+            evm_cfg.chain_id,
+            evm_cfg.batch_settler[:10] + "...",
+        )
+        chain_assets = {
+            "base": config.ASSETS,
+            "xlayer": config.XLAYER_ASSETS,
+        }.get(name, [])
+        log.info("  %s assets: %s", name.upper(), [a.name for a in chain_assets])
     if config.SOLANA_PRIVATE_KEY:
         log.info("  Solana MM:   %s", _solana_maker_pubkey)
         log.info("  Solana RPC:  %s", config.SOLANA_RPC_URL)
         log.info("  Solana assets: %s", [a.name for a in config.SOLANA_ASSETS])
     log.info("  Spread:      %d bps", config.SPREAD_BPS)
+    if config.SPREAD_BPS < MIN_SPREAD_BPS:
+        log.warning(
+            "SPREAD_BPS=%d is below MIN_SPREAD_BPS=%d; every quote will "
+            "be clamped up by calculate_spread. Raise SPREAD_BPS or "
+            "lower MIN_SPREAD_BPS for consistency.",
+            config.SPREAD_BPS,
+            MIN_SPREAD_BPS,
+        )
     log.info(
         "  Refresh:     %ds (fast=%ds when <%dh to expiry)",
         config.REFRESH_INTERVAL,

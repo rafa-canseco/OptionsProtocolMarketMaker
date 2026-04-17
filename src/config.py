@@ -24,8 +24,20 @@ class AssetConfig:
 
 
 @dataclass(frozen=True)
+class EvmChainConfig:
+    """Per-EVM-chain settings (RPC, contract addresses)."""
+
+    name: str
+    chain_id: int
+    rpc_url: str
+    batch_settler: str
+    usdc_address: str
+    margin_pool_address: str
+
+
+@dataclass(frozen=True)
 class ChainConfig:
-    name: str  # "base" | "solana"
+    name: str  # "base" | "solana" | "xlayer"
     assets: tuple[AssetConfig, ...]
 
 
@@ -42,7 +54,7 @@ RPC_URL: str = _require("RPC_URL")
 REFRESH_INTERVAL: int = int(os.getenv("REFRESH_INTERVAL", "60"))
 REFRESH_INTERVAL_FAST: int = max(int(os.getenv("REFRESH_INTERVAL_FAST", "30")), 5)
 FAST_REFRESH_HOURS: int = max(int(os.getenv("FAST_REFRESH_HOURS", "6")), 1)
-SPREAD_BPS: int = int(os.getenv("SPREAD_BPS", "200"))
+SPREAD_BPS: int = int(os.getenv("SPREAD_BPS", "400"))
 MAX_AMOUNT: int = int(os.getenv("MAX_AMOUNT", "500000000"))
 DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "300"))
 CHAIN_ID: int = int(os.getenv("CHAIN_ID", "84532"))
@@ -73,6 +85,22 @@ USDC_ADDRESS: str = os.getenv(
 MARGIN_POOL_ADDRESS: str = os.getenv(
     "MARGIN_POOL_ADDRESS",
     "0xa1e04873F6d112d84824C88c9D6937bE38811657",  # Base mainnet MarginPool
+)
+
+# --- XLayer (optional — enabled when XLAYER_RPC_URL is set) ---
+XLAYER_RPC_URL: str | None = os.getenv("XLAYER_RPC_URL")
+XLAYER_CHAIN_ID: int = int(os.getenv("XLAYER_CHAIN_ID", "1952"))
+XLAYER_BATCH_SETTLER: str = os.getenv(
+    "XLAYER_BATCH_SETTLER",
+    "0x6aea5B95d64962E7F001218159cB5fb11712E8B1",
+)
+XLAYER_USDC_ADDRESS: str = os.getenv(
+    "XLAYER_USDC_ADDRESS",
+    "0x4A881f3f745B99f0C5575577D80958a5a16b7347",  # MockUSDC on XLayer testnet
+)
+XLAYER_MARGIN_POOL_ADDRESS: str = os.getenv(
+    "XLAYER_MARGIN_POOL_ADDRESS",
+    "0x3b14faD41CcbD471296e11Ea348dC303aA3A4156",
 )
 
 # --- Trade history persistence ---
@@ -167,8 +195,73 @@ def _parse_solana_assets() -> list[AssetConfig]:
 SOLANA_ASSETS: list[AssetConfig] = _parse_solana_assets() if SOLANA_PRIVATE_KEY else []
 SOLANA_ASSET_MAP: dict[str, AssetConfig] = {a.name: a for a in SOLANA_ASSETS}
 
+
+# --- XLayer assets ---
+def _parse_xlayer_assets() -> list[AssetConfig]:
+    raw = os.getenv("XLAYER_ASSETS", "okb")
+    assets = []
+    for name in raw.split(","):
+        name = name.strip().lower()
+        if not name:
+            continue
+        prefix = name.upper()
+        leverage = int(os.getenv(f"{prefix}_HEDGE_LEVERAGE", "3"))
+        if leverage < 1:
+            print(
+                f"FATAL: {prefix}_HEDGE_LEVERAGE must be >= 1, got {leverage}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        max_exp = float(os.getenv(f"{prefix}_MAX_EXPOSURE", "1.0"))
+        if not 0.0 < max_exp <= 1.0:
+            print(
+                f"FATAL: {prefix}_MAX_EXPOSURE must be in (0, 1], got {max_exp}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        assets.append(
+            AssetConfig(
+                name=name,
+                hedge_symbol=os.getenv(f"{prefix}_HEDGE_SYMBOL", name.upper()),
+                leverage=leverage,
+                max_exposure=max_exp,
+            )
+        )
+    return assets
+
+
+XLAYER_ASSETS: list[AssetConfig] = _parse_xlayer_assets() if XLAYER_RPC_URL else []
+XLAYER_ASSET_MAP: dict[str, AssetConfig] = {a.name: a for a in XLAYER_ASSETS}
+
+# --- EVM chain configs ---
+BASE_EVM = EvmChainConfig(
+    name="base",
+    chain_id=CHAIN_ID,
+    rpc_url=RPC_URL,
+    batch_settler=BATCH_SETTLER,
+    usdc_address=USDC_ADDRESS,
+    margin_pool_address=MARGIN_POOL_ADDRESS,
+)
+
+XLAYER_EVM: EvmChainConfig | None = None
+if XLAYER_RPC_URL:
+    XLAYER_EVM = EvmChainConfig(
+        name="xlayer",
+        chain_id=XLAYER_CHAIN_ID,
+        rpc_url=XLAYER_RPC_URL,
+        batch_settler=XLAYER_BATCH_SETTLER,
+        usdc_address=XLAYER_USDC_ADDRESS,
+        margin_pool_address=XLAYER_MARGIN_POOL_ADDRESS,
+    )
+
+EVM_CONFIGS: dict[str, EvmChainConfig] = {"base": BASE_EVM}
+if XLAYER_EVM:
+    EVM_CONFIGS["xlayer"] = XLAYER_EVM
+
 # --- Chain configs ---
 CHAINS: list[ChainConfig] = [ChainConfig(name="base", assets=tuple(ASSETS))]
+if XLAYER_RPC_URL:
+    CHAINS.append(ChainConfig(name="xlayer", assets=tuple(XLAYER_ASSETS)))
 if SOLANA_PRIVATE_KEY:
     if not SOLANA_RPC_URL:
         print(

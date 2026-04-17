@@ -9,7 +9,9 @@ from src.pricer import (
     apply_vol_skew,
     bs_delta,
     calculate_spread,
+    calibrate_iv,
     price_with_spread,
+    validate_iv,
 )
 
 log = logging.getLogger(__name__)
@@ -17,12 +19,13 @@ log = logging.getLogger(__name__)
 SKIP_DELTA_THRESHOLD = 0.90
 MIN_HOURS_TO_EXPIRY = 1
 
-# Base and Solana BatchSettler both expect bidPrice as USDC raw per contract.
+# All chains use USDC (6 decimals) for bidPrice.
 PRICE_SCALE_BASE = 1_000_000
 PRICE_SCALE_SOLANA = 1_000_000
+PRICE_SCALE_XLAYER = 1_000_000
 
 # Chain index offset to avoid quote ID collisions across chains
-_CHAIN_OFFSET = {"base": 0, "solana": 100_000}
+_CHAIN_OFFSET = {"base": 0, "solana": 100_000, "xlayer": 200_000}
 
 
 def build_quotes(
@@ -34,6 +37,7 @@ def build_quotes(
     inventory_imbalance: float = 0.0,
     utilization: float = 0.0,
     chain: str = "base",
+    spot_history: list[float] | None = None,
 ) -> list[dict[str, Any]]:
     """Price each oToken and build a list of quote dicts ready for signing.
 
@@ -42,18 +46,44 @@ def build_quotes(
         (strike_price, expiry, is_put, asset, chain).
     """
     spot: float = market_data["spot"]
-    iv: float = market_data["iv"]
+    raw_iv: float = market_data["iv"]
+    label = f"{chain}/{asset}"
+    iv: float = calibrate_iv(
+        raw_iv,
+        spot_history or [],
+        sample_seconds=config.REFRESH_INTERVAL,
+        label=label,
+    )
+    if not validate_iv(iv, label=f"post-calibration {label}"):
+        log.warning(
+            "Calibrated IV for %s below valid range; skipping all quotes",
+            label,
+        )
+        return []
     otokens: list[dict] = market_data["available_otokens"]
     now = int(time.time())
     effective_max = max_amount_raw if max_amount_raw is not None else config.MAX_AMOUNT
 
-    # Pick price scale by chain
-    price_scale = PRICE_SCALE_SOLANA if chain == "solana" else PRICE_SCALE_BASE
+    # Pick price scale by chain. Unknown chains are a config bug — fail
+    # loudly rather than silently pricing in Base's scale.
+    _price_scales = {
+        "base": PRICE_SCALE_BASE,
+        "solana": PRICE_SCALE_SOLANA,
+        "xlayer": PRICE_SCALE_XLAYER,
+    }
+    if chain not in _price_scales:
+        raise ValueError(f"Unknown chain: {chain!r}")
+    price_scale = _price_scales[chain]
 
-    # Offset quote_ids per chain + asset so quotes don't collide
-    all_assets = config.SOLANA_ASSETS if chain == "solana" else config.ASSETS
+    # Offset quote_ids per chain + asset so quotes don't collide.
+    _chain_asset_map = {
+        "base": config.ASSETS,
+        "solana": config.SOLANA_ASSETS,
+        "xlayer": config.XLAYER_ASSETS,
+    }
+    all_assets = _chain_asset_map[chain]
     asset_index = next((i for i, a in enumerate(all_assets) if a.name == asset), 0)
-    quote_id_offset = _CHAIN_OFFSET.get(chain, 0) + asset_index * 1000
+    quote_id_offset = _CHAIN_OFFSET[chain] + asset_index * 1000
 
     quotes: list[dict[str, Any]] = []
     for idx, ot in enumerate(otokens):
