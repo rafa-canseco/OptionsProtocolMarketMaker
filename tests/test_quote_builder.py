@@ -3,6 +3,8 @@
 import time
 from unittest.mock import patch
 
+import pytest
+
 from src.pricer import (
     IV_CALIBRATION_CAP,
     IV_CALIBRATION_THRESHOLD,
@@ -522,3 +524,28 @@ def test_build_quotes_calibration_lowers_bid_when_iv_inflated(mock_config):
     )
     # Calibration lowers IV, which lowers BS price, which lowers the bid.
     assert with_history[0]["bidPrice"] < no_history[0]["bidPrice"]
+
+
+@patch("src.quote_builder.config")
+def test_build_quotes_rejects_unknown_chain(mock_config):
+    """Unknown chain values raise — never silently price as Base."""
+    mock_config.RISK_FREE_RATE = 0.05
+    mock_config.SPREAD_BPS = 400
+    mock_config.DEADLINE_SECONDS = 300
+    mock_config.MAX_AMOUNT = 500_000_000
+    mock_config.REFRESH_INTERVAL = 60
+
+    market = {
+        "spot": 2000.0,
+        "iv": 0.6,
+        "available_otokens": [
+            {
+                "address": "0xTOKEN",
+                "strike_price": 2100.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": False,
+            }
+        ],
+    }
+    with pytest.raises(ValueError, match="Unknown chain"):
+        build_quotes(market, maker_nonce=0, chain="polygon")

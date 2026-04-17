@@ -64,23 +64,26 @@ def build_quotes(
     now = int(time.time())
     effective_max = max_amount_raw if max_amount_raw is not None else config.MAX_AMOUNT
 
-    # Pick price scale by chain
+    # Pick price scale by chain. Unknown chains are a config bug — fail
+    # loudly rather than silently pricing in Base's scale.
     _price_scales = {
         "base": PRICE_SCALE_BASE,
         "solana": PRICE_SCALE_SOLANA,
         "xlayer": PRICE_SCALE_XLAYER,
     }
-    price_scale = _price_scales.get(chain, PRICE_SCALE_BASE)
+    if chain not in _price_scales:
+        raise ValueError(f"Unknown chain: {chain!r}")
+    price_scale = _price_scales[chain]
 
-    # Offset quote_ids per chain + asset so quotes don't collide
+    # Offset quote_ids per chain + asset so quotes don't collide.
     _chain_asset_map = {
         "base": config.ASSETS,
         "solana": config.SOLANA_ASSETS,
         "xlayer": config.XLAYER_ASSETS,
     }
-    all_assets = _chain_asset_map.get(chain, config.ASSETS)
+    all_assets = _chain_asset_map[chain]
     asset_index = next((i for i, a in enumerate(all_assets) if a.name == asset), 0)
-    quote_id_offset = _CHAIN_OFFSET.get(chain, 0) + asset_index * 1000
+    quote_id_offset = _CHAIN_OFFSET[chain] + asset_index * 1000
 
     quotes: list[dict[str, Any]] = []
     for idx, ot in enumerate(otokens):
