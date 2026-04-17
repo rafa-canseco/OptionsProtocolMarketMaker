@@ -88,12 +88,17 @@ class PositionTracker:
         self._simulated_hedge: dict[str, float] = {}
 
     def cache_otokens(
-        self, otokens: list[dict[str, Any]], underlying: str | None = None
+        self,
+        otokens: list[dict[str, Any]],
+        underlying: str | None = None,
+        chain: str | None = None,
     ) -> None:
         for ot in otokens:
             entry = dict(ot)
             if underlying:
                 entry["underlying"] = underlying
+            if chain:
+                entry["chain"] = chain
             self._otoken_cache[entry["address"].lower()] = entry
 
     def get_otoken_details(self, address: str) -> dict[str, Any] | None:

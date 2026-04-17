@@ -15,7 +15,7 @@ from web3 import Web3
 from solders.pubkey import Pubkey  # type: ignore[import-untyped]
 
 from src import api_client, config, fill_listener, hedge_executor, trade_logger
-from src.capacity import calculate_capacity_internal
+from src.capacity import calculate_capacity_internal, solana_call_capacity_raw
 from src.position_tracker import PositionTracker
 from src.pricer import check_iv_divergence, validate_iv
 from src.quote_builder import build_quotes, to_api_payload, to_solana_api_payload
@@ -129,14 +129,15 @@ def run_cycle(
                 )
 
 
-def _track_spot(asset_name: str, spot: float) -> None:
+def _track_spot(asset_name: str, spot: float, chain: str = "base") -> None:
     """Append spot to history and check IV divergence."""
-    if asset_name not in _spot_history:
-        _spot_history[asset_name] = []
+    key = f"{chain}/{asset_name}"
+    if key not in _spot_history:
+        _spot_history[key] = []
     if spot > 0:
-        _spot_history[asset_name].append(spot)
-        if len(_spot_history[asset_name]) > SPOT_HISTORY_MAX:
-            _spot_history[asset_name] = _spot_history[asset_name][-SPOT_HISTORY_MAX:]
+        _spot_history[key].append(spot)
+        if len(_spot_history[key]) > SPOT_HISTORY_MAX:
+            _spot_history[key] = _spot_history[key][-SPOT_HISTORY_MAX:]
 
 
 def _compute_utilization(cap) -> float:
@@ -210,18 +211,18 @@ def _run_asset_cycle(
         len(otokens),
     )
 
-    _track_spot(asset_name, mkt.spot)
+    _track_spot(asset_name, mkt.spot, chain)
 
     if not validate_iv(mkt.iv, label=chain_label):
         return
     check_iv_divergence(
         mkt.iv,
-        _spot_history.get(asset_name, []),
+        _spot_history.get(f"{chain}/{asset_name}", []),
         label=chain_label,
     )
 
     if otokens:
-        _tracker.cache_otokens(otokens, underlying=asset_name)
+        _tracker.cache_otokens(otokens, underlying=asset_name, chain=chain)
 
     asset_positions = _tracker.open_positions(underlying=asset_name)
     if asset_positions:
@@ -234,7 +235,7 @@ def _run_asset_cycle(
         _tracker.rebalance_hedge(mkt.spot, asset_name, asset_cfg.hedge_symbol)
         _tracker.log_portfolio(mkt.spot)
 
-    _log_capacity_snapshot(asset_cfg)
+    _log_capacity_snapshot(asset_cfg, chain)
 
     if not otokens:
         log.warning("No oTokens for %s, skipping", chain_label)
@@ -266,9 +267,10 @@ def _quote_and_submit(
     )
     if cap is None or cap.status == "full":
         return
-    max_amount_raw = min(
-        int(cap.capacity_eth * 10**OTOKEN_DECIMALS), config.MAX_AMOUNT
-    )
+    max_amount_raw = min(int(cap.capacity_eth * 10**OTOKEN_DECIMALS), config.MAX_AMOUNT)
+    max_call_amount_raw = None
+    if chain == "solana":
+        max_call_amount_raw = _solana_call_capacity(asset_cfg)
 
     # Read nonce per chain
     if chain == "solana":
@@ -284,6 +286,7 @@ def _quote_and_submit(
         market,
         nonce,
         max_amount_raw=max_amount_raw,
+        max_call_amount_raw=max_call_amount_raw,
         asset=asset_name,
         inventory_imbalance=_tracker.inventory_imbalance(underlying=asset_name),
         utilization=_compute_utilization(cap),
@@ -313,8 +316,12 @@ def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg, chain="base")
     """Calculate capacity, report to backend. Returns cap or None."""
     try:
         cap = calculate_capacity_internal(
-            w3, mkt.spot, mm_address, _tracker,
-            asset_config=asset_cfg, chain=chain,
+            w3,
+            mkt.spot,
+            mm_address,
+            _tracker,
+            asset_config=asset_cfg,
+            chain=chain,
         )
     except Exception:
         log.warning(
@@ -327,7 +334,8 @@ def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg, chain="base")
     is_internal = config.MM_TYPE == "internal"
     cap_payload = cap.to_dict(internal=is_internal)
     log.info(
-        "Capacity [%s]: %.2f units ($%.0f) status=%s",
+        "Capacity [%s/%s]: %.2f units ($%.0f) status=%s",
+        chain.upper(),
         asset_cfg.name.upper(),
         cap.capacity_eth,
         cap.capacity_usd,
@@ -342,7 +350,8 @@ def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg, chain="base")
 
     if cap.status == "full":
         log.warning(
-            "Capacity full for %s, skipping quotes",
+            "Capacity full for %s/%s, skipping quotes",
+            chain.upper(),
             asset_cfg.name.upper(),
         )
 
@@ -385,9 +394,35 @@ def log_monitoring() -> None:
             )
 
 
-def _log_capacity_snapshot(asset_cfg: config.AssetConfig) -> None:
+def _solana_call_capacity(asset_cfg: config.AssetConfig) -> int | None:
+    """Return covered-call capacity for Solana assets with configured mints."""
+    try:
+        call_capacity = solana_call_capacity_raw(
+            _solana_maker_pubkey,
+            asset_cfg.name,
+            _tracker,
+        )
+    except Exception:
+        log.warning(
+            "Failed to read Solana call collateral for %s; disabling calls",
+            asset_cfg.name.upper(),
+            exc_info=True,
+        )
+        return 0
+    if call_capacity is None:
+        return None
+    log.info(
+        "Call collateral [%s/%s]: max_call_amount=%d raw",
+        "SOLANA",
+        asset_cfg.name.upper(),
+        call_capacity,
+    )
+    return call_capacity
+
+
+def _log_capacity_snapshot(asset_cfg: config.AssetConfig, chain: str = "base") -> None:
     """Log a capacity snapshot for a specific asset."""
-    mkt = _get_market(asset_cfg.name)
+    mkt = _get_market(asset_cfg.name, chain)
     try:
         exposure = api_client.get_exposure()
         account_val = hedge_executor.get_account_value()
@@ -437,14 +472,19 @@ def _poll_fills_rest() -> None:
                 log.error("Failed to handle fill %s", tx[:16], exc_info=True)
 
 
-def _resolve_underlying(otoken_addr: str) -> tuple[str, str]:
+def _resolve_underlying(otoken_addr: str) -> tuple[str, str, str]:
     """Determine underlying + hedge_symbol from an oToken address."""
     details = _tracker.get_otoken_details(otoken_addr)
     if details and "underlying" in details:
         underlying = details["underlying"]
-        asset_cfg = config.ASSET_MAP.get(underlying)
+        chain = details.get("chain", "base")
+        asset_maps = {
+            "base": config.ASSET_MAP,
+            "solana": config.SOLANA_ASSET_MAP,
+        }
+        asset_cfg = asset_maps.get(chain, config.ASSET_MAP).get(underlying)
         if asset_cfg:
-            return underlying, asset_cfg.hedge_symbol
+            return underlying, asset_cfg.hedge_symbol, chain
     # Default to first configured asset (backward compat)
     default = config.ASSETS[0]
     log.warning(
@@ -452,7 +492,7 @@ def _resolve_underlying(otoken_addr: str) -> tuple[str, str]:
         otoken_addr[:10],
         default.name,
     )
-    return default.name, default.hedge_symbol
+    return default.name, default.hedge_symbol, "base"
 
 
 def _handle_fill(fill: dict) -> None:
@@ -467,13 +507,14 @@ def _handle_fill(fill: dict) -> None:
                 return
 
         otoken_addr = fill.get("otoken_address", "")
-        underlying, hedge_symbol = _resolve_underlying(otoken_addr)
-        mkt = _get_market(underlying)
+        underlying, hedge_symbol, chain = _resolve_underlying(otoken_addr)
+        mkt = _get_market(underlying, chain)
 
         if mkt.spot <= 0 or mkt.iv <= 0:
             log.warning(
-                "Fill %s before market data for %s, will retry",
+                "Fill %s before market data for %s/%s, will retry",
                 tx[:16] if tx else "?",
+                chain.upper(),
                 underlying.upper(),
             )
             return

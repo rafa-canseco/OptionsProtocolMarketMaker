@@ -30,6 +30,7 @@ def build_quotes(
     maker_nonce: int,
     *,
     max_amount_raw: int | None = None,
+    max_call_amount_raw: int | None = None,
     asset: str = "eth",
     inventory_imbalance: float = 0.0,
     utilization: float = 0.0,
@@ -117,13 +118,24 @@ def build_quotes(
 
         bid_price_raw = max(int(bid_usd * price_scale), 1)
 
+        quote_max_amount = effective_max
+        if not is_put and max_call_amount_raw is not None:
+            quote_max_amount = min(effective_max, max_call_amount_raw)
+            if quote_max_amount <= 0:
+                log.info(
+                    "Skip %s CALL: no %s call collateral available",
+                    asset.upper(),
+                    asset.upper(),
+                )
+                continue
+
         quotes.append(
             {
                 "oToken": ot["address"],
                 "bidPrice": bid_price_raw,
                 "deadline": now + config.DEADLINE_SECONDS,
                 "quoteId": quote_id_offset + idx,
-                "maxAmount": effective_max,
+                "maxAmount": quote_max_amount,
                 "makerNonce": maker_nonce,
                 # Metadata
                 "strike_price": strike,
