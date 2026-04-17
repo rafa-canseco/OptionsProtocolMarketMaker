@@ -113,6 +113,41 @@ IV_DIVERGENCE_WARN = 0.30
 IV_MIN_VALID = 0.05
 IV_MAX_VALID = 3.0
 
+SECONDS_PER_YEAR = 365 * 86400
+DEFAULT_SAMPLE_SECONDS = 86400
+IV_CALIBRATION_MIN_RETURNS = 30
+
+
+def _realized_vol_from_history(
+    spot_history: list[float],
+    sample_seconds: int,
+) -> float | None:
+    """Annualized realized vol from an evenly-sampled spot history.
+
+    Returns None when the input cannot produce a defined positive vol:
+    fewer than 2 valid returns, non-positive sample cadence, or variance
+    that computes to zero (stale feed / flat prices).
+    """
+    if sample_seconds <= 0 or len(spot_history) < 2:
+        return None
+
+    returns: list[float] = []
+    for i in range(1, len(spot_history)):
+        prev, curr = spot_history[i - 1], spot_history[i]
+        if prev > 0 and curr > 0:
+            returns.append(math.log(curr / prev))
+
+    if len(returns) < 2:
+        return None
+
+    mean_r = sum(returns) / len(returns)
+    variance = sum((r - mean_r) ** 2 for r in returns) / (len(returns) - 1)
+    if variance <= 0:
+        return None
+
+    scale = SECONDS_PER_YEAR / sample_seconds
+    return math.sqrt(variance * scale)
+
 
 def validate_iv(iv: float, label: str = "") -> bool:
     """Check that IV is within a sane range. Returns True if valid."""
@@ -130,7 +165,10 @@ def validate_iv(iv: float, label: str = "") -> bool:
 
 
 def check_iv_divergence(
-    iv: float, spot_history: list[float], label: str = ""
+    iv: float,
+    spot_history: list[float],
+    label: str = "",
+    sample_seconds: int = DEFAULT_SAMPLE_SECONDS,
 ) -> float | None:
     """Compare implied vol against realized vol from spot history.
 
@@ -138,36 +176,27 @@ def check_iv_divergence(
         iv: Current implied volatility (annualized).
         spot_history: Recent spot prices (chronological order).
         label: Label for log messages.
+        sample_seconds: Time between adjacent spot samples. Default
+            assumes daily cadence; live MM should pass its refresh
+            interval so the annualization factor matches reality.
 
     Returns:
         Realized vol if computed, None if insufficient data.
     """
     _log = logging.getLogger(__name__)
-    if len(spot_history) < 2:
+    realized_vol = _realized_vol_from_history(spot_history, sample_seconds)
+    if realized_vol is None:
         return None
 
-    returns = []
-    for i in range(1, len(spot_history)):
-        if spot_history[i - 1] > 0 and spot_history[i] > 0:
-            returns.append(math.log(spot_history[i] / spot_history[i - 1]))
-
-    if not returns:
-        return None
-
-    mean_r = sum(returns) / len(returns)
-    variance = sum((r - mean_r) ** 2 for r in returns) / len(returns)
-    realized_vol = math.sqrt(variance * 365)
-
-    if realized_vol > 0:
-        divergence = abs(iv - realized_vol) / realized_vol
-        if divergence > IV_DIVERGENCE_WARN:
-            _log.warning(
-                "[IV CHECK] %s IV=%.4f vs realized=%.4f (%.0f%% divergence)",
-                label,
-                iv,
-                realized_vol,
-                divergence * 100,
-            )
+    divergence = abs(iv - realized_vol) / realized_vol
+    if divergence > IV_DIVERGENCE_WARN:
+        _log.warning(
+            "[IV CHECK] %s IV=%.4f vs realized=%.4f (%.0f%% divergence)",
+            label,
+            iv,
+            realized_vol,
+            divergence * 100,
+        )
 
     return realized_vol
 
@@ -234,42 +263,72 @@ def apply_vol_skew(
 def calibrate_iv(
     iv: float,
     spot_history: list[float],
+    sample_seconds: int = DEFAULT_SAMPLE_SECONDS,
+    label: str = "",
 ) -> float:
     """Cap implied vol when it diverges far above realized vol.
 
     Deribit IV reflects demand from large hedgers and can stay persistently
     above the realized vol that options on b1nary actually resolve against.
     When the MM pays a premium based on inflated IV, it consistently overpays.
-    This caps IV at IV_CALIBRATION_CAP * realized_30d when the ratio exceeds
-    IV_CALIBRATION_THRESHOLD. Returns the original IV if there is not enough
-    spot history or if the ratio is within range.
+
+    When the ratio ``iv / realized_vol`` exceeds ``IV_CALIBRATION_THRESHOLD``
+    the returned IV is ``realized_vol * IV_CALIBRATION_CAP``, floored at
+    ``IV_MIN_VALID`` so downstream Black-Scholes pricing never sees a
+    sub-threshold sigma. Returns the raw IV when data is insufficient or
+    the ratio is within range; every no-op path emits a warning so the
+    operator can tell the cap is inactive.
+
+    Args:
+        iv: Raw implied volatility from the IV source.
+        spot_history: Recent spot observations (chronological). MM keeps a
+            rolling window keyed by (chain, asset).
+        sample_seconds: Seconds between adjacent spot samples — the MM's
+            refresh interval. Wrong cadence breaks the annualization.
+        label: Context string for log lines (chain/asset).
     """
     _log = logging.getLogger(__name__)
-    if iv <= 0 or len(spot_history) < 2:
+    if iv <= 0:
+        _log.warning("[IV CAL] %s inactive: iv=%.4f <= 0, passthrough", label, iv)
         return iv
 
-    returns = []
-    for i in range(1, len(spot_history)):
-        if spot_history[i - 1] > 0 and spot_history[i] > 0:
-            returns.append(math.log(spot_history[i] / spot_history[i - 1]))
-
-    if len(returns) < 2:
+    realized_vol = _realized_vol_from_history(spot_history, sample_seconds)
+    if realized_vol is None:
+        _log.warning(
+            "[IV CAL] %s inactive: insufficient history (%d samples, sample_s=%d),"
+            " iv=%.4f passthrough",
+            label,
+            len(spot_history),
+            sample_seconds,
+            iv,
+        )
         return iv
 
-    mean_r = sum(returns) / len(returns)
-    variance = sum((r - mean_r) ** 2 for r in returns) / (len(returns) - 1)
-    realized_vol = math.sqrt(variance * 365)
-
-    if realized_vol <= 0:
+    # Require a minimum sample count so the realized-vol estimate is not
+    # dominated by noise from the first few ticks after restart.
+    valid_returns = sum(
+        1
+        for i in range(1, len(spot_history))
+        if spot_history[i - 1] > 0 and spot_history[i] > 0
+    )
+    if valid_returns < IV_CALIBRATION_MIN_RETURNS:
+        _log.warning(
+            "[IV CAL] %s warming up: %d/%d valid returns, iv=%.4f passthrough",
+            label,
+            valid_returns,
+            IV_CALIBRATION_MIN_RETURNS,
+            iv,
+        )
         return iv
 
     ratio = iv / realized_vol
     if ratio <= IV_CALIBRATION_THRESHOLD:
         return iv
 
-    capped = realized_vol * IV_CALIBRATION_CAP
-    _log.info(
-        "[IV CAL] iv=%.4f realized=%.4f ratio=%.2f -> capped=%.4f",
+    capped = max(realized_vol * IV_CALIBRATION_CAP, IV_MIN_VALID)
+    _log.warning(
+        "[IV CAL] %s capping iv=%.4f realized=%.4f ratio=%.2f -> iv=%.4f",
+        label,
         iv,
         realized_vol,
         ratio,
@@ -295,7 +354,7 @@ def calculate_spread(
         utilization: 0 to 1, fraction of capacity deployed.
 
     Returns:
-        Adjusted spread in basis points (minimum 50).
+        Adjusted spread in basis points, floored at MIN_SPREAD_BPS.
     """
     spread = float(base_bps)
 

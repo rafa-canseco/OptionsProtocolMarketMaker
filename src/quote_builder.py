@@ -11,6 +11,7 @@ from src.pricer import (
     calculate_spread,
     calibrate_iv,
     price_with_spread,
+    validate_iv,
 )
 
 log = logging.getLogger(__name__)
@@ -46,7 +47,19 @@ def build_quotes(
     """
     spot: float = market_data["spot"]
     raw_iv: float = market_data["iv"]
-    iv: float = calibrate_iv(raw_iv, spot_history or [])
+    label = f"{chain}/{asset}"
+    iv: float = calibrate_iv(
+        raw_iv,
+        spot_history or [],
+        sample_seconds=config.REFRESH_INTERVAL,
+        label=label,
+    )
+    if not validate_iv(iv, label=f"post-calibration {label}"):
+        log.warning(
+            "Calibrated IV for %s below valid range; skipping all quotes",
+            label,
+        )
+        return []
     otokens: list[dict] = market_data["available_otokens"]
     now = int(time.time())
     effective_max = max_amount_raw if max_amount_raw is not None else config.MAX_AMOUNT

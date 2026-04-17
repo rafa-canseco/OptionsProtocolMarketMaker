@@ -120,6 +120,7 @@ def test_solana_quotes_use_usdc_raw_price_scale(mock_config):
     mock_config.SPREAD_BPS = 200
     mock_config.DEADLINE_SECONDS = 300
     mock_config.MAX_AMOUNT = 500_000_000
+    mock_config.REFRESH_INTERVAL = 60
     mock_config.SOLANA_ASSETS = []
 
     market = {
@@ -152,6 +153,7 @@ def test_base_quotes_use_1e6_price_scale(mock_config):
     mock_config.SPREAD_BPS = 200
     mock_config.DEADLINE_SECONDS = 300
     mock_config.MAX_AMOUNT = 500_000_000
+    mock_config.REFRESH_INTERVAL = 60
 
     market = {
         "spot": 2000.0,
@@ -399,6 +401,7 @@ def test_base_quotes_include_chain_field(mock_config):
     mock_config.SPREAD_BPS = 200
     mock_config.DEADLINE_SECONDS = 300
     mock_config.MAX_AMOUNT = 500_000_000
+    mock_config.REFRESH_INTERVAL = 60
 
     market = {
         "spot": 2000.0,
