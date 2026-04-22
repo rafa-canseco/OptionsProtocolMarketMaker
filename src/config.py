@@ -15,11 +15,28 @@ def _require(name: str) -> str:
     return val
 
 
+_FLAG_TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
+_FLAG_FALSE_VALUES = frozenset({"false", "0", "no", "off"})
+
+
 def _env_flag(name: str, default: bool = False) -> bool:
     raw = os.getenv(name)
     if raw is None:
         return default
-    return raw.strip().lower() in ("true", "1", "yes", "on")
+    value = raw.strip().lower()
+    if value == "":
+        return default
+    if value in _FLAG_TRUE_VALUES:
+        return True
+    if value in _FLAG_FALSE_VALUES:
+        return False
+    print(
+        f"FATAL: {name}={raw!r} is not a valid boolean. "
+        f"Use one of {sorted(_FLAG_TRUE_VALUES)} "
+        f"or {sorted(_FLAG_FALSE_VALUES)}.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 
 
 @dataclass(frozen=True)

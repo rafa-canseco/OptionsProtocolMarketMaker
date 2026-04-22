@@ -5,6 +5,7 @@ Usage: uv run python -m src.main
 
 import json
 import logging
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -564,18 +565,17 @@ def main() -> None:
     w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
     domain = build_domain(config.CHAIN_ID, config.BATCH_SETTLER)
 
-    # Init Solana if quote publication is enabled — failure disables Solana, Base continues
+    # Explicit opt-in: fail fast if the operator enabled publishing but init fails.
     if config.SOLANA_QUOTE_PUBLISHING_ENABLED:
         try:
             _init_solana()
         except Exception:
-            log.error(
-                "Failed to init Solana keypair. Expected "
-                "SOLANA_PRIVATE_KEY as base58 string or JSON "
-                "byte array [1,2,...,64]. Solana disabled.",
-                exc_info=True,
+            log.exception(
+                "FATAL: SOLANA_QUOTE_PUBLISHING_ENABLED=true but Solana "
+                "keypair init failed. Expected SOLANA_PRIVATE_KEY as "
+                "base58 string or JSON byte array [1,2,...,64]."
             )
-            config.CHAINS = [c for c in config.CHAINS if c.name != "solana"]
+            sys.exit(1)
 
     log.info("b1nary Market Maker starting")
     log.info("  MM address:  %s", mm_address)
