@@ -39,6 +39,39 @@ def _env_flag(name: str, default: bool = False) -> bool:
     sys.exit(1)
 
 
+def _optional_env(name: str) -> str | None:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    value = raw.strip()
+    return value or None
+
+
+def _current_environment() -> str:
+    for name in (
+        "APP_ENV",
+        "ENVIRONMENT",
+        "RAILWAY_ENVIRONMENT_NAME",
+        "RAILWAY_ENVIRONMENT",
+    ):
+        value = _optional_env(name)
+        if value:
+            return value.lower()
+    return ""
+
+
+def _solana_quote_publishing_enabled() -> bool:
+    explicit = _optional_env("SOLANA_QUOTE_PUBLISHING_ENABLED")
+    if explicit is not None:
+        return _env_flag("SOLANA_QUOTE_PUBLISHING_ENABLED")
+
+    # Backward-compatible default: non-production environments keep
+    # legacy Solana enablement based on configured credentials.
+    if _current_environment() == "production":
+        return False
+    return _optional_env("SOLANA_PRIVATE_KEY") is not None
+
+
 @dataclass(frozen=True)
 class AssetConfig:
     name: str  # lowercase, e.g. "eth"
@@ -146,10 +179,7 @@ if not ASSETS:
 ASSET_MAP: dict[str, AssetConfig] = {a.name: a for a in ASSETS}
 
 # --- Solana quote publication (explicitly gated per environment) ---
-SOLANA_QUOTE_PUBLISHING_ENABLED: bool = _env_flag(
-    "SOLANA_QUOTE_PUBLISHING_ENABLED",
-    False,
-)
+SOLANA_QUOTE_PUBLISHING_ENABLED: bool = _solana_quote_publishing_enabled()
 SOLANA_PRIVATE_KEY: str | None = os.getenv("SOLANA_PRIVATE_KEY")
 SOLANA_RPC_URL: str | None = os.getenv("SOLANA_RPC_URL")
 SOLANA_BATCH_SETTLER: str = os.getenv(

@@ -46,18 +46,19 @@ def _reload_config(env: dict[str, str]):
         sys.modules["src.config"] = config_module
 
 
-def test_solana_quotes_stay_disabled_without_explicit_flag():
+def test_solana_quotes_default_to_legacy_enabled_outside_production():
     env = _base_env() | {
         "SOLANA_PRIVATE_KEY": "base58-secret",
         "SOLANA_RPC_URL": "https://solana-rpc.example.com",
         "SOLANA_ASSETS": "sol,tslax",
+        "RAILWAY_ENVIRONMENT_NAME": "staging",
     }
 
     config = _reload_config(env)
 
-    assert config.SOLANA_QUOTE_PUBLISHING_ENABLED is False
-    assert config.SOLANA_ASSETS == []
-    assert [chain.name for chain in config.CHAINS] == ["base"]
+    assert config.SOLANA_QUOTE_PUBLISHING_ENABLED is True
+    assert [asset.name for asset in config.SOLANA_ASSETS] == ["sol", "tslax"]
+    assert [chain.name for chain in config.CHAINS] == ["base", "solana"]
 
 
 def test_solana_quotes_enable_only_with_explicit_flag():
@@ -73,6 +74,21 @@ def test_solana_quotes_enable_only_with_explicit_flag():
     assert config.SOLANA_QUOTE_PUBLISHING_ENABLED is True
     assert [asset.name for asset in config.SOLANA_ASSETS] == ["sol", "tslax"]
     assert [chain.name for chain in config.CHAINS] == ["base", "solana"]
+
+
+def test_solana_quotes_default_to_disabled_in_production():
+    env = _base_env() | {
+        "SOLANA_PRIVATE_KEY": "base58-secret",
+        "SOLANA_RPC_URL": "https://solana-rpc.example.com",
+        "SOLANA_ASSETS": "sol,tslax",
+        "RAILWAY_ENVIRONMENT_NAME": "production",
+    }
+
+    config = _reload_config(env)
+
+    assert config.SOLANA_QUOTE_PUBLISHING_ENABLED is False
+    assert config.SOLANA_ASSETS == []
+    assert [chain.name for chain in config.CHAINS] == ["base"]
 
 
 def test_solana_quotes_flag_requires_private_key():
