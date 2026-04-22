@@ -5,6 +5,7 @@ Usage: uv run python -m src.main
 
 import json
 import logging
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -545,7 +546,7 @@ def _pick_refresh_interval() -> int:
 
 
 def _init_solana() -> None:
-    """Load Solana keypair from SOLANA_PRIVATE_KEY env var."""
+    """Load Solana keypair used to publish Solana quotes."""
     global _solana_keypair, _solana_maker_pubkey  # noqa: PLW0603
     from solders.keypair import Keypair  # type: ignore[import-untyped]
 
@@ -564,18 +565,17 @@ def main() -> None:
     w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
     domain = build_domain(config.CHAIN_ID, config.BATCH_SETTLER)
 
-    # Init Solana if configured — failure disables Solana, Base continues
-    if config.SOLANA_PRIVATE_KEY:
+    # Explicit opt-in: fail fast if the operator enabled publishing but init fails.
+    if config.SOLANA_QUOTE_PUBLISHING_ENABLED:
         try:
             _init_solana()
         except Exception:
-            log.error(
-                "Failed to init Solana keypair. Expected "
-                "SOLANA_PRIVATE_KEY as base58 string or JSON "
-                "byte array [1,2,...,64]. Solana disabled.",
-                exc_info=True,
+            log.exception(
+                "FATAL: SOLANA_QUOTE_PUBLISHING_ENABLED=true but Solana "
+                "keypair init failed. Expected SOLANA_PRIVATE_KEY as "
+                "base58 string or JSON byte array [1,2,...,64]."
             )
-            config.CHAINS = [c for c in config.CHAINS if c.name != "solana"]
+            sys.exit(1)
 
     log.info("b1nary Market Maker starting")
     log.info("  MM address:  %s", mm_address)
@@ -583,7 +583,11 @@ def main() -> None:
     log.info("  RPC:         %s", config.RPC_URL)
     log.info("  Chains:      %s", [c.name for c in config.CHAINS])
     log.info("  Base assets: %s", [a.name for a in config.ASSETS])
-    if config.SOLANA_PRIVATE_KEY:
+    log.info(
+        "  Solana quote publishing: %s",
+        "enabled" if config.SOLANA_QUOTE_PUBLISHING_ENABLED else "disabled",
+    )
+    if config.SOLANA_QUOTE_PUBLISHING_ENABLED:
         log.info("  Solana MM:   %s", _solana_maker_pubkey)
         log.info("  Solana RPC:  %s", config.SOLANA_RPC_URL)
         log.info("  Solana assets: %s", [a.name for a in config.SOLANA_ASSETS])

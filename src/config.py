@@ -15,6 +15,63 @@ def _require(name: str) -> str:
     return val
 
 
+_FLAG_TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
+_FLAG_FALSE_VALUES = frozenset({"false", "0", "no", "off"})
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value == "":
+        return default
+    if value in _FLAG_TRUE_VALUES:
+        return True
+    if value in _FLAG_FALSE_VALUES:
+        return False
+    print(
+        f"FATAL: {name}={raw!r} is not a valid boolean. "
+        f"Use one of {sorted(_FLAG_TRUE_VALUES)} "
+        f"or {sorted(_FLAG_FALSE_VALUES)}.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def _optional_env(name: str) -> str | None:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    value = raw.strip()
+    return value or None
+
+
+def _current_environment() -> str:
+    for name in (
+        "APP_ENV",
+        "ENVIRONMENT",
+        "RAILWAY_ENVIRONMENT_NAME",
+        "RAILWAY_ENVIRONMENT",
+    ):
+        value = _optional_env(name)
+        if value:
+            return value.lower()
+    return ""
+
+
+def _solana_quote_publishing_enabled() -> bool:
+    explicit = _optional_env("SOLANA_QUOTE_PUBLISHING_ENABLED")
+    if explicit is not None:
+        return _env_flag("SOLANA_QUOTE_PUBLISHING_ENABLED")
+
+    # Backward-compatible default: non-production environments keep
+    # legacy Solana enablement based on configured credentials.
+    if _current_environment() == "production":
+        return False
+    return _optional_env("SOLANA_PRIVATE_KEY") is not None
+
+
 @dataclass(frozen=True)
 class AssetConfig:
     name: str  # lowercase, e.g. "eth"
@@ -121,7 +178,8 @@ if not ASSETS:
     sys.exit(1)
 ASSET_MAP: dict[str, AssetConfig] = {a.name: a for a in ASSETS}
 
-# --- Solana (optional — disabled when SOLANA_PRIVATE_KEY is unset) ---
+# --- Solana quote publication (explicitly gated per environment) ---
+SOLANA_QUOTE_PUBLISHING_ENABLED: bool = _solana_quote_publishing_enabled()
 SOLANA_PRIVATE_KEY: str | None = os.getenv("SOLANA_PRIVATE_KEY")
 SOLANA_RPC_URL: str | None = os.getenv("SOLANA_RPC_URL")
 SOLANA_BATCH_SETTLER: str = os.getenv(
@@ -166,15 +224,25 @@ def _parse_solana_assets() -> list[AssetConfig]:
     return assets
 
 
-SOLANA_ASSETS: list[AssetConfig] = _parse_solana_assets() if SOLANA_PRIVATE_KEY else []
+SOLANA_ASSETS: list[AssetConfig] = (
+    _parse_solana_assets() if SOLANA_QUOTE_PUBLISHING_ENABLED else []
+)
 SOLANA_ASSET_MAP: dict[str, AssetConfig] = {a.name: a for a in SOLANA_ASSETS}
 
 # --- Chain configs ---
 CHAINS: list[ChainConfig] = [ChainConfig(name="base", assets=tuple(ASSETS))]
-if SOLANA_PRIVATE_KEY:
+if SOLANA_QUOTE_PUBLISHING_ENABLED:
+    if not SOLANA_PRIVATE_KEY:
+        print(
+            "FATAL: SOLANA_PRIVATE_KEY required when "
+            "SOLANA_QUOTE_PUBLISHING_ENABLED is true",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     if not SOLANA_RPC_URL:
         print(
-            "FATAL: SOLANA_RPC_URL required when SOLANA_PRIVATE_KEY is set",
+            "FATAL: SOLANA_RPC_URL required when "
+            "SOLANA_QUOTE_PUBLISHING_ENABLED is true",
             file=sys.stderr,
         )
         sys.exit(1)
