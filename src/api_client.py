@@ -26,9 +26,15 @@ def ws_url(path: str, **params: str) -> str:
     return urlunparse((scheme, parsed.netloc, parsed.path, "", query, ""))
 
 
-def get_market_data(asset: str = "eth") -> dict[str, Any]:
+def get_market_data(
+    asset: str = "eth",
+    chain: str = "base",
+) -> dict[str, Any]:
     """GET /mm/market — spot, IV, available oTokens, protocol fee."""
-    resp = _SESSION.get(_url("/mm/market"), params={"asset": asset}, timeout=_TIMEOUT)
+    params: dict[str, str] = {"asset": asset}
+    if chain != "base":
+        params["chain"] = chain
+    resp = _SESSION.get(_url("/mm/market"), params=params, timeout=_TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 
@@ -44,9 +50,12 @@ def submit_quotes(quotes: list[dict[str, Any]]) -> dict[str, Any]:
     return resp.json()
 
 
-def delete_quotes() -> dict[str, Any]:
+def delete_quotes(chain: str | None = None) -> dict[str, Any]:
     """DELETE /mm/quotes — cancel all active quotes."""
-    resp = _SESSION.delete(_url("/mm/quotes"), timeout=_TIMEOUT)
+    params: dict[str, str] = {}
+    if chain:
+        params["chain"] = chain
+    resp = _SESSION.delete(_url("/mm/quotes"), params=params, timeout=_TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 

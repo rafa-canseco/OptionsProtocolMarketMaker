@@ -3,7 +3,9 @@
 Usage: uv run python -m src.main
 """
 
+import json
 import logging
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -11,12 +13,22 @@ from dataclasses import dataclass
 from eth_account import Account
 from web3 import Web3
 
+from solders.pubkey import Pubkey  # type: ignore[import-untyped]
+
 from src import api_client, config, fill_listener, hedge_executor, trade_logger
-from src.capacity import calculate_capacity_internal
+from src.capacity import calculate_capacity_internal, solana_call_capacity_raw
 from src.position_tracker import PositionTracker
 from src.pricer import check_iv_divergence, validate_iv
-from src.quote_builder import build_quotes, to_api_payload
-from src.signer import build_domain, read_maker_nonce, sign_quote
+from src.quote_builder import build_quotes, to_api_payload, to_solana_api_payload
+from src.signer import (
+    build_domain,
+    build_solana_quote_message,
+    read_maker_nonce,
+    read_maker_nonce_solana,
+    sign_quote,
+    sign_quote_solana,
+)
+
 from src.startup_recovery import recover_positions
 
 OTOKEN_DECIMALS = 8
@@ -27,6 +39,10 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("mm")
+
+# Solana runtime state (populated in main() if configured)
+_solana_keypair = None  # solders.Keypair | None
+_solana_maker_pubkey: str = ""  # base58 pubkey string
 
 
 @dataclass
@@ -44,10 +60,11 @@ _fill_lock = threading.Lock()
 SPOT_HISTORY_MAX = 100
 
 
-def _get_market(asset: str) -> MarketSnapshot:
-    if asset not in _market:
-        _market[asset] = MarketSnapshot()
-    return _market[asset]
+def _get_market(asset: str, chain: str = "base") -> MarketSnapshot:
+    key = f"{chain}/{asset}"
+    if key not in _market:
+        _market[key] = MarketSnapshot()
+    return _market[key]
 
 
 def run_cycle(
@@ -55,13 +72,18 @@ def run_cycle(
     domain: dict,
     mm_address: str,
 ) -> None:
-    """Single quote-refresh cycle across all configured assets."""
-    # 1. Delete stale quotes from previous cycle
-    try:
-        deleted = api_client.delete_quotes()
-        log.info("Deleted previous quotes: %s", deleted)
-    except Exception:
-        log.warning("Failed to delete stale quotes", exc_info=True)
+    """Single quote-refresh cycle across all chains and assets."""
+    # 1. Delete stale quotes from previous cycle (per-chain)
+    for chain_cfg in config.CHAINS:
+        try:
+            deleted = api_client.delete_quotes(chain=chain_cfg.name)
+            log.info("Deleted previous %s quotes: %s", chain_cfg.name, deleted)
+        except Exception:
+            log.warning(
+                "Failed to delete stale %s quotes",
+                chain_cfg.name,
+                exc_info=True,
+            )
 
     # 2. Poll fills via REST as fallback (WS may miss events)
     _poll_fills_rest()
@@ -88,26 +110,35 @@ def run_cycle(
                     exc_info=True,
                 )
 
-    # 4. Per-asset: fetch market data, quote, capacity
-    for asset_cfg in config.ASSETS:
-        try:
-            _run_asset_cycle(w3, domain, mm_address, asset_cfg)
-        except Exception:
-            log.error(
-                "Asset cycle failed for %s",
-                asset_cfg.name.upper(),
-                exc_info=True,
-            )
+    # 4. Per-chain, per-asset: fetch market data, quote, sign, submit
+    for chain_cfg in config.CHAINS:
+        for asset_cfg in chain_cfg.assets:
+            try:
+                _run_asset_cycle(
+                    w3=w3 if chain_cfg.name == "base" else None,
+                    domain=domain if chain_cfg.name == "base" else None,
+                    mm_address=mm_address,
+                    asset_cfg=asset_cfg,
+                    chain=chain_cfg.name,
+                )
+            except Exception:
+                log.error(
+                    "Asset cycle failed for %s/%s",
+                    chain_cfg.name.upper(),
+                    asset_cfg.name.upper(),
+                    exc_info=True,
+                )
 
 
-def _track_spot(asset_name: str, spot: float) -> None:
+def _track_spot(asset_name: str, spot: float, chain: str = "base") -> None:
     """Append spot to history and check IV divergence."""
-    if asset_name not in _spot_history:
-        _spot_history[asset_name] = []
+    key = f"{chain}/{asset_name}"
+    if key not in _spot_history:
+        _spot_history[key] = []
     if spot > 0:
-        _spot_history[asset_name].append(spot)
-        if len(_spot_history[asset_name]) > SPOT_HISTORY_MAX:
-            _spot_history[asset_name] = _spot_history[asset_name][-SPOT_HISTORY_MAX:]
+        _spot_history[key].append(spot)
+        if len(_spot_history[key]) > SPOT_HISTORY_MAX:
+            _spot_history[key] = _spot_history[key][-SPOT_HISTORY_MAX:]
 
 
 def _compute_utilization(cap) -> float:
@@ -118,8 +149,8 @@ def _compute_utilization(cap) -> float:
     return 0.0
 
 
-def _sign_quotes(quotes: list[dict], domain: dict) -> list[dict]:
-    """Sign quotes and convert to API payloads."""
+def _sign_quotes_base(quotes: list[dict], domain: dict) -> list[dict]:
+    """Sign Base quotes with EIP-712 ECDSA and convert to API payloads."""
     payloads = []
     for q in quotes:
         eip712_data = {
@@ -135,40 +166,64 @@ def _sign_quotes(quotes: list[dict], domain: dict) -> list[dict]:
     return payloads
 
 
+def _sign_quotes_solana(quotes: list[dict]) -> list[dict]:
+    """Sign Solana quotes with ed25519 and convert to API payloads."""
+    if _solana_keypair is None:
+        raise RuntimeError(
+            "Solana keypair not initialized — call _init_solana() before signing"
+        )
+    payloads = []
+    for q in quotes:
+        otoken_bytes = bytes(Pubkey.from_string(q["oToken"]))
+        message = build_solana_quote_message(
+            otoken_mint=otoken_bytes,
+            bid_price=q["bidPrice"],
+            deadline=q["deadline"],
+            quote_id=q["quoteId"],
+            max_amount=q["maxAmount"],
+            maker_nonce=q["makerNonce"],
+        )
+        sig = sign_quote_solana(_solana_keypair, message)
+        payloads.append(to_solana_api_payload(q, sig, _solana_maker_pubkey))
+    return payloads
+
+
 def _run_asset_cycle(
-    w3: Web3,
-    domain: dict,
+    w3: Web3 | None,
+    domain: dict | None,
     mm_address: str,
     asset_cfg: config.AssetConfig,
+    chain: str = "base",
 ) -> None:
-    """Quote-refresh for a single asset."""
+    """Quote-refresh for a single asset on a given chain."""
     asset_name = asset_cfg.name
-    mkt = _get_market(asset_name)
+    chain_label = f"{chain}/{asset_name}".upper()
+    mkt = _get_market(asset_name, chain)
 
-    market = api_client.get_market_data(asset=asset_name)
+    market = api_client.get_market_data(asset=asset_name, chain=chain)
     otokens = market.get("available_otokens", [])
     mkt.spot = market["spot"]
     mkt.iv = market["iv"]
     log.info(
         "Market [%s]: spot=%.2f iv=%.4f oTokens=%d",
-        asset_name.upper(),
+        chain_label,
         mkt.spot,
         mkt.iv,
         len(otokens),
     )
 
-    _track_spot(asset_name, mkt.spot)
+    _track_spot(asset_name, mkt.spot, chain)
 
-    if not validate_iv(mkt.iv, label=asset_name.upper()):
+    if not validate_iv(mkt.iv, label=chain_label):
         return
     check_iv_divergence(
         mkt.iv,
-        _spot_history.get(asset_name, []),
-        label=asset_name.upper(),
+        _spot_history.get(f"{chain}/{asset_name}", []),
+        label=chain_label,
     )
 
     if otokens:
-        _tracker.cache_otokens(otokens, underlying=asset_name)
+        _tracker.cache_otokens(otokens, underlying=asset_name, chain=chain)
 
     asset_positions = _tracker.open_positions(underlying=asset_name)
     if asset_positions:
@@ -181,48 +236,93 @@ def _run_asset_cycle(
         _tracker.rebalance_hedge(mkt.spot, asset_name, asset_cfg.hedge_symbol)
         _tracker.log_portfolio(mkt.spot)
 
-    _log_capacity_snapshot(asset_cfg)
+    _log_capacity_snapshot(asset_cfg, chain)
 
     if not otokens:
-        log.warning("No oTokens for %s, skipping", asset_name.upper())
+        log.warning("No oTokens for %s, skipping", chain_label)
         return
 
-    cap = _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg)
+    _quote_and_submit(w3, domain, mm_address, market, asset_cfg, chain)
+
+
+def _quote_and_submit(
+    w3,
+    domain,
+    mm_address,
+    market,
+    asset_cfg,
+    chain,
+) -> None:
+    """Build quotes, sign per-chain, and submit to backend."""
+    asset_name = asset_cfg.name
+    chain_label = f"{chain}/{asset_name}".upper()
+
+    # Capacity — calculate for all chains
+    solana_addr = _solana_maker_pubkey if chain == "solana" else None
+    cap = _calculate_and_report_capacity(
+        w3,
+        _get_market(asset_name, chain),
+        solana_addr or mm_address,
+        asset_cfg,
+        chain,
+    )
     if cap is None or cap.status == "full":
         return
-
-    nonce = read_maker_nonce(w3, config.BATCH_SETTLER, mm_address)
-
     max_amount_raw = min(int(cap.capacity_eth * 10**OTOKEN_DECIMALS), config.MAX_AMOUNT)
+    max_call_amount_raw = None
+    if chain == "solana":
+        max_call_amount_raw = _solana_call_capacity(asset_cfg)
+
+    # Read nonce per chain
+    if chain == "solana":
+        nonce = read_maker_nonce_solana(
+            config.SOLANA_RPC_URL,
+            config.SOLANA_BATCH_SETTLER,
+            _solana_maker_pubkey,
+        )
+    else:
+        nonce = read_maker_nonce(w3, config.BATCH_SETTLER, mm_address)
+
     quotes = build_quotes(
         market,
         nonce,
         max_amount_raw=max_amount_raw,
+        max_call_amount_raw=max_call_amount_raw,
         asset=asset_name,
         inventory_imbalance=_tracker.inventory_imbalance(underlying=asset_name),
         utilization=_compute_utilization(cap),
+        chain=chain,
     )
     if not quotes:
-        log.warning("No valid quotes for %s", asset_name.upper())
+        log.warning("No valid quotes for %s", chain_label)
         return
 
-    payloads = _sign_quotes(quotes, domain)
+    if chain == "solana":
+        payloads = _sign_quotes_solana(quotes)
+    else:
+        payloads = _sign_quotes_base(quotes, domain)
+
     result = api_client.submit_quotes(payloads)
     log.info(
         "Submitted %d %s quotes: accepted=%s rejected=%s errors=%s",
         len(payloads),
-        asset_name.upper(),
+        chain_label,
         result.get("accepted"),
         result.get("rejected"),
         result.get("errors"),
     )
 
 
-def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg):
+def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg, chain="base"):
     """Calculate capacity, report to backend. Returns cap or None."""
     try:
         cap = calculate_capacity_internal(
-            w3, mkt.spot, mm_address, _tracker, asset_config=asset_cfg
+            w3,
+            mkt.spot,
+            mm_address,
+            _tracker,
+            asset_config=asset_cfg,
+            chain=chain,
         )
     except Exception:
         log.warning(
@@ -235,7 +335,8 @@ def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg):
     is_internal = config.MM_TYPE == "internal"
     cap_payload = cap.to_dict(internal=is_internal)
     log.info(
-        "Capacity [%s]: %.2f units ($%.0f) status=%s",
+        "Capacity [%s/%s]: %.2f units ($%.0f) status=%s",
+        chain.upper(),
         asset_cfg.name.upper(),
         cap.capacity_eth,
         cap.capacity_usd,
@@ -250,7 +351,8 @@ def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg):
 
     if cap.status == "full":
         log.warning(
-            "Capacity full for %s, skipping quotes",
+            "Capacity full for %s/%s, skipping quotes",
+            chain.upper(),
             asset_cfg.name.upper(),
         )
 
@@ -293,9 +395,35 @@ def log_monitoring() -> None:
             )
 
 
-def _log_capacity_snapshot(asset_cfg: config.AssetConfig) -> None:
+def _solana_call_capacity(asset_cfg: config.AssetConfig) -> int | None:
+    """Return covered-call capacity for Solana assets with configured mints."""
+    try:
+        call_capacity = solana_call_capacity_raw(
+            _solana_maker_pubkey,
+            asset_cfg.name,
+            _tracker,
+        )
+    except Exception:
+        log.warning(
+            "Failed to read Solana call collateral for %s; disabling calls",
+            asset_cfg.name.upper(),
+            exc_info=True,
+        )
+        return 0
+    if call_capacity is None:
+        return None
+    log.info(
+        "Call collateral [%s/%s]: max_call_amount=%d raw",
+        "SOLANA",
+        asset_cfg.name.upper(),
+        call_capacity,
+    )
+    return call_capacity
+
+
+def _log_capacity_snapshot(asset_cfg: config.AssetConfig, chain: str = "base") -> None:
     """Log a capacity snapshot for a specific asset."""
-    mkt = _get_market(asset_cfg.name)
+    mkt = _get_market(asset_cfg.name, chain)
     try:
         exposure = api_client.get_exposure()
         account_val = hedge_executor.get_account_value()
@@ -345,14 +473,19 @@ def _poll_fills_rest() -> None:
                 log.error("Failed to handle fill %s", tx[:16], exc_info=True)
 
 
-def _resolve_underlying(otoken_addr: str) -> tuple[str, str]:
+def _resolve_underlying(otoken_addr: str) -> tuple[str, str, str]:
     """Determine underlying + hedge_symbol from an oToken address."""
     details = _tracker.get_otoken_details(otoken_addr)
     if details and "underlying" in details:
         underlying = details["underlying"]
-        asset_cfg = config.ASSET_MAP.get(underlying)
+        chain = details.get("chain", "base")
+        asset_maps = {
+            "base": config.ASSET_MAP,
+            "solana": config.SOLANA_ASSET_MAP,
+        }
+        asset_cfg = asset_maps.get(chain, config.ASSET_MAP).get(underlying)
         if asset_cfg:
-            return underlying, asset_cfg.hedge_symbol
+            return underlying, asset_cfg.hedge_symbol, chain
     # Default to first configured asset (backward compat)
     default = config.ASSETS[0]
     log.warning(
@@ -360,7 +493,7 @@ def _resolve_underlying(otoken_addr: str) -> tuple[str, str]:
         otoken_addr[:10],
         default.name,
     )
-    return default.name, default.hedge_symbol
+    return default.name, default.hedge_symbol, "base"
 
 
 def _handle_fill(fill: dict) -> None:
@@ -375,13 +508,14 @@ def _handle_fill(fill: dict) -> None:
                 return
 
         otoken_addr = fill.get("otoken_address", "")
-        underlying, hedge_symbol = _resolve_underlying(otoken_addr)
-        mkt = _get_market(underlying)
+        underlying, hedge_symbol, chain = _resolve_underlying(otoken_addr)
+        mkt = _get_market(underlying, chain)
 
         if mkt.spot <= 0 or mkt.iv <= 0:
             log.warning(
-                "Fill %s before market data for %s, will retry",
+                "Fill %s before market data for %s/%s, will retry",
                 tx[:16] if tx else "?",
+                chain.upper(),
                 underlying.upper(),
             )
             return
@@ -411,16 +545,52 @@ def _pick_refresh_interval() -> int:
     return config.REFRESH_INTERVAL
 
 
+def _init_solana() -> None:
+    """Load Solana keypair used to publish Solana quotes."""
+    global _solana_keypair, _solana_maker_pubkey  # noqa: PLW0603
+    from solders.keypair import Keypair  # type: ignore[import-untyped]
+
+    raw = config.SOLANA_PRIVATE_KEY
+    # Support both JSON byte-array and base58 secret key formats
+    if raw.strip().startswith("["):
+        key_bytes = bytes(json.loads(raw))
+        _solana_keypair = Keypair.from_bytes(key_bytes)
+    else:
+        _solana_keypair = Keypair.from_base58_string(raw)
+    _solana_maker_pubkey = str(_solana_keypair.pubkey())
+
+
 def main() -> None:
     mm_address = Account.from_key(config.MM_PRIVATE_KEY).address
     w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
     domain = build_domain(config.CHAIN_ID, config.BATCH_SETTLER)
 
+    # Explicit opt-in: fail fast if the operator enabled publishing but init fails.
+    if config.SOLANA_QUOTE_PUBLISHING_ENABLED:
+        try:
+            _init_solana()
+        except Exception:
+            log.exception(
+                "FATAL: SOLANA_QUOTE_PUBLISHING_ENABLED=true but Solana "
+                "keypair init failed. Expected SOLANA_PRIVATE_KEY as "
+                "base58 string or JSON byte array [1,2,...,64]."
+            )
+            sys.exit(1)
+
     log.info("b1nary Market Maker starting")
     log.info("  MM address:  %s", mm_address)
     log.info("  Backend:     %s", config.BACKEND_URL)
     log.info("  RPC:         %s", config.RPC_URL)
-    log.info("  Assets:      %s", [a.name for a in config.ASSETS])
+    log.info("  Chains:      %s", [c.name for c in config.CHAINS])
+    log.info("  Base assets: %s", [a.name for a in config.ASSETS])
+    log.info(
+        "  Solana quote publishing: %s",
+        "enabled" if config.SOLANA_QUOTE_PUBLISHING_ENABLED else "disabled",
+    )
+    if config.SOLANA_QUOTE_PUBLISHING_ENABLED:
+        log.info("  Solana MM:   %s", _solana_maker_pubkey)
+        log.info("  Solana RPC:  %s", config.SOLANA_RPC_URL)
+        log.info("  Solana assets: %s", [a.name for a in config.SOLANA_ASSETS])
     log.info("  Spread:      %d bps", config.SPREAD_BPS)
     log.info(
         "  Refresh:     %ds (fast=%ds when <%dh to expiry)",

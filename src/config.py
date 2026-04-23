@@ -15,12 +15,75 @@ def _require(name: str) -> str:
     return val
 
 
+_FLAG_TRUE_VALUES = frozenset({"true", "1", "yes", "on"})
+_FLAG_FALSE_VALUES = frozenset({"false", "0", "no", "off"})
+
+
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value == "":
+        return default
+    if value in _FLAG_TRUE_VALUES:
+        return True
+    if value in _FLAG_FALSE_VALUES:
+        return False
+    print(
+        f"FATAL: {name}={raw!r} is not a valid boolean. "
+        f"Use one of {sorted(_FLAG_TRUE_VALUES)} "
+        f"or {sorted(_FLAG_FALSE_VALUES)}.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def _optional_env(name: str) -> str | None:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    value = raw.strip()
+    return value or None
+
+
+def _current_environment() -> str:
+    for name in (
+        "APP_ENV",
+        "ENVIRONMENT",
+        "RAILWAY_ENVIRONMENT_NAME",
+        "RAILWAY_ENVIRONMENT",
+    ):
+        value = _optional_env(name)
+        if value:
+            return value.lower()
+    return ""
+
+
+def _solana_quote_publishing_enabled() -> bool:
+    explicit = _optional_env("SOLANA_QUOTE_PUBLISHING_ENABLED")
+    if explicit is not None:
+        return _env_flag("SOLANA_QUOTE_PUBLISHING_ENABLED")
+
+    # Backward-compatible default: non-production environments keep
+    # legacy Solana enablement based on configured credentials.
+    if _current_environment() == "production":
+        return False
+    return _optional_env("SOLANA_PRIVATE_KEY") is not None
+
+
 @dataclass(frozen=True)
 class AssetConfig:
     name: str  # lowercase, e.g. "eth"
     hedge_symbol: str  # Hyperliquid symbol, e.g. "ETH"
     leverage: int
     max_exposure: float  # 0.0–1.0, fraction of total capital
+
+
+@dataclass(frozen=True)
+class ChainConfig:
+    name: str  # "base" | "solana"
+    assets: tuple[AssetConfig, ...]
 
 
 # --- Required ---
@@ -114,3 +177,73 @@ if not ASSETS:
     print("FATAL: no assets configured (check ASSETS env var)", file=sys.stderr)
     sys.exit(1)
 ASSET_MAP: dict[str, AssetConfig] = {a.name: a for a in ASSETS}
+
+# --- Solana quote publication (explicitly gated per environment) ---
+SOLANA_QUOTE_PUBLISHING_ENABLED: bool = _solana_quote_publishing_enabled()
+SOLANA_PRIVATE_KEY: str | None = os.getenv("SOLANA_PRIVATE_KEY")
+SOLANA_RPC_URL: str | None = os.getenv("SOLANA_RPC_URL")
+SOLANA_BATCH_SETTLER: str = os.getenv(
+    "SOLANA_BATCH_SETTLER",
+    "GpR6id2cHu5fUGsFm7NUKkB4NzfuEDa6brPzkSrgAzvS",  # devnet
+)
+SOLANA_USDC_MINT: str | None = os.getenv("SOLANA_USDC_MINT")
+SOLANA_TSLAX_MINT: str | None = os.getenv("SOLANA_TSLAX_MINT")
+SOLANA_TSLAX_PYTH_FEED: str | None = os.getenv("SOLANA_TSLAX_PYTH_FEED")
+
+
+def _parse_solana_assets() -> list[AssetConfig]:
+    raw = os.getenv("SOLANA_ASSETS", "sol")
+    assets = []
+    for name in raw.split(","):
+        name = name.strip().lower()
+        if not name:
+            continue
+        prefix = name.upper()
+        leverage = int(os.getenv(f"{prefix}_HEDGE_LEVERAGE", "3"))
+        if leverage < 1:
+            print(
+                f"FATAL: {prefix}_HEDGE_LEVERAGE must be >= 1, got {leverage}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        max_exp = float(os.getenv(f"{prefix}_MAX_EXPOSURE", "1.0"))
+        if not 0.0 < max_exp <= 1.0:
+            print(
+                f"FATAL: {prefix}_MAX_EXPOSURE must be in (0, 1], got {max_exp}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        assets.append(
+            AssetConfig(
+                name=name,
+                hedge_symbol=os.getenv(f"{prefix}_HEDGE_SYMBOL", name.upper()),
+                leverage=leverage,
+                max_exposure=max_exp,
+            )
+        )
+    return assets
+
+
+SOLANA_ASSETS: list[AssetConfig] = (
+    _parse_solana_assets() if SOLANA_QUOTE_PUBLISHING_ENABLED else []
+)
+SOLANA_ASSET_MAP: dict[str, AssetConfig] = {a.name: a for a in SOLANA_ASSETS}
+
+# --- Chain configs ---
+CHAINS: list[ChainConfig] = [ChainConfig(name="base", assets=tuple(ASSETS))]
+if SOLANA_QUOTE_PUBLISHING_ENABLED:
+    if not SOLANA_PRIVATE_KEY:
+        print(
+            "FATAL: SOLANA_PRIVATE_KEY required when "
+            "SOLANA_QUOTE_PUBLISHING_ENABLED is true",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if not SOLANA_RPC_URL:
+        print(
+            "FATAL: SOLANA_RPC_URL required when "
+            "SOLANA_QUOTE_PUBLISHING_ENABLED is true",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    CHAINS.append(ChainConfig(name="solana", assets=tuple(SOLANA_ASSETS)))

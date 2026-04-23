@@ -7,6 +7,8 @@ import time
 from dataclasses import dataclass, fields
 from typing import TYPE_CHECKING
 
+import requests
+
 from web3 import Web3
 
 from src import config, hedge_executor
@@ -117,6 +119,144 @@ def _read_pools(
     return usdc_available, hedge_pool_value, withdrawable
 
 
+def _read_solana_token_balance(
+    rpc_url: str,
+    maker_pubkey: str,
+    mint: str,
+    *,
+    token_label: str,
+) -> float:
+    """Read an SPL token balance for a Solana wallet."""
+    resp = requests.post(
+        rpc_url,
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "getTokenAccountsByOwner",
+            "params": [
+                maker_pubkey,
+                {"mint": mint},
+                {"encoding": "jsonParsed"},
+            ],
+        },
+        timeout=10,
+    )
+    resp.raise_for_status()
+    body = resp.json()
+
+    if "error" in body:
+        rpc_err = body["error"]
+        raise RuntimeError(
+            f"Solana RPC error {rpc_err.get('code')}: {rpc_err.get('message')}"
+        )
+
+    accounts = body.get("result", {}).get("value", [])
+    if not accounts:
+        log.warning(
+            "No %s token account for %s (mint %s)",
+            token_label,
+            maker_pubkey,
+            mint,
+        )
+        return 0.0
+
+    total = 0.0
+    for account in accounts:
+        info = account["account"]["data"]["parsed"]["info"]
+        total += float(info["tokenAmount"]["uiAmount"] or 0)
+    return total
+
+
+def _read_solana_usdc_balance(
+    rpc_url: str,
+    maker_pubkey: str,
+    usdc_mint: str,
+) -> float:
+    """Read USDC SPL token balance for a Solana wallet."""
+    return _read_solana_token_balance(
+        rpc_url,
+        maker_pubkey,
+        usdc_mint,
+        token_label="USDC",
+    )
+
+
+def read_solana_underlying_balance(
+    rpc_url: str | None,
+    maker_pubkey: str,
+    asset_name: str,
+) -> float | None:
+    """Read Solana underlying collateral balance for covered calls.
+
+    Returns None when the asset has no configured SPL mint. The caller can
+    then decide whether that asset should be capped or handled elsewhere.
+    """
+    if not rpc_url:
+        raise ValueError("SOLANA_RPC_URL is required to read Solana collateral")
+
+    mint = getattr(config, f"SOLANA_{asset_name.upper()}_MINT", None)
+    if not mint:
+        return None
+
+    return _read_solana_token_balance(
+        rpc_url,
+        maker_pubkey,
+        mint,
+        token_label=asset_name.upper(),
+    )
+
+
+def solana_call_capacity_raw(
+    maker_pubkey: str,
+    asset_name: str,
+    tracker,
+) -> int | None:
+    """Return max oToken amount raw for Solana covered calls.
+
+    For assets with a configured SOLANA_<ASSET>_MINT, calls are capped by the
+    maker's SPL underlying balance minus already-open call exposure. For assets
+    without an underlying mint configuration, return None to leave legacy
+    behavior unchanged.
+    """
+    balance = read_solana_underlying_balance(
+        config.SOLANA_RPC_URL,
+        maker_pubkey,
+        asset_name,
+    )
+    if balance is None:
+        return None
+
+    open_calls = sum(
+        p.num_options
+        for p in tracker.open_positions(underlying=asset_name)
+        if not p.is_put
+    )
+    available_units = max(balance - open_calls, 0.0)
+    return int(available_units * 10**OTOKEN_DECIMALS)
+
+
+def _read_pools_solana(
+    rpc_url: str,
+    maker_pubkey: str,
+    usdc_mint: str,
+) -> tuple[float, float, float]:
+    """Read Solana USDC balance and shared hedge pool state.
+
+    Returns same shape as _read_pools:
+        (usdc_available, hedge_pool_value_usd, hedge_withdrawable_usd)
+    """
+    usdc_available = _read_solana_usdc_balance(rpc_url, maker_pubkey, usdc_mint)
+
+    if config.HEDGE_MODE == "live":
+        withdrawable = hedge_executor.get_withdrawable()
+        hedge_pool_value = hedge_executor.get_account_value()
+    else:
+        withdrawable = 0.0
+        hedge_pool_value = 0.0
+
+    return usdc_available, hedge_pool_value, withdrawable
+
+
 def _live_capacity(
     premium_pool: float,
     withdrawable: float,
@@ -175,11 +315,13 @@ def _simulate_capacity(
 
 
 def calculate_capacity_internal(
-    w3: Web3,
+    w3: Web3 | None,
     spot: float,
     mm_address: str,
     tracker,
     asset_config: AssetConfig | None = None,
+    *,
+    chain: str = "base",
 ) -> CapacityReport:
     """Calculate MM capacity for a specific asset.
 
@@ -193,7 +335,14 @@ def calculate_capacity_internal(
     if asset_config is None:
         asset_config = config.ASSET_MAP.get("eth", config.ASSETS[0])
 
-    usdc_available, hedge_pool_value, withdrawable = _read_pools(w3, mm_address)
+    if chain == "solana":
+        usdc_available, hedge_pool_value, withdrawable = _read_pools_solana(
+            config.SOLANA_RPC_URL,
+            mm_address,
+            config.SOLANA_USDC_MINT,
+        )
+    else:
+        usdc_available, hedge_pool_value, withdrawable = _read_pools(w3, mm_address)
     leverage = max(asset_config.leverage, 1)
 
     if config.HEDGE_MODE == "live":

@@ -12,10 +12,18 @@ dependencies = [
     "websocket-client>=1.7",
     "hyperliquid-python-sdk>=0.22.0",
     "supabase>=2.0",
+    "solders>=0.21",
+    "base58>=2.1",
+    "pynacl>=1.5",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=9.0.2",
+]
 
 [build-system]
 requires = ["hatchling"]
