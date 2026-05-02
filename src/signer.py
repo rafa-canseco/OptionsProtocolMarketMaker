@@ -92,14 +92,21 @@ def build_solana_quote_message(
     quote_id: int,
     max_amount: int,
     maker_nonce: int,
+    premium_mint: bytes,
 ) -> bytes:
-    """Build the 72-byte message matching the Rust build_quote_message.
+    """Build the 104-byte message matching the Rust build_quote_message.
 
-    Layout: otoken_mint (32) + bid_price (u64 LE) + deadline (i64 LE)
-            + quote_id (u64 LE) + max_amount (u64 LE) + maker_nonce (u64 LE)
+    Layout: otoken_mint (32) + premium_mint (32) + bid_price (u64 LE)
+            + deadline (i64 LE) + quote_id (u64 LE) + max_amount (u64 LE)
+            + maker_nonce (u64 LE)
+
+    Mirrors `solana/programs/batch_settler/src/lib.rs::build_quote_message`.
     """
+    if len(otoken_mint) != 32 or len(premium_mint) != 32:
+        raise ValueError("otoken_mint and premium_mint must be 32 bytes each")
     return (
         otoken_mint
+        + premium_mint
         + struct.pack("<Q", bid_price)
         + struct.pack("<q", deadline)
         + struct.pack("<Q", quote_id)

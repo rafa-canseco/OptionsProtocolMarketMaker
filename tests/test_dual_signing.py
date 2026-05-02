@@ -1,7 +1,7 @@
 """Tests for dual-chain signing (B1N-275).
 
 Covers:
-1. Solana message layout (exactly 72 bytes, correct field order)
+1. Solana message layout (exactly 104 bytes including premium_mint, correct field order)
 2. ed25519 sign + verify round-trip
 3. Solana/Base price scale parity (USDC raw, 1e6)
 4. MakerState PDA derivation matches Rust program
@@ -30,9 +30,10 @@ from src.signer import (
 # --- 1. Message layout ---
 
 
-def test_solana_message_is_72_bytes():
-    """build_solana_quote_message produces exactly 72 bytes."""
+def test_solana_message_is_104_bytes():
+    """build_solana_quote_message produces exactly 104 bytes."""
     mint = bytes(Pubkey.new_unique())  # 32 bytes
+    premium = bytes(Pubkey.new_unique())  # 32 bytes
     msg = build_solana_quote_message(
         otoken_mint=mint,
         bid_price=5_000000,
@@ -40,13 +41,15 @@ def test_solana_message_is_72_bytes():
         quote_id=42,
         max_amount=1_00000000,
         maker_nonce=7,
+        premium_mint=premium,
     )
-    assert len(msg) == 72
+    assert len(msg) == 104
 
 
 def test_solana_message_field_order():
     """Fields are packed in the exact order the Rust program expects."""
     mint = bytes(range(32))  # deterministic 32 bytes
+    premium = bytes(range(32, 64))  # deterministic 32 bytes
     bid_price = 123456789
     deadline = 1700000000
     quote_id = 42
@@ -60,15 +63,19 @@ def test_solana_message_field_order():
         quote_id=quote_id,
         max_amount=max_amount,
         maker_nonce=maker_nonce,
+        premium_mint=premium,
     )
 
-    # Unpack and verify each field
+    # Layout matches Rust build_quote_message:
+    # otoken_mint(32) + premium_mint(32) + bid_price(8) + deadline(8)
+    # + quote_id(8) + max_amount(8) + maker_nonce(8)
     assert msg[:32] == mint
-    assert struct.unpack_from("<Q", msg, 32)[0] == bid_price
-    assert struct.unpack_from("<q", msg, 40)[0] == deadline
-    assert struct.unpack_from("<Q", msg, 48)[0] == quote_id
-    assert struct.unpack_from("<Q", msg, 56)[0] == max_amount
-    assert struct.unpack_from("<Q", msg, 64)[0] == maker_nonce
+    assert msg[32:64] == premium
+    assert struct.unpack_from("<Q", msg, 64)[0] == bid_price
+    assert struct.unpack_from("<q", msg, 72)[0] == deadline
+    assert struct.unpack_from("<Q", msg, 80)[0] == quote_id
+    assert struct.unpack_from("<Q", msg, 88)[0] == max_amount
+    assert struct.unpack_from("<Q", msg, 96)[0] == maker_nonce
 
 
 # --- 2. ed25519 sign + verify ---
@@ -84,6 +91,7 @@ def test_sign_quote_solana_returns_64_bytes():
         quote_id=1,
         max_amount=100,
         maker_nonce=0,
+        premium_mint=bytes(Pubkey.new_unique()),
     )
     sig = sign_quote_solana(kp, msg)
     assert len(sig) == 64
@@ -99,6 +107,7 @@ def test_sign_quote_solana_verifiable():
         quote_id=10,
         max_amount=1000,
         maker_nonce=3,
+        premium_mint=bytes(Pubkey.new_unique()),
     )
     sig = sign_quote_solana(kp, msg)
 
@@ -206,6 +215,7 @@ def test_full_round_trip_build_sign_verify():
     """Complete flow: build message → sign → verify matches on-chain logic."""
     kp = Keypair()
     otoken_mint = Pubkey.new_unique()
+    premium_mint = Pubkey.new_unique()
 
     bid_price = 5_000000  # $5.00 at USDC 1e6 scale
     deadline = int(time.time()) + 300
@@ -221,6 +231,7 @@ def test_full_round_trip_build_sign_verify():
         quote_id=quote_id,
         max_amount=max_amount,
         maker_nonce=maker_nonce,
+        premium_mint=bytes(premium_mint),
     )
 
     # Step 2: sign with ed25519
@@ -235,8 +246,9 @@ def test_full_round_trip_build_sign_verify():
 
     # Step 4: verify message content matches what we built
     assert msg[:32] == bytes(otoken_mint)
-    assert struct.unpack_from("<Q", msg, 32)[0] == bid_price
-    assert struct.unpack_from("<q", msg, 40)[0] == deadline
+    assert msg[32:64] == bytes(premium_mint)
+    assert struct.unpack_from("<Q", msg, 64)[0] == bid_price
+    assert struct.unpack_from("<q", msg, 72)[0] == deadline
 
 
 # --- 6. read_maker_nonce_solana RPC deserialization ---

@@ -170,6 +170,13 @@ def _sign_quotes_solana(quotes: list[dict]) -> list[dict]:
         raise RuntimeError(
             "Solana keypair not initialized — call _init_solana() before signing"
         )
+    if not config.SOLANA_USDC_MINT:
+        raise RuntimeError(
+            "SOLANA_USDC_MINT not set — required to sign Solana quotes "
+            "(USDC is the premium asset for every Solana option)"
+        )
+    premium_mint_bytes = bytes(Pubkey.from_string(config.SOLANA_USDC_MINT))
+
     payloads = []
     for q in quotes:
         otoken_bytes = bytes(Pubkey.from_string(q["oToken"]))
@@ -180,6 +187,7 @@ def _sign_quotes_solana(quotes: list[dict]) -> list[dict]:
             quote_id=q["quoteId"],
             max_amount=q["maxAmount"],
             maker_nonce=q["makerNonce"],
+            premium_mint=premium_mint_bytes,
         )
         sig = sign_quote_solana(_solana_keypair, message)
         payloads.append(to_solana_api_payload(q, sig, _solana_maker_pubkey))
