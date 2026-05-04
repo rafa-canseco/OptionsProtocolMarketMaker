@@ -29,6 +29,7 @@ class Position:
     open_time: int
     spot_at_open: float
     delta_at_open: float
+    chain: str = "base"
     underlying: str = "eth"
     hedge_symbol: str = "ETH"
     current_delta: float = 0.0
@@ -65,8 +66,8 @@ class Position:
     @property
     def hedge_action(self) -> str:
         if self.is_put:
-            return "SHORT"
-        return "LONG"
+            return "LONG"
+        return "SHORT"
 
     def time_to_expiry_years(self) -> float:
         seconds = self.expiry - int(time.time())
@@ -125,6 +126,7 @@ class PositionTracker:
         strike = details["strike_price"]
         expiry = details["expiry"]
         is_put = details["is_put"]
+        chain = details.get("chain", "base")
 
         T = max((expiry - int(time.time())) / (365 * 86400), 0.0)
         delta = bs_delta(is_put, spot, strike, T, risk_free_rate, iv)
@@ -148,6 +150,7 @@ class PositionTracker:
             open_time=int(time.time()),
             spot_at_open=spot,
             delta_at_open=delta,
+            chain=chain,
             underlying=underlying,
             hedge_symbol=hedge_symbol,
             current_delta=delta,
@@ -175,6 +178,7 @@ class PositionTracker:
             hedge_size=pos.hedge_fill_size or pos.hedge_size,
             hedge_fill_price=pos.hedge_fill_price,
             underlying=underlying,
+            chain=chain,
         )
 
         return pos
@@ -214,6 +218,7 @@ class PositionTracker:
                     new_hedge=new_hedge,
                     hedge_fill_price=0.0,
                     underlying=pos.underlying,
+                    chain=pos.chain,
                 )
 
     def check_expiries(
@@ -239,6 +244,7 @@ class PositionTracker:
                     hedge_close_price=pos.hedge_close_price,
                     net_pnl=net_pnl,
                     underlying=pos.underlying,
+                    chain=pos.chain,
                 )
 
                 expired.append(pos)
@@ -359,7 +365,8 @@ class PositionTracker:
         else:
             current_size = self._simulated_hedge.get(underlying, 0.0)
 
-        diff = net_d - current_size
+        target_size = -net_d
+        diff = target_size - current_size
 
         if abs(diff) < HEDGE_REBALANCE_THRESHOLD:
             return None
@@ -398,7 +405,7 @@ class PositionTracker:
                 net_d,
                 current_size,
             )
-            self._simulated_hedge[underlying] = net_d
+            self._simulated_hedge[underlying] = target_size
 
         return fill
 
@@ -454,12 +461,12 @@ def _calculate_expiry_pnl(pos: Position, spot: float) -> None:
     # Use real fill prices if available, otherwise theoretical
     entry = pos.hedge_fill_price or pos.spot_at_open
     exit_price = pos.hedge_close_price or spot
-    hedge_size = pos.hedge_fill_size or pos.hedge_size
+    hedge_size = abs(pos.hedge_fill_size) or pos.hedge_size
 
     if pos.is_put:
-        pos.hedge_pnl = (entry - exit_price) * hedge_size
-    else:
         pos.hedge_pnl = (exit_price - entry) * hedge_size
+    else:
+        pos.hedge_pnl = (entry - exit_price) * hedge_size
 
 
 def _log_expiry(pos: Position, spot: float) -> None:
@@ -505,7 +512,7 @@ def _log_expiry(pos: Position, spot: float) -> None:
         settle_note,
         pos.hedge_action,
         pos.underlying.upper(),
-        pos.hedge_size,
+        abs(pos.hedge_fill_size) or pos.hedge_size,
         pos.underlying.upper(),
         pos.spot_at_open,
         spot,

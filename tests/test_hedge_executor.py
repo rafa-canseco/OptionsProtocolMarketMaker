@@ -193,12 +193,12 @@ def test_full_lifecycle_with_mock_hyperliquid():
     hedge_executor._exchange.market_open.assert_called_once()
     call_args = hedge_executor._exchange.market_open.call_args
     assert call_args[0][0] == "ETH"
-    assert not call_args[0][1]  # SHORT for negative net delta
+    assert call_args[0][1]  # LONG for negative net delta
 
     # Wait for expiry
     time.sleep(3)
 
-    # Simulate HL having the short position
+    # Simulate HL having the long position
     hedge_size = pos.hedge_size
     hedge_executor._info.user_state.return_value = {
         "marginSummary": {"accountValue": "30000.0"},
@@ -207,7 +207,7 @@ def test_full_lifecycle_with_mock_hyperliquid():
             {
                 "position": {
                     "coin": "ETH",
-                    "szi": str(-hedge_size),
+                    "szi": str(hedge_size),
                     "entryPx": "1973.50",
                     "unrealizedPnl": "100.0",
                     "leverage": {"type": "cross", "value": 3},
@@ -221,11 +221,11 @@ def test_full_lifecycle_with_mock_hyperliquid():
     assert len(expired) == 1
 
     # Aggregate rebalance after expiry closes the hedge
-    # net_delta=0, current=-hedge_size → buy to close
+    # net_delta=0, current=+hedge_size → sell to close
     tracker.rebalance_hedge(1850.0, "eth", "ETH")
     hedge_executor._exchange.market_open.assert_called_once()
     close_args = hedge_executor._exchange.market_open.call_args
-    assert close_args[0][1]  # BUY to close short
+    assert not close_args[0][1]  # SELL to close long
 
 
 @patch("src.config.HEDGE_MODE", "live")

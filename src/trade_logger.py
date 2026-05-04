@@ -81,12 +81,14 @@ def log_position_opened(
     hedge_size: float,
     hedge_fill_price: float,
     underlying: str = "eth",
+    chain: str = "base",
 ) -> None:
     _emit(
         {
             "event": "position_opened",
             "ts": int(time.time()),
             "otoken": otoken,
+            "chain": chain,
             "underlying": underlying,
             "strike": strike,
             "expiry": expiry,
@@ -118,12 +120,14 @@ def log_delta_rebalanced(
     new_hedge: float,
     hedge_fill_price: float,
     underlying: str = "eth",
+    chain: str = "base",
 ) -> None:
     _emit(
         {
             "event": "delta_rebalanced",
             "ts": int(time.time()),
             "otoken": otoken,
+            "chain": chain,
             "underlying": underlying,
             "old_delta": round(old_delta, 6),
             "new_delta": round(new_delta, 6),
@@ -143,12 +147,14 @@ def log_position_expired(
     hedge_close_price: float,
     net_pnl: float,
     underlying: str = "eth",
+    chain: str = "base",
 ) -> None:
     _emit(
         {
             "event": "position_expired",
             "ts": int(time.time()),
             "otoken": otoken,
+            "chain": chain,
             "underlying": underlying,
             "result": settlement,
             "expiry_price": expiry_price,
