@@ -22,6 +22,13 @@ _info: Info | None = None
 _address: str = ""
 
 
+def _default_assets() -> list[AssetConfig]:
+    assets_by_symbol: dict[str, AssetConfig] = {}
+    for asset_cfg in [*config.ASSETS, *config.SOLANA_ASSETS]:
+        assets_by_symbol.setdefault(asset_cfg.hedge_symbol, asset_cfg)
+    return list(assets_by_symbol.values())
+
+
 def init(assets: list[AssetConfig] | None = None) -> None:
     """Initialize Hyperliquid clients. Call once at startup."""
     global _exchange, _info, _address
@@ -31,7 +38,7 @@ def init(assets: list[AssetConfig] | None = None) -> None:
         return
 
     if assets is None:
-        assets = config.ASSETS
+        assets = _default_assets()
 
     api_url = (
         constants.TESTNET_API_URL

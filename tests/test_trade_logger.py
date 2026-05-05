@@ -43,10 +43,11 @@ class TestTradeLogger:
             tx_hash="0xtx",
             spot=2112.75,
             delta=-0.45,
-            hedge_action="SHORT",
+            hedge_action="LONG",
             hedge_size=0.0098,
             hedge_fill_price=2108.7,
             underlying="eth",
+            chain="solana",
         )
         events = _read_events(_clean_log)
         assert len(events) == 1
@@ -57,6 +58,7 @@ class TestTradeLogger:
         assert ev["is_put"] is True
         assert ev["hedge_fill_price"] == 2108.7
         assert ev["underlying"] == "eth"
+        assert ev["chain"] == "solana"
         assert ev["amount"] == 0.01
         assert ev["hedge_size"] == 0.0098
 
@@ -72,7 +74,7 @@ class TestTradeLogger:
             tx_hash="0xtx",
             spot=50000.0,
             delta=0.65,
-            hedge_action="LONG",
+            hedge_action="SHORT",
             hedge_size=0.0008,
             hedge_fill_price=50100.0,
             underlying="btc",
@@ -158,7 +160,7 @@ class TestStartupRecovery:
             "tx_hash": "0xtx123",
             "spot": 2112.75,
             "delta": -0.45,
-            "hedge_action": "SHORT",
+            "hedge_action": "LONG",
             "hedge_size": 0.0098,
             "hedge_fill_price": 2108.7,
         }
@@ -170,7 +172,7 @@ class TestStartupRecovery:
     def test_recover_open_position(self, mock_hedge, _clean_log):
         self._write_opened_event(_clean_log)
         mock_hedge.get_positions.return_value = [
-            {"coin": "ETH", "size": -0.0098, "entry_price": 2108.7}
+            {"coin": "ETH", "size": 0.0098, "entry_price": 2108.7}
         ]
         tracker = PositionTracker()
         restored = recover_positions(tracker)
@@ -307,6 +309,7 @@ class TestStartupRecovery:
         tracker = PositionTracker()
         restored = recover_positions(tracker)
         assert restored == 1
+        assert tracker.open_positions()[0].hedge_fill_size == -0.25
 
     @patch("src.startup_recovery.hedge_executor")
     def test_recover_multiple_positions_same_otoken(self, mock_hedge, _clean_log):
@@ -325,7 +328,7 @@ class TestStartupRecovery:
             "tx_hash": "0xtx456",
             "spot": 2112.75,
             "delta": -0.45,
-            "hedge_action": "SHORT",
+            "hedge_action": "LONG",
             "hedge_size": 0.009,
             "hedge_fill_price": 2108.7,
         }
@@ -354,7 +357,7 @@ class TestStartupRecovery:
             "tx_hash": "0xtx789",
             "spot": 2112.75,
             "delta": -0.45,
-            "hedge_action": "SHORT",
+            "hedge_action": "LONG",
             "hedge_size": 0.009,
             "hedge_fill_price": 2108.7,
         }

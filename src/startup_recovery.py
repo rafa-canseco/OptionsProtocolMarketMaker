@@ -11,6 +11,44 @@ from src.pricer import bs_delta
 log = logging.getLogger(__name__)
 
 
+def _asset_maps_by_chain() -> dict[str, dict[str, config.AssetConfig]]:
+    return {
+        "base": config.ASSET_MAP,
+        "solana": config.SOLANA_ASSET_MAP,
+    }
+
+
+def _configured_assets() -> list[tuple[str, config.AssetConfig]]:
+    assets: list[tuple[str, config.AssetConfig]] = [
+        ("base", asset) for asset in config.ASSETS
+    ]
+    assets.extend(("solana", asset) for asset in config.SOLANA_ASSETS)
+    return assets
+
+
+def _resolve_asset(
+    underlying: str, chain: str | None
+) -> tuple[str, config.AssetConfig | None]:
+    if chain:
+        asset_cfg = _asset_maps_by_chain().get(chain, {}).get(underlying)
+        if asset_cfg:
+            return chain, asset_cfg
+    for chain_name, asset_map in _asset_maps_by_chain().items():
+        asset_cfg = asset_map.get(underlying)
+        if asset_cfg:
+            return chain_name, asset_cfg
+    return chain or "base", None
+
+
+def _signed_hedge_size(event: dict[str, Any], hedge_size: float) -> float:
+    action = str(event.get("hedge_action", "")).upper()
+    if action == "SHORT":
+        return -abs(hedge_size)
+    if action == "LONG":
+        return abs(hedge_size)
+    return hedge_size
+
+
 def recover_positions(tracker: PositionTracker) -> int:
     """Restore open positions from persisted events.
 
@@ -77,12 +115,13 @@ def recover_positions(tracker: PositionTracker) -> int:
 def _event_to_position(ev: dict[str, Any]) -> Position:
     """Convert a position_opened event back into a Position object."""
     underlying = ev.get("underlying") or "eth"
-    asset_cfg = config.ASSET_MAP.get(underlying)
+    chain, asset_cfg = _resolve_asset(underlying, ev.get("chain"))
     hedge_symbol = asset_cfg.hedge_symbol if asset_cfg else underlying.upper()
 
     # Support both old (amount_eth/hedge_size_eth) and new field names
     amount = ev.get("amount", ev.get("amount_eth", 0))
     hedge_size = ev.get("hedge_size", ev.get("hedge_size_eth", 0.0))
+    signed_hedge_size = _signed_hedge_size(ev, float(hedge_size))
 
     return Position(
         otoken_address=ev["otoken"],
@@ -96,10 +135,11 @@ def _event_to_position(ev: dict[str, Any]) -> Position:
         open_time=ev.get("ts", 0),
         spot_at_open=ev["spot"],
         delta_at_open=ev["delta"],
+        chain=chain,
         underlying=underlying,
         hedge_symbol=hedge_symbol,
         current_delta=ev["delta"],
-        hedge_fill_size=hedge_size,
+        hedge_fill_size=signed_hedge_size,
         hedge_fill_price=ev.get("hedge_fill_price", 0.0),
     )
 
@@ -117,13 +157,13 @@ def _verify_hedges(tracker: PositionTracker) -> None:
 
     hl_by_coin = {p["coin"]: p for p in hl_positions}
 
-    for asset_cfg in config.ASSETS:
+    for _, asset_cfg in _configured_assets():
         symbol = asset_cfg.hedge_symbol
         asset_positions = tracker.open_positions(underlying=asset_cfg.name)
         expected = sum(p.hedge_fill_size for p in asset_positions)
 
         hl_pos = hl_by_coin.get(symbol)
-        hl_size = abs(hl_pos["size"]) if hl_pos else 0.0
+        hl_size = hl_pos["size"] if hl_pos else 0.0
 
         if expected == 0.0 and hl_size == 0.0:
             continue
@@ -157,14 +197,17 @@ def _bootstrap_from_live_state(tracker: PositionTracker) -> int:
         return 0
 
     # Build a map of HL coin → asset config
-    coin_to_asset = {a.hedge_symbol: a for a in config.ASSETS}
+    coin_to_asset = {
+        asset.hedge_symbol: (chain, asset) for chain, asset in _configured_assets()
+    }
 
     bootstrapped = 0
     for hl_pos in hl_positions:
         coin = hl_pos["coin"]
-        asset_cfg = coin_to_asset.get(coin)
-        if not asset_cfg:
+        asset_ref = coin_to_asset.get(coin)
+        if not asset_ref:
             continue
+        chain, asset_cfg = asset_ref
 
         log.info(
             "[BOOTSTRAP] Found %s position: size=%.4f entry=$%.2f",
@@ -187,7 +230,7 @@ def _bootstrap_from_live_state(tracker: PositionTracker) -> int:
             continue
 
         try:
-            market = api_client.get_market_data(asset=asset_cfg.name)
+            market = api_client.get_market_data(asset=asset_cfg.name, chain=chain)
         except Exception:
             log.warning("Failed to fetch market data for bootstrap", exc_info=True)
             market = {}
@@ -228,6 +271,7 @@ def _bootstrap_from_live_state(tracker: PositionTracker) -> int:
                 "event": "position_opened",
                 "ts": int(time.time()),
                 "otoken": otoken_addr,
+                "chain": chain,
                 "underlying": asset_cfg.name,
                 "strike": strike,
                 "expiry": expiry,
@@ -238,7 +282,7 @@ def _bootstrap_from_live_state(tracker: PositionTracker) -> int:
                 "tx_hash": fill.get("tx_hash", ""),
                 "spot": spot,
                 "delta": delta,
-                "hedge_action": "SHORT" if is_put else "LONG",
+                "hedge_action": "SHORT" if is_short else "LONG",
                 "hedge_size": hl_size,
                 "hedge_fill_price": hl_pos["entry_price"],
             }
