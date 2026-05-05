@@ -11,6 +11,7 @@ from src import config
 log = logging.getLogger(__name__)
 
 _supabase_client: Any = None
+_supabase_missing_columns: set[str] = set()
 
 
 def _get_supabase() -> Any:
@@ -48,15 +49,45 @@ _SUPABASE_KEY_MAP = {
 }
 
 
+def _map_supabase_event(event: dict[str, Any]) -> dict[str, Any]:
+    mapped = {_SUPABASE_KEY_MAP.get(k, k): v for k, v in event.items()}
+    for column in _supabase_missing_columns:
+        mapped.pop(column, None)
+    return mapped
+
+
+def _is_unknown_column_error(exc: Exception, column: str) -> bool:
+    message = str(exc).lower()
+    return (
+        column.lower() in message
+        and "column" in message
+        and ("does not exist" in message or "could not find" in message)
+    )
+
+
 def _write_supabase(event: dict[str, Any]) -> None:
     """Insert event row into mm_trade_history table."""
     client = _get_supabase()
     if not client:
         return
-    mapped = {_SUPABASE_KEY_MAP.get(k, k): v for k, v in event.items()}
+    mapped = _map_supabase_event(event)
     try:
         client.table("mm_trade_history").insert(mapped).execute()
-    except Exception:
+    except Exception as exc:
+        if "chain" in mapped and _is_unknown_column_error(exc, "chain"):
+            legacy = dict(mapped)
+            legacy.pop("chain", None)
+            try:
+                client.table("mm_trade_history").insert(legacy).execute()
+                _supabase_missing_columns.add("chain")
+                log.warning(
+                    "Supabase mm_trade_history missing chain column;"
+                    " wrote legacy row without chain"
+                )
+                return
+            except Exception:
+                log.warning("Failed to write legacy event to Supabase", exc_info=True)
+                return
         log.warning("Failed to write event to Supabase", exc_info=True)
 
 
