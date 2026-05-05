@@ -135,6 +135,7 @@ HYPERLIQUID_TESTNET: bool = os.getenv("HYPERLIQUID_TESTNET", "true").lower() in 
     "yes",
 )
 HEDGE_SLIPPAGE: float = float(os.getenv("HEDGE_SLIPPAGE", "0.01"))
+HYPERLIQUID_ACCOUNT_MODE: str = os.getenv("HYPERLIQUID_ACCOUNT_MODE", "auto")
 
 # --- Capacity ---
 MM_TYPE: str = os.getenv("MM_TYPE", "internal")  # internal | external

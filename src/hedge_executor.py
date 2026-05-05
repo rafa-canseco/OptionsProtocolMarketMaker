@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING, Any
 
 import eth_account
+import requests
 from hyperliquid.exchange import Exchange
 from hyperliquid.info import Info
 from hyperliquid.utils import constants
@@ -24,6 +26,12 @@ _active_symbols: set[str] = set()
 _initialized_dexs: tuple[str, ...] = ("",)
 _dex_exchanges: dict[str, Exchange] = {}
 _dex_infos: dict[str, Info] = {}
+_api_url: str = ""
+_account_abstraction: str = "disabled"
+_spot_state_cache: dict[str, Any] = {"ts": 0.0, "state": None}
+
+_UNIFIED_ACCOUNT_MODES = {"unifiedAccount", "portfolioMargin"}
+_SPOT_STATE_TTL_SECONDS = 2.0
 
 
 def _dex_for_symbol(symbol: str) -> str:
@@ -45,6 +53,70 @@ def _required_perp_dexs(assets: list[AssetConfig]) -> list[str]:
 
 def _iter_initialized_dexs() -> tuple[str, ...]:
     return _initialized_dexs or ("",)
+
+
+def _is_unified_account_mode() -> bool:
+    return _account_abstraction in _UNIFIED_ACCOUNT_MODES
+
+
+def _post_info(payload: dict[str, Any]) -> Any:
+    if not _api_url:
+        return None
+    resp = requests.post(
+        f"{_api_url}/info",
+        json=payload,
+        timeout=10,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _detect_account_abstraction() -> str:
+    configured = config.HYPERLIQUID_ACCOUNT_MODE
+    if configured and configured != "auto":
+        return configured
+    try:
+        abstraction = _post_info({"type": "userAbstraction", "user": _address})
+    except Exception:
+        log.warning("Failed to detect Hyperliquid account abstraction", exc_info=True)
+        return "disabled"
+    if isinstance(abstraction, str):
+        return abstraction
+    return "disabled"
+
+
+def _spot_clearinghouse_state() -> dict[str, Any]:
+    if not _is_unified_account_mode():
+        return {}
+
+    now = time.time()
+    cached = _spot_state_cache.get("state")
+    if cached is not None and now - float(_spot_state_cache.get("ts", 0.0)) < _SPOT_STATE_TTL_SECONDS:
+        return cached
+
+    try:
+        state = _post_info({"type": "spotClearinghouseState", "user": _address}) or {}
+    except Exception:
+        log.warning(
+            "Failed to read Hyperliquid spot clearinghouse state",
+            exc_info=True,
+        )
+        return cached or {}
+
+    _spot_state_cache["ts"] = now
+    _spot_state_cache["state"] = state
+    return state
+
+
+def _spot_token_balance(coin: str) -> tuple[float, float]:
+    state = _spot_clearinghouse_state()
+    balances = state.get("balances", [])
+    for balance in balances:
+        if balance.get("coin") == coin:
+            total = float(balance.get("total", 0.0))
+            hold = float(balance.get("hold", 0.0))
+            return total, hold
+    return 0.0, 0.0
 
 
 def _state_for_dex(dex: str) -> dict[str, Any]:
@@ -85,6 +157,7 @@ def init(assets: list[AssetConfig] | None = None) -> None:
     """Initialize Hyperliquid clients. Call once at startup."""
     global _exchange, _info, _address, _active_symbols, _initialized_dexs
     global _dex_exchanges, _dex_infos
+    global _api_url, _account_abstraction
 
     if config.HEDGE_MODE != "live":
         log.info("Hedge mode=%s, skipping Hyperliquid init", config.HEDGE_MODE)
@@ -98,10 +171,13 @@ def init(assets: list[AssetConfig] | None = None) -> None:
         if config.HYPERLIQUID_TESTNET
         else constants.MAINNET_API_URL
     )
+    _api_url = api_url
     wallet = eth_account.Account.from_key(config.MM_PRIVATE_KEY)
     _address = wallet.address
     perp_dexs = _required_perp_dexs(assets)
     _initialized_dexs = ("", *perp_dexs)
+    _spot_state_cache["ts"] = 0.0
+    _spot_state_cache["state"] = None
 
     # Empty spot_meta bypasses SDK bug where testnet spot token
     # indices are out of range. Perp metadata still loads fine.
@@ -124,6 +200,7 @@ def init(assets: list[AssetConfig] | None = None) -> None:
             perp_dexs=[dex],
         )
     _active_symbols = set()
+    _account_abstraction = _detect_account_abstraction()
     universe_symbols: set[str] = set()
     universe_symbols.update(asset["name"] for asset in _info.meta()["universe"])
     for dex, info in _dex_infos.items():
@@ -173,10 +250,11 @@ def init(assets: list[AssetConfig] | None = None) -> None:
         return
 
     log.info(
-        "Hyperliquid ready: %s, assets=%s, testnet=%s",
+        "Hyperliquid ready: %s, assets=%s, testnet=%s abstraction=%s",
         _address,
         sorted(_active_symbols),
         config.HYPERLIQUID_TESTNET,
+        _account_abstraction,
     )
     _log_account_state()
 
@@ -190,6 +268,15 @@ def is_hedge_ready(asset: str) -> bool:
 
 def _log_account_state() -> None:
     if not _info:
+        return
+    if _is_unified_account_mode():
+        usdc_total, usdc_hold = _spot_token_balance("USDC")
+        log.info(
+            "Hyperliquid unified account: USDC total=$%.2f hold=$%.2f free=$%.2f",
+            usdc_total,
+            usdc_hold,
+            max(usdc_total - usdc_hold, 0.0),
+        )
         return
     states = _collect_states()
     if not states:
@@ -437,6 +524,9 @@ def get_account_value(asset: str | None = None) -> float:
     if not _info:
         return 0.0
     try:
+        if _is_unified_account_mode():
+            usdc_total, _ = _spot_token_balance("USDC")
+            return usdc_total
         if asset is not None:
             state = _state_for_dex(_dex_for_symbol(asset))
             return float(state["marginSummary"]["accountValue"])
@@ -454,6 +544,9 @@ def get_withdrawable(asset: str | None = None) -> float:
     if not _info:
         return 0.0
     try:
+        if _is_unified_account_mode():
+            usdc_total, usdc_hold = _spot_token_balance("USDC")
+            return max(usdc_total - usdc_hold, 0.0)
         if asset is not None:
             state = _state_for_dex(_dex_for_symbol(asset))
             return float(state["withdrawable"])
