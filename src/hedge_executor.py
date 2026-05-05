@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 _exchange: Exchange | None = None
 _info: Info | None = None
 _address: str = ""
+_active_symbols: set[str] = set()
 
 
 def _default_assets() -> list[AssetConfig]:
@@ -31,7 +32,7 @@ def _default_assets() -> list[AssetConfig]:
 
 def init(assets: list[AssetConfig] | None = None) -> None:
     """Initialize Hyperliquid clients. Call once at startup."""
-    global _exchange, _info, _address
+    global _exchange, _info, _address, _active_symbols
 
     if config.HEDGE_MODE != "live":
         log.info("Hedge mode=%s, skipping Hyperliquid init", config.HEDGE_MODE)
@@ -53,13 +54,30 @@ def init(assets: list[AssetConfig] | None = None) -> None:
     empty_spot: dict = {"universe": [], "tokens": []}
     _info = Info(api_url, skip_ws=True, spot_meta=empty_spot)
     _exchange = Exchange(wallet, api_url, spot_meta=empty_spot)
+    _active_symbols = set()
+    universe_symbols = {asset["name"] for asset in _info.meta()["universe"]}
 
     # Set leverage per configured asset
     for asset_cfg in assets:
+        if not asset_cfg.hedge_enabled:
+            log.warning(
+                "Hedging disabled by config for %s (%s)",
+                asset_cfg.name.upper(),
+                asset_cfg.hedge_symbol,
+            )
+            continue
+        if asset_cfg.hedge_symbol not in universe_symbols:
+            log.error(
+                "Hyperliquid symbol unavailable for %s: %s",
+                asset_cfg.name.upper(),
+                asset_cfg.hedge_symbol,
+            )
+            continue
         try:
             _exchange.update_leverage(
                 asset_cfg.leverage, asset_cfg.hedge_symbol, is_cross=True
             )
+            _active_symbols.add(asset_cfg.hedge_symbol)
             log.info(
                 "Leverage set: %s=%dx",
                 asset_cfg.hedge_symbol,
@@ -67,20 +85,31 @@ def init(assets: list[AssetConfig] | None = None) -> None:
             )
         except Exception:
             log.error(
-                "Failed to set leverage for %s — disabling hedging",
+                "Failed to set leverage for %s",
                 asset_cfg.hedge_symbol,
                 exc_info=True,
             )
-            _exchange = None
-            return
+            continue
+
+    if not _active_symbols:
+        log.error("No Hyperliquid hedge symbols were initialized successfully")
+        _exchange = None
+        return
 
     log.info(
         "Hyperliquid ready: %s, assets=%s, testnet=%s",
         _address,
-        [a.hedge_symbol for a in assets],
+        sorted(_active_symbols),
         config.HYPERLIQUID_TESTNET,
     )
     _log_account_state()
+
+
+def is_hedge_ready(asset: str) -> bool:
+    """Whether a hedge symbol is initialized and usable in live mode."""
+    if config.HEDGE_MODE != "live":
+        return True
+    return asset in _active_symbols and _exchange is not None and _info is not None
 
 
 def _log_account_state() -> None:

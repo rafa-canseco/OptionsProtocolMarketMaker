@@ -619,6 +619,27 @@ def test_resolve_underlying_uses_solana_asset_map(mock_config):
     _tracker._otoken_cache.clear()
 
 
+@patch("src.main.hedge_executor")
+@patch("src.main.config")
+def test_asset_is_hedge_ready_requires_live_symbol(mock_config, mock_hedge_executor):
+    """Live quote/hedge path only runs for initialized hedge symbols."""
+    from types import SimpleNamespace
+
+    from src.main import _asset_is_hedge_ready
+
+    mock_config.HEDGE_MODE = "live"
+    asset_cfg = SimpleNamespace(
+        name="sol",
+        hedge_symbol="SOL",
+        hedge_enabled=True,
+    )
+    mock_hedge_executor.is_hedge_ready.return_value = True
+    assert _asset_is_hedge_ready(asset_cfg, "solana") is True
+
+    mock_hedge_executor.is_hedge_ready.return_value = False
+    assert _asset_is_hedge_ready(asset_cfg, "solana") is False
+
+
 @patch("src.main.config")
 def test_pick_refresh_interval_no_positions(mock_config):
     """No positions → normal interval."""

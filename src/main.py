@@ -67,6 +67,33 @@ def _get_market(asset: str, chain: str = "base") -> MarketSnapshot:
     return _market[key]
 
 
+def _asset_map_for_chain(chain: str) -> dict[str, config.AssetConfig]:
+    if chain == "solana":
+        return config.SOLANA_ASSET_MAP
+    return config.ASSET_MAP
+
+
+def _asset_is_hedge_ready(asset_cfg: config.AssetConfig, chain: str) -> bool:
+    if config.HEDGE_MODE != "live":
+        return True
+    if not asset_cfg.hedge_enabled:
+        log.warning(
+            "Skipping %s/%s: hedge disabled by config",
+            chain.upper(),
+            asset_cfg.name.upper(),
+        )
+        return False
+    if not hedge_executor.is_hedge_ready(asset_cfg.hedge_symbol):
+        log.error(
+            "Skipping %s/%s: Hyperliquid hedge symbol not ready (%s)",
+            chain.upper(),
+            asset_cfg.name.upper(),
+            asset_cfg.hedge_symbol,
+        )
+        return False
+    return True
+
+
 def run_cycle(
     w3: Web3,
     domain: dict,
@@ -233,8 +260,10 @@ def _run_asset_cycle(
     if otokens:
         _tracker.cache_otokens(otokens, underlying=asset_name, chain=chain)
 
+    hedge_ready = _asset_is_hedge_ready(asset_cfg, chain)
+
     asset_positions = _tracker.open_positions(underlying=asset_name)
-    if asset_positions:
+    if asset_positions and hedge_ready:
         _tracker.recalculate_deltas(
             mkt.spot,
             mkt.iv,
@@ -243,11 +272,19 @@ def _run_asset_cycle(
         )
         _tracker.rebalance_hedge(mkt.spot, asset_name, asset_cfg.hedge_symbol)
         _tracker.log_portfolio(mkt.spot)
+    elif asset_positions and not hedge_ready:
+        log.error(
+            "Open positions exist for %s/%s but live hedge is not ready",
+            chain.upper(),
+            asset_name.upper(),
+        )
 
     _log_capacity_snapshot(asset_cfg, chain)
 
     if not otokens:
         log.warning("No oTokens for %s, skipping", chain_label)
+        return
+    if not hedge_ready:
         return
 
     _quote_and_submit(w3, domain, mm_address, market, asset_cfg, chain)
@@ -487,11 +524,7 @@ def _resolve_underlying(otoken_addr: str) -> tuple[str, str, str]:
     if details and "underlying" in details:
         underlying = details["underlying"]
         chain = details.get("chain", "base")
-        asset_maps = {
-            "base": config.ASSET_MAP,
-            "solana": config.SOLANA_ASSET_MAP,
-        }
-        asset_cfg = asset_maps.get(chain, config.ASSET_MAP).get(underlying)
+        asset_cfg = _asset_map_for_chain(chain).get(underlying)
         if asset_cfg:
             return underlying, asset_cfg.hedge_symbol, chain
     # Default to first configured asset (backward compat)
@@ -518,6 +551,7 @@ def _handle_fill(fill: dict) -> None:
         otoken_addr = fill.get("otoken_address", "")
         underlying, hedge_symbol, chain = _resolve_underlying(otoken_addr)
         mkt = _get_market(underlying, chain)
+        asset_cfg = _asset_map_for_chain(chain).get(underlying)
 
         if mkt.spot <= 0 or mkt.iv <= 0:
             log.warning(
@@ -538,7 +572,14 @@ def _handle_fill(fill: dict) -> None:
                 hedge_symbol=hedge_symbol,
             )
             _seen_tx_hashes.add(tx)
-            _tracker.rebalance_hedge(mkt.spot, underlying, hedge_symbol)
+            if asset_cfg and _asset_is_hedge_ready(asset_cfg, chain):
+                _tracker.rebalance_hedge(mkt.spot, underlying, hedge_symbol)
+            else:
+                log.error(
+                    "Recorded fill for %s/%s without live hedge readiness",
+                    chain.upper(),
+                    underlying.upper(),
+                )
             _tracker.log_portfolio(mkt.spot)
         except Exception:
             log.error("Failed to process fill %s", tx[:16], exc_info=True)
@@ -613,9 +654,19 @@ def main() -> None:
     log.info("  Reserve:     %.0f%%", config.CAPACITY_RESERVE_RATIO * 100)
     for a in config.ASSETS:
         log.info(
-            "  %s: symbol=%s leverage=%dx max_exposure=%.0f%%",
+            "  %s: symbol=%s hedge_enabled=%s leverage=%dx max_exposure=%.0f%%",
             a.name.upper(),
             a.hedge_symbol,
+            a.hedge_enabled,
+            a.leverage,
+            a.max_exposure * 100,
+        )
+    for a in config.SOLANA_ASSETS:
+        log.info(
+            "  SOLANA/%s: symbol=%s hedge_enabled=%s leverage=%dx max_exposure=%.0f%%",
+            a.name.upper(),
+            a.hedge_symbol,
+            a.hedge_enabled,
             a.leverage,
             a.max_exposure * 100,
         )

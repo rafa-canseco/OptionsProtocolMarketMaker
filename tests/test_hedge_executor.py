@@ -271,6 +271,17 @@ def test_get_withdrawable_no_info():
     assert hedge_executor.get_withdrawable() == 0.0
 
 
+@patch("src.config.HEDGE_MODE", "live")
+def test_is_hedge_ready_requires_initialized_symbol():
+    """Live hedging only reports ready for symbols initialized successfully."""
+    hedge_executor._exchange = MagicMock()
+    hedge_executor._info = MagicMock()
+    hedge_executor._active_symbols = {"SOL"}
+
+    assert hedge_executor.is_hedge_ready("SOL") is True
+    assert hedge_executor.is_hedge_ready("TSLAX") is False
+
+
 def test_get_withdrawable_handles_error():
     """Returns 0.0 on API error."""
     _setup_live_mode()
