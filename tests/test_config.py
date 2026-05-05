@@ -67,12 +67,16 @@ def test_solana_quotes_enable_only_with_explicit_flag():
         "SOLANA_PRIVATE_KEY": "base58-secret",
         "SOLANA_RPC_URL": "https://solana-rpc.example.com",
         "SOLANA_ASSETS": "sol,tslax",
+        "SOL_HEDGE_ENABLED": "true",
+        "TSLAX_HEDGE_ENABLED": "false",
     }
 
     config = _reload_config(env)
 
     assert config.SOLANA_QUOTE_PUBLISHING_ENABLED is True
     assert [asset.name for asset in config.SOLANA_ASSETS] == ["sol", "tslax"]
+    assert config.SOLANA_ASSETS[0].hedge_enabled is True
+    assert config.SOLANA_ASSETS[1].hedge_enabled is False
     assert [chain.name for chain in config.CHAINS] == ["base", "solana"]
 
 

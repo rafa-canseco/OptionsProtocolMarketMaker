@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import eth_account
 from hyperliquid.exchange import Exchange
@@ -20,6 +20,58 @@ log = logging.getLogger(__name__)
 _exchange: Exchange | None = None
 _info: Info | None = None
 _address: str = ""
+_active_symbols: set[str] = set()
+_initialized_dexs: tuple[str, ...] = ("",)
+_dex_exchanges: dict[str, Exchange] = {}
+_dex_infos: dict[str, Info] = {}
+
+
+def _dex_for_symbol(symbol: str) -> str:
+    """Return the Hyperliquid perp dex for a hedge symbol."""
+    if ":" not in symbol:
+        return ""
+    return symbol.split(":", 1)[0]
+
+
+def _required_perp_dexs(assets: list[AssetConfig]) -> list[str]:
+    """Collect non-default perp dexes required by configured hedge symbols."""
+    dexs: list[str] = []
+    for asset_cfg in assets:
+        dex = _dex_for_symbol(asset_cfg.hedge_symbol)
+        if dex and dex not in dexs:
+            dexs.append(dex)
+    return dexs
+
+
+def _iter_initialized_dexs() -> tuple[str, ...]:
+    return _initialized_dexs or ("",)
+
+
+def _state_for_dex(dex: str) -> dict[str, Any]:
+    if dex:
+        info = _dex_infos.get(dex)
+        if not info:
+            return {}
+        return info.user_state(_address, dex=dex)
+    if not _info:
+        return {}
+    return _info.user_state(_address, dex=dex)
+
+
+def _collect_states() -> list[tuple[str, dict[str, Any]]]:
+    if not _info:
+        return []
+    states: list[tuple[str, dict[str, Any]]] = []
+    for dex in _iter_initialized_dexs():
+        try:
+            states.append((dex, _state_for_dex(dex)))
+        except Exception:
+            log.warning(
+                "Failed to read Hyperliquid state for dex=%s",
+                dex or "<default>",
+                exc_info=True,
+            )
+    return states
 
 
 def _default_assets() -> list[AssetConfig]:
@@ -31,7 +83,8 @@ def _default_assets() -> list[AssetConfig]:
 
 def init(assets: list[AssetConfig] | None = None) -> None:
     """Initialize Hyperliquid clients. Call once at startup."""
-    global _exchange, _info, _address
+    global _exchange, _info, _address, _active_symbols, _initialized_dexs
+    global _dex_exchanges, _dex_infos
 
     if config.HEDGE_MODE != "live":
         log.info("Hedge mode=%s, skipping Hyperliquid init", config.HEDGE_MODE)
@@ -47,19 +100,60 @@ def init(assets: list[AssetConfig] | None = None) -> None:
     )
     wallet = eth_account.Account.from_key(config.MM_PRIVATE_KEY)
     _address = wallet.address
+    perp_dexs = _required_perp_dexs(assets)
+    _initialized_dexs = ("", *perp_dexs)
 
     # Empty spot_meta bypasses SDK bug where testnet spot token
     # indices are out of range. Perp metadata still loads fine.
     empty_spot: dict = {"universe": [], "tokens": []}
     _info = Info(api_url, skip_ws=True, spot_meta=empty_spot)
     _exchange = Exchange(wallet, api_url, spot_meta=empty_spot)
+    _dex_infos = {}
+    _dex_exchanges = {}
+    for dex in perp_dexs:
+        _dex_infos[dex] = Info(
+            api_url,
+            skip_ws=True,
+            spot_meta=empty_spot,
+            perp_dexs=[dex],
+        )
+        _dex_exchanges[dex] = Exchange(
+            wallet,
+            api_url,
+            spot_meta=empty_spot,
+            perp_dexs=[dex],
+        )
+    _active_symbols = set()
+    universe_symbols: set[str] = set()
+    universe_symbols.update(asset["name"] for asset in _info.meta()["universe"])
+    for dex, info in _dex_infos.items():
+        universe_symbols.update(asset["name"] for asset in info.meta(dex)["universe"])
 
     # Set leverage per configured asset
     for asset_cfg in assets:
+        if not asset_cfg.hedge_enabled:
+            log.warning(
+                "Hedging disabled by config for %s (%s)",
+                asset_cfg.name.upper(),
+                asset_cfg.hedge_symbol,
+            )
+            continue
+        if asset_cfg.hedge_symbol not in universe_symbols:
+            log.error(
+                "Hyperliquid symbol unavailable for %s: %s",
+                asset_cfg.name.upper(),
+                asset_cfg.hedge_symbol,
+            )
+            continue
         try:
-            _exchange.update_leverage(
+            dex = _dex_for_symbol(asset_cfg.hedge_symbol)
+            exchange = _dex_exchanges.get(dex, _exchange)
+            if exchange is None:
+                raise RuntimeError("Hyperliquid exchange client not initialized")
+            exchange.update_leverage(
                 asset_cfg.leverage, asset_cfg.hedge_symbol, is_cross=True
             )
+            _active_symbols.add(asset_cfg.hedge_symbol)
             log.info(
                 "Leverage set: %s=%dx",
                 asset_cfg.hedge_symbol,
@@ -67,30 +161,49 @@ def init(assets: list[AssetConfig] | None = None) -> None:
             )
         except Exception:
             log.error(
-                "Failed to set leverage for %s — disabling hedging",
+                "Failed to set leverage for %s",
                 asset_cfg.hedge_symbol,
                 exc_info=True,
             )
-            _exchange = None
-            return
+            continue
+
+    if not _active_symbols:
+        log.error("No Hyperliquid hedge symbols were initialized successfully")
+        _exchange = None
+        return
 
     log.info(
         "Hyperliquid ready: %s, assets=%s, testnet=%s",
         _address,
-        [a.hedge_symbol for a in assets],
+        sorted(_active_symbols),
         config.HYPERLIQUID_TESTNET,
     )
     _log_account_state()
 
 
+def is_hedge_ready(asset: str) -> bool:
+    """Whether a hedge symbol is initialized and usable in live mode."""
+    if config.HEDGE_MODE != "live":
+        return True
+    return asset in _active_symbols and _exchange is not None and _info is not None
+
+
 def _log_account_state() -> None:
     if not _info:
         return
-    try:
-        state = _info.user_state(_address)
+    states = _collect_states()
+    if not states:
+        return
+
+    total_value = 0.0
+    total_withdrawable = 0.0
+    for dex, state in states:
         margin = state["marginSummary"]
+        total_value += float(margin["accountValue"])
+        total_withdrawable += float(state["withdrawable"])
         log.info(
-            "Hyperliquid account: value=$%s withdrawable=$%s",
+            "Hyperliquid account [%s]: value=$%s withdrawable=$%s",
+            dex or "default",
             margin["accountValue"],
             state["withdrawable"],
         )
@@ -103,18 +216,24 @@ def _log_account_state() -> None:
                 p["entryPx"],
                 p["unrealizedPnl"],
             )
-    except Exception:
-        log.warning("Failed to read Hyperliquid state", exc_info=True)
+    if len(states) > 1:
+        log.info(
+            "Hyperliquid total: value=$%.2f withdrawable=$%.2f",
+            total_value,
+            total_withdrawable,
+        )
 
 
 def _round_size(asset: str, size: float) -> float:
     """Round size to asset's allowed decimal places."""
     try:
-        if _info and hasattr(_info, "coin_to_asset"):
-            coin = _info.name_to_coin.get(asset, asset)
-            asset_id = _info.coin_to_asset.get(coin)
+        dex = _dex_for_symbol(asset)
+        info = _dex_infos.get(dex) if dex else _info
+        if info and hasattr(info, "coin_to_asset"):
+            coin = info.name_to_coin.get(asset, asset)
+            asset_id = info.coin_to_asset.get(coin)
             if isinstance(asset_id, int):
-                decimals = _info.asset_to_sz_decimals.get(asset_id, 4)
+                decimals = info.asset_to_sz_decimals.get(asset_id, 4)
                 return round(size, decimals)
     except (AttributeError, TypeError):
         log.warning(
@@ -123,6 +242,13 @@ def _round_size(asset: str, size: float) -> float:
             exc_info=True,
         )
     return round(size, 4)
+
+
+def _exchange_for_symbol(asset: str) -> Exchange | None:
+    dex = _dex_for_symbol(asset)
+    if dex:
+        return _dex_exchanges.get(dex)
+    return _exchange
 
 
 def open_hedge(asset: str, is_buy: bool, size: float) -> dict | None:
@@ -145,7 +271,8 @@ def open_hedge(asset: str, is_buy: bool, size: float) -> dict | None:
         )
         return None
 
-    if not _exchange:
+    exchange = _exchange_for_symbol(asset)
+    if not exchange:
         log.error("Hyperliquid not initialized, cannot hedge")
         return None
 
@@ -155,7 +282,7 @@ def open_hedge(asset: str, is_buy: bool, size: float) -> dict | None:
         return None
 
     try:
-        result = _exchange.market_open(
+        result = exchange.market_open(
             asset, is_buy, size, slippage=config.HEDGE_SLIPPAGE
         )
         if result["status"] == "ok":
@@ -198,18 +325,19 @@ def close_hedge(asset: str, size: float | None = None) -> dict | None:
         log.info("[HEDGE CLOSE SIMULATED] %s size=%s", asset, size)
         return None
 
-    if not _exchange:
+    exchange = _exchange_for_symbol(asset)
+    if not exchange:
         log.error("Hyperliquid not initialized, cannot close")
         return None
 
     try:
         if size is not None:
             size = _round_size(asset, size)
-            result = _exchange.market_close(
+            result = exchange.market_close(
                 asset, sz=size, slippage=config.HEDGE_SLIPPAGE
             )
         else:
-            result = _exchange.market_close(asset, slippage=config.HEDGE_SLIPPAGE)
+            result = exchange.market_close(asset, slippage=config.HEDGE_SLIPPAGE)
 
         if result and result["status"] == "ok":
             statuses = result["response"]["data"]["statuses"]
@@ -277,49 +405,59 @@ def adjust_hedge(
         return close_hedge(asset, size=diff)
 
 
-def get_positions() -> list[dict]:
+def get_positions(asset: str | None = None) -> list[dict]:
     """Get current Hyperliquid positions."""
     if not _info:
         return []
     try:
-        state = _info.user_state(_address)
         positions = []
-        for pos in state["assetPositions"]:
-            p = pos["position"]
-            positions.append(
-                {
-                    "coin": p["coin"],
-                    "size": float(p["szi"]),
-                    "entry_price": float(p["entryPx"]),
-                    "unrealized_pnl": float(p["unrealizedPnl"]),
-                    "leverage": p["leverage"],
-                }
-            )
+        for dex, state in _collect_states():
+            for pos in state["assetPositions"]:
+                p = pos["position"]
+                if asset is not None and p["coin"] != asset:
+                    continue
+                positions.append(
+                    {
+                        "coin": p["coin"],
+                        "size": float(p["szi"]),
+                        "entry_price": float(p["entryPx"]),
+                        "unrealized_pnl": float(p["unrealizedPnl"]),
+                        "leverage": p["leverage"],
+                        "dex": dex,
+                    }
+                )
         return positions
     except Exception:
         log.warning("Failed to get Hyperliquid positions", exc_info=True)
         return []
 
 
-def get_account_value() -> float:
-    """Get total account value in USD."""
+def get_account_value(asset: str | None = None) -> float:
+    """Get account value in USD for one symbol's dex or all initialized dexs."""
     if not _info:
         return 0.0
     try:
-        state = _info.user_state(_address)
-        return float(state["marginSummary"]["accountValue"])
+        if asset is not None:
+            state = _state_for_dex(_dex_for_symbol(asset))
+            return float(state["marginSummary"]["accountValue"])
+        return sum(
+            float(state["marginSummary"]["accountValue"])
+            for _, state in _collect_states()
+        )
     except Exception:
         log.warning("Failed to get account value", exc_info=True)
         return 0.0
 
 
-def get_withdrawable() -> float:
-    """Get withdrawable (free) margin in USD."""
+def get_withdrawable(asset: str | None = None) -> float:
+    """Get withdrawable margin in USD for one symbol's dex or all initialized dexs."""
     if not _info:
         return 0.0
     try:
-        state = _info.user_state(_address)
-        return float(state["withdrawable"])
+        if asset is not None:
+            state = _state_for_dex(_dex_for_symbol(asset))
+            return float(state["withdrawable"])
+        return sum(float(state["withdrawable"]) for _, state in _collect_states())
     except Exception:
         log.warning("Failed to get withdrawable margin", exc_info=True)
         return 0.0

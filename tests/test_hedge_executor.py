@@ -59,6 +59,9 @@ def _setup_live_mode():
     hedge_executor._exchange = MagicMock()
     hedge_executor._info = MagicMock()
     hedge_executor._address = "0xTEST"
+    hedge_executor._initialized_dexs = ("",)
+    hedge_executor._dex_infos = {}
+    hedge_executor._dex_exchanges = {}
 
 
 @patch("src.config.HEDGE_MODE", "live")
@@ -265,10 +268,46 @@ def test_get_withdrawable_returns_value():
     assert result == 12500.50
 
 
+@patch("src.config.HEDGE_MODE", "live")
+def test_get_withdrawable_reads_builder_perp_dex():
+    """Builder perps read margin from the matching Hyperliquid dex."""
+    _setup_live_mode()
+    hedge_executor._initialized_dexs = ("", "xyz")
+    xyz_info = MagicMock()
+    xyz_info.user_state.return_value = {
+            "marginSummary": {"accountValue": "8000.0"},
+            "withdrawable": "3500.25",
+            "assetPositions": [],
+    }
+    hedge_executor._dex_infos = {"xyz": xyz_info}
+
+    result = hedge_executor.get_withdrawable("xyz:TSLA")
+    assert result == 3500.25
+    xyz_info.user_state.assert_called_with("0xTEST", dex="xyz")
+
+
 def test_get_withdrawable_no_info():
     """Returns 0.0 when Hyperliquid not initialized."""
     hedge_executor._info = None
     assert hedge_executor.get_withdrawable() == 0.0
+
+
+@patch("src.config.HEDGE_MODE", "live")
+def test_is_hedge_ready_requires_initialized_symbol():
+    """Live hedging only reports ready for symbols initialized successfully."""
+    hedge_executor._exchange = MagicMock()
+    hedge_executor._info = MagicMock()
+    hedge_executor._active_symbols = {"SOL"}
+
+    assert hedge_executor.is_hedge_ready("SOL") is True
+    assert hedge_executor.is_hedge_ready("TSLAX") is False
+
+
+def test_dex_for_symbol_supports_builder_perps():
+    """Prefixed hedge symbols resolve to the expected perp dex."""
+    assert hedge_executor._dex_for_symbol("ETH") == ""
+    assert hedge_executor._dex_for_symbol("SOL") == ""
+    assert hedge_executor._dex_for_symbol("xyz:TSLA") == "xyz"
 
 
 def test_get_withdrawable_handles_error():
