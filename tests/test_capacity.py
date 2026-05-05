@@ -335,6 +335,38 @@ class TestLiveModeCapacity:
 
     @patch("src.capacity.hedge_executor")
     @patch("src.capacity.config")
+    def test_unified_account_shared_margin_can_fund_builder_perps(
+        self, mock_config, mock_hedge
+    ):
+        """TSLAx can reuse shared withdrawable when Hyperliquid is unified."""
+        _live_config(mock_config)
+        mock_config.SOLANA_RPC_URL = "http://solana-rpc"
+        mock_config.SOLANA_USDC_MINT = "USDC_MINT"
+        mock_hedge.get_withdrawable.return_value = 300.0
+        mock_hedge.get_account_value.return_value = 300.0
+
+        tslax_config = AssetConfig(
+            name="tslax",
+            hedge_symbol="xyz:TSLA",
+            leverage=1,
+            max_exposure=1.0,
+        )
+
+        with patch("src.capacity._read_pools_solana", return_value=(1_000.0, 300.0, 300.0)):
+            report = calculate_capacity_internal(
+                None,
+                388.0,
+                "maker",
+                _empty_tracker(),
+                asset_config=tslax_config,
+                chain="solana",
+            )
+
+        assert report.capacity_usd == pytest.approx(750.0, rel=0.01)
+        assert report.status == "degraded"
+
+    @patch("src.capacity.hedge_executor")
+    @patch("src.capacity.config")
     def test_status_degraded_when_hedge_low(self, mock_config, mock_hedge):
         """Status is degraded when hedge pool < 40% of premium pool."""
         _live_config(mock_config)
