@@ -19,6 +19,7 @@ def _clean_log(tmp_path, monkeypatch):
     monkeypatch.setattr("src.config.TRADE_LOG_PATH", log_path)
     monkeypatch.setattr("src.config.SUPABASE_URL", "")
     monkeypatch.setattr("src.config.SUPABASE_KEY", "")
+    monkeypatch.setattr("src.config.HEDGE_MODE", "simulate")
     trade_logger._supabase_client = None
     trade_logger._supabase_missing_columns.clear()
     yield log_path
@@ -328,6 +329,89 @@ class TestStartupRecovery:
         tracker = PositionTracker()
         restored = recover_positions(tracker)
         assert restored == 0
+
+    @patch("src.startup_recovery.trade_logger")
+    @patch("src.startup_recovery.api_client")
+    @patch("src.startup_recovery.hedge_executor")
+    def test_recovers_missing_backend_position_without_trade_history(
+        self, mock_hedge, mock_api, mock_trade_logger, _clean_log
+    ):
+        future_expiry = int(time.time()) + 3600
+        otoken = "So111111111"
+        mock_hedge.get_positions.return_value = []
+        mock_trade_logger.read_events_from_supabase.return_value = []
+        mock_trade_logger.read_open_order_events_from_supabase.return_value = [
+            {
+                "chain": "solana",
+                "asset": "sol",
+                "otoken_address": otoken,
+                "strike_price": 84.0,
+                "expiry": future_expiry,
+                "is_put": True,
+                "amount": "11904761",
+                "gross_premium": "17027",
+                "user_address": "sol-user",
+                "tx_hash": "sol-tx",
+                "is_settled": False,
+            }
+        ]
+        mock_trade_logger.write_bootstrap_event.side_effect = (
+            lambda event: trade_logger.write_bootstrap_event(event)
+        )
+
+        def _market_data(asset, chain="base"):
+            if asset == "sol" and chain == "solana":
+                return {
+                    "spot": 87.0,
+                    "iv": 0.45,
+                    "available_otokens": [
+                        {
+                            "address": otoken,
+                            "strike_price": 84.0,
+                            "expiry": future_expiry,
+                            "is_put": True,
+                        }
+                    ],
+                }
+            return {"spot": 2000.0, "iv": 0.5, "available_otokens": []}
+
+        mock_api.get_market_data.side_effect = _market_data
+
+        with patch("src.startup_recovery.config.HEDGE_MODE", "live"), patch(
+            "src.startup_recovery.config.ASSETS", []
+        ), patch(
+            "src.startup_recovery.config.ASSET_MAP", {}
+        ), patch(
+            "src.startup_recovery.config.SOLANA_ASSETS",
+            [
+                type(
+                    "AssetCfg",
+                    (),
+                    {"name": "sol", "hedge_symbol": "SOL", "leverage": 3, "max_exposure": 1.0},
+                )()
+            ],
+        ), patch(
+            "src.startup_recovery.config.SOLANA_ASSET_MAP",
+            {
+                "sol": type(
+                    "AssetCfg",
+                    (),
+                    {"name": "sol", "hedge_symbol": "SOL", "leverage": 3, "max_exposure": 1.0},
+                )()
+            },
+        ):
+            tracker = PositionTracker()
+            restored = recover_positions(tracker)
+
+        assert restored == 1
+        assert len(tracker.open_positions()) == 1
+        pos = tracker.open_positions()[0]
+        assert pos.otoken_address == otoken
+        assert pos.underlying == "sol"
+        assert pos.is_put is True
+        assert pos.tx_hash == "sol-tx"
+        events = _read_events(_clean_log)
+        assert any(ev["otoken"] == otoken for ev in events)
 
     @patch("src.startup_recovery.hedge_executor")
     def test_recover_old_format_events(self, mock_hedge, _clean_log):
