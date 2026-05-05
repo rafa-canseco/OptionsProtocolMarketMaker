@@ -471,8 +471,8 @@ def _log_capacity_snapshot(asset_cfg: config.AssetConfig, chain: str = "base") -
     mkt = _get_market(asset_cfg.name, chain)
     try:
         exposure = api_client.get_exposure()
-        account_val = hedge_executor.get_account_value()
-        hl_positions = hedge_executor.get_positions()
+        account_val = hedge_executor.get_account_value(asset_cfg.hedge_symbol)
+        hl_positions = hedge_executor.get_positions(asset_cfg.hedge_symbol)
         asset_pos = next(
             (p for p in hl_positions if p["coin"] == asset_cfg.hedge_symbol),
             None,
