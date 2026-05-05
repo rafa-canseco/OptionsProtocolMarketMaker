@@ -78,6 +78,7 @@ class AssetConfig:
     hedge_symbol: str  # Hyperliquid symbol, e.g. "ETH"
     leverage: int
     max_exposure: float  # 0.0–1.0, fraction of total capital
+    hedge_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -167,6 +168,7 @@ def _parse_assets() -> list[AssetConfig]:
                 hedge_symbol=os.getenv(f"{prefix}_HEDGE_SYMBOL", name.upper()),
                 leverage=leverage,
                 max_exposure=max_exp,
+                hedge_enabled=_env_flag(f"{prefix}_HEDGE_ENABLED", default=True),
             )
         )
     return assets
@@ -219,6 +221,7 @@ def _parse_solana_assets() -> list[AssetConfig]:
                 hedge_symbol=os.getenv(f"{prefix}_HEDGE_SYMBOL", name.upper()),
                 leverage=leverage,
                 max_exposure=max_exp,
+                hedge_enabled=_env_flag(f"{prefix}_HEDGE_ENABLED", default=True),
             )
         )
     return assets

@@ -59,6 +59,9 @@ def _setup_live_mode():
     hedge_executor._exchange = MagicMock()
     hedge_executor._info = MagicMock()
     hedge_executor._address = "0xTEST"
+    hedge_executor._initialized_dexs = ("",)
+    hedge_executor._dex_infos = {}
+    hedge_executor._dex_exchanges = {}
 
 
 @patch("src.config.HEDGE_MODE", "live")
@@ -193,12 +196,12 @@ def test_full_lifecycle_with_mock_hyperliquid():
     hedge_executor._exchange.market_open.assert_called_once()
     call_args = hedge_executor._exchange.market_open.call_args
     assert call_args[0][0] == "ETH"
-    assert not call_args[0][1]  # SHORT for negative net delta
+    assert call_args[0][1]  # LONG for negative net delta
 
     # Wait for expiry
     time.sleep(3)
 
-    # Simulate HL having the short position
+    # Simulate HL having the long position
     hedge_size = pos.hedge_size
     hedge_executor._info.user_state.return_value = {
         "marginSummary": {"accountValue": "30000.0"},
@@ -207,7 +210,7 @@ def test_full_lifecycle_with_mock_hyperliquid():
             {
                 "position": {
                     "coin": "ETH",
-                    "szi": str(-hedge_size),
+                    "szi": str(hedge_size),
                     "entryPx": "1973.50",
                     "unrealizedPnl": "100.0",
                     "leverage": {"type": "cross", "value": 3},
@@ -221,11 +224,11 @@ def test_full_lifecycle_with_mock_hyperliquid():
     assert len(expired) == 1
 
     # Aggregate rebalance after expiry closes the hedge
-    # net_delta=0, current=-hedge_size → buy to close
+    # net_delta=0, current=+hedge_size → sell to close
     tracker.rebalance_hedge(1850.0, "eth", "ETH")
     hedge_executor._exchange.market_open.assert_called_once()
     close_args = hedge_executor._exchange.market_open.call_args
-    assert close_args[0][1]  # BUY to close short
+    assert not close_args[0][1]  # SELL to close long
 
 
 @patch("src.config.HEDGE_MODE", "live")
@@ -265,10 +268,46 @@ def test_get_withdrawable_returns_value():
     assert result == 12500.50
 
 
+@patch("src.config.HEDGE_MODE", "live")
+def test_get_withdrawable_reads_builder_perp_dex():
+    """Builder perps read margin from the matching Hyperliquid dex."""
+    _setup_live_mode()
+    hedge_executor._initialized_dexs = ("", "xyz")
+    xyz_info = MagicMock()
+    xyz_info.user_state.return_value = {
+            "marginSummary": {"accountValue": "8000.0"},
+            "withdrawable": "3500.25",
+            "assetPositions": [],
+    }
+    hedge_executor._dex_infos = {"xyz": xyz_info}
+
+    result = hedge_executor.get_withdrawable("xyz:TSLA")
+    assert result == 3500.25
+    xyz_info.user_state.assert_called_with("0xTEST", dex="xyz")
+
+
 def test_get_withdrawable_no_info():
     """Returns 0.0 when Hyperliquid not initialized."""
     hedge_executor._info = None
     assert hedge_executor.get_withdrawable() == 0.0
+
+
+@patch("src.config.HEDGE_MODE", "live")
+def test_is_hedge_ready_requires_initialized_symbol():
+    """Live hedging only reports ready for symbols initialized successfully."""
+    hedge_executor._exchange = MagicMock()
+    hedge_executor._info = MagicMock()
+    hedge_executor._active_symbols = {"SOL"}
+
+    assert hedge_executor.is_hedge_ready("SOL") is True
+    assert hedge_executor.is_hedge_ready("TSLAX") is False
+
+
+def test_dex_for_symbol_supports_builder_perps():
+    """Prefixed hedge symbols resolve to the expected perp dex."""
+    assert hedge_executor._dex_for_symbol("ETH") == ""
+    assert hedge_executor._dex_for_symbol("SOL") == ""
+    assert hedge_executor._dex_for_symbol("xyz:TSLA") == "xyz"
 
 
 def test_get_withdrawable_handles_error():

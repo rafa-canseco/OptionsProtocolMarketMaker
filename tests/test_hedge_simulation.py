@@ -23,7 +23,7 @@ RISK_FREE = 0.05
 
 
 def test_put_position_open():
-    """Fill on a put → correct delta, hedge SHORT, simulated output."""
+    """Fill on a put → correct delta, hedge LONG, simulated output."""
     tracker = PositionTracker()
     strike = 1900.0
     expiry = int(time.time()) + 7 * 86400
@@ -53,7 +53,7 @@ def test_put_position_open():
     assert pos.is_put is True
     assert pos.num_options == 0.5
     assert pos.premium_paid_usd == 12.0
-    assert pos.hedge_action == "SHORT"
+    assert pos.hedge_action == "LONG"
     assert pos.current_delta < 0
     assert pos.hedge_size > 0
     assert len(tracker.open_positions()) == 1
@@ -68,7 +68,7 @@ def test_put_position_open():
 
 
 def test_call_position_open():
-    """Fill on a call → correct delta, hedge LONG."""
+    """Fill on a call → correct delta, hedge SHORT."""
     tracker = PositionTracker()
     strike = 2100.0
     expiry = int(time.time()) + 7 * 86400
@@ -97,7 +97,7 @@ def test_call_position_open():
     assert pos is not None
     assert pos.is_put is False
     assert pos.num_options == 1.0
-    assert pos.hedge_action == "LONG"
+    assert pos.hedge_action == "SHORT"
     assert pos.current_delta > 0
     assert len(tracker.open_positions()) == 1
 
@@ -256,7 +256,7 @@ def test_expiry_otm():
 
 
 def test_expiry_itm():
-    """Put expires ITM → MM captures intrinsic value."""
+    """Put expires ITM → long hedge offsets part of the intrinsic gain."""
     tracker = PositionTracker()
     strike = 2000.0
     tracker.cache_otokens(
@@ -282,6 +282,8 @@ def test_expiry_itm():
         iv=IV,
         risk_free_rate=RISK_FREE,
     )
+    pos.hedge_fill_size = 0.25
+    pos.hedge_fill_price = pos.spot_at_open
 
     time.sleep(2)
 
@@ -289,13 +291,14 @@ def test_expiry_itm():
     expired = tracker.check_expiries(spot=1800.0)
     assert len(expired) == 1
     assert expired[0].settlement_pnl == 200.0  # strike - spot
+    assert expired[0].hedge_pnl < 0
 
     net_pnl = -pos.premium_paid_usd + pos.settlement_pnl + pos.hedge_pnl
     assert net_pnl > 0  # MM profits on ITM
 
     print(f"\n  Premium paid: -${pos.premium_paid_usd:.2f}")
     print(f"  Settlement:   +${pos.settlement_pnl:.2f}")
-    print(f"  Hedge P&L:    +${pos.hedge_pnl:.2f}")
+    print(f"  Hedge P&L:    ${pos.hedge_pnl:.2f}")
     print(f"  Net P&L:      +${net_pnl:.2f}")
 
 
@@ -518,8 +521,42 @@ def test_rebalance_hedge_simulated_mode():
     )
     tracker.rebalance_hedge(SPOT, "eth", "ETH")
     assert "eth" in tracker._simulated_hedge
-    expected = tracker.net_delta(underlying="eth")
+    expected = -tracker.net_delta(underlying="eth")
     assert abs(tracker._simulated_hedge["eth"] - expected) < 0.001
+
+
+@patch("src.config.HEDGE_MODE", "simulate")
+def test_rebalance_hedge_neutralizes_portfolio_delta():
+    """Aggregate hedge target is the negative of portfolio delta."""
+    tracker = PositionTracker()
+    tracker.cache_otokens(
+        [
+            {
+                "address": "0xPUT_NEUTRAL",
+                "strike_price": 1900.0,
+                "expiry": int(time.time()) + 7 * 86400,
+                "is_put": True,
+            }
+        ]
+    )
+    tracker.add_position(
+        {
+            "otoken_address": "0xPUT_NEUTRAL",
+            "amount": 100000000,
+            "gross_premium": 20000000,
+            "user_address": "0xU",
+            "tx_hash": "0xTN",
+        },
+        SPOT,
+        IV,
+        RISK_FREE,
+    )
+
+    tracker.rebalance_hedge(SPOT, "eth", "ETH")
+
+    net_delta = tracker.net_delta(underlying="eth")
+    hedge_size = tracker._simulated_hedge["eth"]
+    assert abs(net_delta + hedge_size) < 0.001
 
 
 def test_rebalance_hedge_threshold_skips_tiny():
@@ -549,6 +586,60 @@ def test_cache_otokens_preserves_chain_metadata():
     details = tracker.get_otoken_details("SoToken")
     assert details["underlying"] == "tslax"
     assert details["chain"] == "solana"
+
+
+@patch("src.main.config")
+def test_resolve_underlying_uses_solana_asset_map(mock_config):
+    """Solana oTokens resolve to the configured Solana hedge symbol."""
+    from types import SimpleNamespace
+
+    from src.main import _resolve_underlying, _tracker
+
+    mock_config.ASSET_MAP = {"eth": SimpleNamespace(hedge_symbol="ETH")}
+    mock_config.SOLANA_ASSET_MAP = {
+        "tslax": SimpleNamespace(hedge_symbol="xyz:TSLA")
+    }
+    mock_config.ASSETS = [SimpleNamespace(name="eth", hedge_symbol="ETH")]
+
+    _tracker.cache_otokens(
+        [
+            {
+                "address": "SoTSLAX",
+                "strike_price": 250.0,
+                "expiry": int(time.time()) + 86400,
+                "is_put": False,
+            }
+        ],
+        underlying="tslax",
+        chain="solana",
+    )
+
+    underlying, hedge_symbol, chain = _resolve_underlying("SoTSLAX")
+    assert underlying == "tslax"
+    assert hedge_symbol == "xyz:TSLA"
+    assert chain == "solana"
+    _tracker._otoken_cache.clear()
+
+
+@patch("src.main.hedge_executor")
+@patch("src.main.config")
+def test_asset_is_hedge_ready_requires_live_symbol(mock_config, mock_hedge_executor):
+    """Live quote/hedge path only runs for initialized hedge symbols."""
+    from types import SimpleNamespace
+
+    from src.main import _asset_is_hedge_ready
+
+    mock_config.HEDGE_MODE = "live"
+    asset_cfg = SimpleNamespace(
+        name="sol",
+        hedge_symbol="SOL",
+        hedge_enabled=True,
+    )
+    mock_hedge_executor.is_hedge_ready.return_value = True
+    assert _asset_is_hedge_ready(asset_cfg, "solana") is True
+
+    mock_hedge_executor.is_hedge_ready.return_value = False
+    assert _asset_is_hedge_ready(asset_cfg, "solana") is False
 
 
 @patch("src.main.config")

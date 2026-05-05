@@ -99,6 +99,7 @@ def _read_usdc_allowance(w3: Web3, mm_address: str) -> float:
 def _read_pools(
     w3: Web3,
     mm_address: str,
+    asset_config: AssetConfig,
 ) -> tuple[float, float, float]:
     """Read on-chain USDC and hedge pool state.
 
@@ -110,8 +111,8 @@ def _read_pools(
     usdc_available = min(usdc_balance, usdc_allowance)
 
     if config.HEDGE_MODE == "live":
-        withdrawable = hedge_executor.get_withdrawable()
-        hedge_pool_value = hedge_executor.get_account_value()
+        withdrawable = hedge_executor.get_withdrawable(asset_config.hedge_symbol)
+        hedge_pool_value = hedge_executor.get_account_value(asset_config.hedge_symbol)
     else:
         withdrawable = 0.0
         hedge_pool_value = 0.0
@@ -239,6 +240,7 @@ def _read_pools_solana(
     rpc_url: str,
     maker_pubkey: str,
     usdc_mint: str,
+    asset_config: AssetConfig,
 ) -> tuple[float, float, float]:
     """Read Solana USDC balance and shared hedge pool state.
 
@@ -248,8 +250,8 @@ def _read_pools_solana(
     usdc_available = _read_solana_usdc_balance(rpc_url, maker_pubkey, usdc_mint)
 
     if config.HEDGE_MODE == "live":
-        withdrawable = hedge_executor.get_withdrawable()
-        hedge_pool_value = hedge_executor.get_account_value()
+        withdrawable = hedge_executor.get_withdrawable(asset_config.hedge_symbol)
+        hedge_pool_value = hedge_executor.get_account_value(asset_config.hedge_symbol)
     else:
         withdrawable = 0.0
         hedge_pool_value = 0.0
@@ -340,9 +342,12 @@ def calculate_capacity_internal(
             config.SOLANA_RPC_URL,
             mm_address,
             config.SOLANA_USDC_MINT,
+            asset_config,
         )
     else:
-        usdc_available, hedge_pool_value, withdrawable = _read_pools(w3, mm_address)
+        usdc_available, hedge_pool_value, withdrawable = _read_pools(
+            w3, mm_address, asset_config
+        )
     leverage = max(asset_config.leverage, 1)
 
     if config.HEDGE_MODE == "live":
