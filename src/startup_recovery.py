@@ -1,8 +1,11 @@
 """Recover open positions from trade log on startup."""
 
+import json
 import logging
 import time
 from typing import Any
+
+from eth_account import Account
 
 from src import api_client, config, hedge_executor, trade_logger
 from src.position_tracker import Position, PositionTracker
@@ -63,7 +66,11 @@ def recover_positions(tracker: PositionTracker) -> int:
 
     if not events:
         log.info("No trade history found, checking for bootstrap")
-        return _bootstrap_from_live_state(tracker)
+        restored = _bootstrap_from_live_state(tracker)
+        restored += _recover_missing_order_events(tracker)
+        if restored:
+            _verify_hedges(tracker)
+        return restored
 
     log.info("Loaded %d events from %s", len(events), source)
 
@@ -106,8 +113,152 @@ def recover_positions(tracker: PositionTracker) -> int:
                 pos.underlying.upper(),
             )
 
+    restored += _recover_missing_order_events(tracker)
+
     if restored:
         _verify_hedges(tracker)
+
+    return restored
+
+
+def _solana_maker_pubkey() -> str | None:
+    raw = config.SOLANA_PRIVATE_KEY
+    if not raw:
+        return None
+    try:
+        from solders.keypair import Keypair  # type: ignore[import-untyped]
+
+        if raw.strip().startswith("["):
+            key_bytes = bytes(json.loads(raw))
+            return str(Keypair.from_bytes(key_bytes).pubkey())
+        return str(Keypair.from_base58_string(raw).pubkey())
+    except Exception:
+        log.warning("Failed to derive Solana maker pubkey for recovery", exc_info=True)
+        return None
+
+
+def _mm_addresses_by_chain() -> dict[str, str]:
+    """Return the MM addresses that should own recoverable positions."""
+    identities = {"base": Account.from_key(config.MM_PRIVATE_KEY).address.lower()}
+    solana_pubkey = _solana_maker_pubkey()
+    if solana_pubkey:
+        identities["solana"] = solana_pubkey
+    return identities
+
+
+def _market_snapshot(
+    cache: dict[tuple[str, str], dict[str, Any]],
+    chain: str,
+    asset_cfg: config.AssetConfig,
+) -> dict[str, Any] | None:
+    key = (chain, asset_cfg.name)
+    if key in cache:
+        return cache[key]
+    try:
+        market = api_client.get_market_data(asset=asset_cfg.name, chain=chain)
+    except Exception:
+        log.warning(
+            "Failed to fetch market data for recovery %s/%s",
+            chain,
+            asset_cfg.name,
+            exc_info=True,
+        )
+        cache[key] = None
+        return None
+    cache[key] = market
+    return market
+
+
+def _recover_missing_order_events(tracker: PositionTracker) -> int:
+    """Backfill open order_events that are missing from trade history."""
+    if config.HEDGE_MODE != "live":
+        return 0
+
+    tracked_tx_hashes = {p.tx_hash for p in tracker.open_positions() if p.tx_hash}
+    tracked_otokens = {
+        (p.otoken_address.lower(), p.user_address)
+        for p in tracker.open_positions()
+    }
+    rows = trade_logger.read_open_order_events_from_supabase(_mm_addresses_by_chain())
+    if not rows:
+        return 0
+
+    market_cache: dict[tuple[str, str], dict[str, Any] | None] = {}
+    restored = 0
+    now = int(time.time())
+    for row in rows:
+        tx_hash = str(row.get("tx_hash", ""))
+        if tx_hash and tx_hash in tracked_tx_hashes:
+            continue
+
+        otoken_addr = str(row.get("otoken_address", ""))
+        user_address = str(row.get("user_address", ""))
+        if not otoken_addr:
+            continue
+        if (otoken_addr.lower(), user_address) in tracked_otokens:
+            continue
+
+        underlying = str(row.get("asset", "")).lower()
+        chain, asset_cfg = _resolve_asset(underlying, row.get("chain"))
+        if not asset_cfg:
+            log.warning(
+                "Skipping recovery row for unknown asset %s/%s",
+                row.get("chain"),
+                underlying,
+            )
+            continue
+
+        expiry = int(row.get("expiry") or 0)
+        if expiry < now:
+            continue
+
+        market = _market_snapshot(market_cache, chain, asset_cfg)
+        if not market:
+            continue
+
+        spot = float(market.get("spot") or 0.0)
+        iv = float(market.get("iv") or 0.80)
+        strike = float(row.get("strike_price") or row.get("strike") or 0.0)
+        is_put = bool(row.get("is_put", False))
+        amount_raw = int(row.get("amount", 0))
+        premium_raw = int(row.get("gross_premium", 0))
+        amount = amount_raw / 10**8
+        premium_usd = premium_raw / 10**6
+        T = max((expiry - now) / (365 * 86400), 0.0)
+        delta = bs_delta(is_put, spot, strike, T, config.RISK_FREE_RATE, iv)
+
+        event = {
+            "event": "position_opened",
+            "ts": now,
+            "otoken": otoken_addr,
+            "chain": chain,
+            "underlying": asset_cfg.name,
+            "strike": strike,
+            "expiry": expiry,
+            "is_put": is_put,
+            "amount": amount,
+            "premium_usd": premium_usd,
+            "user_address": user_address,
+            "tx_hash": tx_hash or f"recovery:{chain}:{otoken_addr}",
+            "spot": spot,
+            "delta": delta,
+            "hedge_action": "LONG" if is_put else "SHORT",
+            "hedge_size": abs(delta) * amount,
+            "hedge_fill_price": 0.0,
+        }
+        trade_logger.write_bootstrap_event(event)
+        tracker.positions.append(_event_to_position(event))
+        tracked_tx_hashes.add(event["tx_hash"])
+        tracked_otokens.add((otoken_addr.lower(), user_address))
+        restored += 1
+        log.info(
+            "[ORDER_EVENTS RECOVERY] Restored %s/%s %s strike=%.0f amt=%.8f",
+            chain.upper(),
+            asset_cfg.name.upper(),
+            otoken_addr[:10],
+            strike,
+            amount,
+        )
 
     return restored
 
