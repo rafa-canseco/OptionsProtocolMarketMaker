@@ -20,6 +20,7 @@ def _clean_log(tmp_path, monkeypatch):
     monkeypatch.setattr("src.config.SUPABASE_URL", "")
     monkeypatch.setattr("src.config.SUPABASE_KEY", "")
     trade_logger._supabase_client = None
+    trade_logger._supabase_missing_columns.clear()
     yield log_path
 
 
@@ -31,6 +32,54 @@ def _read_events(path: str) -> list[dict]:
 
 
 class TestTradeLogger:
+    def test_log_position_opened_retries_without_chain_for_legacy_supabase_schema(
+        self, _clean_log, monkeypatch
+    ):
+        inserted: list[dict] = []
+
+        class _FakeQuery:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def execute(self):
+                inserted.append(self.payload)
+                if "chain" in self.payload:
+                    raise Exception("column mm_trade_history.chain does not exist")
+                return None
+
+        class _FakeTable:
+            def insert(self, payload):
+                return _FakeQuery(payload)
+
+        class _FakeClient:
+            def table(self, _name):
+                return _FakeTable()
+
+        monkeypatch.setattr(trade_logger, "_get_supabase", lambda: _FakeClient())
+
+        trade_logger.log_position_opened(
+            otoken="0xabc123",
+            strike=2100.0,
+            expiry=int(time.time()) + 86400,
+            is_put=True,
+            amount=0.01,
+            premium_usd=0.42,
+            user_address="0xuser",
+            tx_hash="0xtx",
+            spot=2112.75,
+            delta=-0.45,
+            hedge_action="LONG",
+            hedge_size=0.0098,
+            hedge_fill_price=2108.7,
+            underlying="sol",
+            chain="solana",
+        )
+
+        assert len(inserted) == 2
+        assert "chain" in inserted[0]
+        assert "chain" not in inserted[1]
+        assert trade_logger._supabase_missing_columns == {"chain"}
+
     def test_log_position_opened_writes_jsonl(self, _clean_log):
         trade_logger.log_position_opened(
             otoken="0xabc123",
