@@ -262,6 +262,41 @@ def read_events_from_supabase() -> list[dict[str, Any]]:
         return []
 
 
+def read_open_order_events_from_supabase(
+    mm_addresses_by_chain: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Read unsettled order_events for the configured MM addresses."""
+    client = _get_supabase()
+    if not client or not mm_addresses_by_chain:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for chain, mm_address in mm_addresses_by_chain.items():
+        try:
+            resp = (
+                client.table("order_events")
+                .select(
+                    "chain,asset,otoken_address,amount,gross_premium,"
+                    "user_address,tx_hash,strike_price,expiry,is_put,"
+                    "collateral,mm_address,is_settled"
+                )
+                .eq("chain", chain)
+                .eq("mm_address", mm_address)
+                .eq("is_settled", False)
+                .order("expiry", desc=False)
+                .execute()
+            )
+        except Exception:
+            log.warning(
+                "Failed to read %s order_events from Supabase",
+                chain,
+                exc_info=True,
+            )
+            continue
+        rows.extend(resp.data or [])
+    return rows
+
+
 def write_bootstrap_event(event: dict[str, Any]) -> None:
     """Write a single bootstrap event (used during startup recovery)."""
     _emit(event)
