@@ -59,9 +59,12 @@ def _setup_live_mode():
     hedge_executor._exchange = MagicMock()
     hedge_executor._info = MagicMock()
     hedge_executor._address = "0xTEST"
+    hedge_executor._api_url = "https://api.hyperliquid.xyz"
     hedge_executor._initialized_dexs = ("",)
     hedge_executor._dex_infos = {}
     hedge_executor._dex_exchanges = {}
+    hedge_executor._account_abstraction = "disabled"
+    hedge_executor._spot_state_cache = {"ts": 0.0, "state": None}
 
 
 @patch("src.config.HEDGE_MODE", "live")
@@ -284,6 +287,50 @@ def test_get_withdrawable_reads_builder_perp_dex():
     result = hedge_executor.get_withdrawable("xyz:TSLA")
     assert result == 3500.25
     xyz_info.user_state.assert_called_with("0xTEST", dex="xyz")
+
+
+@patch("src.config.HEDGE_MODE", "live")
+@patch("src.hedge_executor.requests.post")
+def test_get_withdrawable_uses_unified_spot_state(mock_post):
+    """Unified accounts read free USDC from spotClearinghouseState."""
+    _setup_live_mode()
+    hedge_executor._account_abstraction = "unifiedAccount"
+
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = {
+        "balances": [
+            {"coin": "USDC", "total": "812.50", "hold": "112.25"},
+        ]
+    }
+    mock_post.return_value = resp
+
+    result = hedge_executor.get_withdrawable("xyz:TSLA")
+
+    assert result == 700.25
+    payload = mock_post.call_args.kwargs["json"]
+    assert payload == {"type": "spotClearinghouseState", "user": "0xTEST"}
+
+
+@patch("src.config.HEDGE_MODE", "live")
+@patch("src.hedge_executor.requests.post")
+def test_get_account_value_uses_unified_spot_state(mock_post):
+    """Unified accounts read total USDC from spotClearinghouseState."""
+    _setup_live_mode()
+    hedge_executor._account_abstraction = "unifiedAccount"
+
+    resp = MagicMock()
+    resp.raise_for_status = MagicMock()
+    resp.json.return_value = {
+        "balances": [
+            {"coin": "USDC", "total": "812.50", "hold": "112.25"},
+        ]
+    }
+    mock_post.return_value = resp
+
+    result = hedge_executor.get_account_value("ETH")
+
+    assert result == 812.50
 
 
 def test_get_withdrawable_no_info():
