@@ -47,6 +47,14 @@ def _optional_env(name: str) -> str | None:
     return value or None
 
 
+def _env_first(*names: str, default: str = "") -> str:
+    for name in names:
+        value = _optional_env(name)
+        if value is not None:
+            return value
+    return default
+
+
 def _current_environment() -> str:
     for name in (
         "APP_ENV",
@@ -104,9 +112,10 @@ SPREAD_BPS: int = int(os.getenv("SPREAD_BPS", "200"))
 MAX_AMOUNT: int = int(os.getenv("MAX_AMOUNT", "500000000"))
 DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "300"))
 CHAIN_ID: int = int(os.getenv("CHAIN_ID", "84532"))
-BATCH_SETTLER: str = os.getenv(
+BATCH_SETTLER: str = _env_first(
     "BATCH_SETTLER",
-    "0x3B5d4640233E14cc330A749926838ba2C540054f",
+    "BASE_SEPOLIA_BATCH_SETTLER",
+    default="0x494E4F5b56Ed30bddB8D2d20300f3977623EB7bF",
 )
 RISK_FREE_RATE: float = float(os.getenv("RISK_FREE_RATE", "0.05"))
 
@@ -125,13 +134,23 @@ MM_TYPE: str = os.getenv("MM_TYPE", "internal")  # internal | external
 CAPACITY_RESERVE_RATIO: float = float(os.getenv("CAPACITY_RESERVE_RATIO", "0.25"))
 CAPACITY_PREMIUM_RATIO: float = float(os.getenv("CAPACITY_PREMIUM_RATIO", "0.03"))
 CAPACITY_AVG_DELTA: float = float(os.getenv("CAPACITY_AVG_DELTA", "0.3"))
-USDC_ADDRESS: str = os.getenv(
+USDC_ADDRESS: str = _env_first(
     "USDC_ADDRESS",
-    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  # Base mainnet USDC
+    "BASE_SEPOLIA_USDC",
+    default="0x036CbD53842c5426634e7929541eC2318f3dCF7e",  # Base Sepolia Circle USDC
 )
-MARGIN_POOL_ADDRESS: str = os.getenv(
+MARGIN_POOL_ADDRESS: str = _env_first(
     "MARGIN_POOL_ADDRESS",
-    "0xa1e04873F6d112d84824C88c9D6937bE38811657",  # Base mainnet MarginPool
+    "BASE_SEPOLIA_MARGIN_POOL",
+    default="0xF3E58e6fed228179dD86fdd3a1A9Fe23A4980DA3",  # Base Sepolia MarginPool
+)
+BASE_SEPOLIA_VAULT_ADAPTER: str = _env_first(
+    "BASE_SEPOLIA_VAULT_ADAPTER",
+    default="0x28B953496815AF6404320522E2CB7b9A2b0a5F90",
+)
+BASE_SEPOLIA_OTOKEN_FACTORY: str = _env_first(
+    "BASE_SEPOLIA_OTOKEN_FACTORY",
+    default="0x9aD4a3824Ac9Dfb0983EC58a044b1D833B930144",
 )
 
 # --- Trade history persistence ---
