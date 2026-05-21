@@ -20,7 +20,6 @@ log = logging.getLogger(__name__)
 
 USDC_DECIMALS = 6
 OTOKEN_DECIMALS = 8
-FULL_THRESHOLD_USD = 10.0
 DEGRADED_HEDGE_RATIO = 0.4
 
 # ERC-20 function selectors
@@ -68,9 +67,13 @@ def capacity_status(
     hedge_pool_usd: float,
     hedge_live: bool = True,
 ) -> str:
-    if capacity_usd < FULL_THRESHOLD_USD:
+    try:
+        full_threshold_usd = float(config.CAPACITY_FULL_THRESHOLD_USD)
+    except (TypeError, ValueError):
+        full_threshold_usd = 10.0
+    if capacity_usd < full_threshold_usd:
         return "full"
-    if premium_pool_usd < FULL_THRESHOLD_USD:
+    if premium_pool_usd < full_threshold_usd:
         return "full"
     if (
         hedge_live
