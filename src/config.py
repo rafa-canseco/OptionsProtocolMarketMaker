@@ -131,6 +131,9 @@ HYPERLIQUID_ACCOUNT_MODE: str = os.getenv("HYPERLIQUID_ACCOUNT_MODE", "auto")
 
 # --- Capacity ---
 MM_TYPE: str = os.getenv("MM_TYPE", "internal")  # internal | external
+CAPACITY_FULL_THRESHOLD_USD: float = float(
+    os.getenv("CAPACITY_FULL_THRESHOLD_USD", "10.0")
+)
 CAPACITY_RESERVE_RATIO: float = float(os.getenv("CAPACITY_RESERVE_RATIO", "0.25"))
 CAPACITY_PREMIUM_RATIO: float = float(os.getenv("CAPACITY_PREMIUM_RATIO", "0.03"))
 CAPACITY_AVG_DELTA: float = float(os.getenv("CAPACITY_AVG_DELTA", "0.3"))
