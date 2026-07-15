@@ -1,10 +1,18 @@
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
-from src.backtest.config import BacktestSettings, CoverageGate
+from src.backtest.config import (
+    AssetSettings,
+    BacktestSettings,
+    CapacityPoint,
+    CoverageGate,
+    ProductionValidationSettings,
+    load_settings,
+)
 from src.backtest.data import MarketSeries
 from src.backtest.engine import (
     binary_bid_premium,
@@ -14,6 +22,11 @@ from src.backtest.engine import (
 )
 from src.backtest.models import AssignmentLot, CostScenario, StrategyConfig
 from src.backtest.probe import run_coverage_probe
+from src.backtest.production import (
+    build_production_summary,
+    rolling_end_times,
+    run_rolling_validation,
+)
 from src.pricer import apply_vol_skew, calculate_spread, price_with_spread
 
 
@@ -60,6 +73,8 @@ def _series(tmp_path: Path, spots: list[tuple[datetime, float]]) -> MarketSeries
             }
         )
     payload = {
+        "asset": "ETH",
+        "start": start.isoformat(),
         "cutoff": cutoff.isoformat(),
         "spot": rows,
         "iv": [dict(row, value=0.6) for row in rows],
@@ -156,3 +171,84 @@ def test_market_lookup_is_causal_when_future_rows_are_added(tmp_path):
     before = first.spot_at(int(decision.timestamp() * 1000), 8)
     assert before is not None
     assert before.value == 2000
+
+
+def test_mm_counterparty_option_transfer_reconciles(tmp_path):
+    start = datetime(2026, 1, 1, 8, tzinfo=UTC)
+    series = _series(
+        tmp_path,
+        [(start, 2000), (start + timedelta(days=4), 2100)],
+    )
+    settings = _settings()
+    config = StrategyConfig(0.4, 0.5, 0, 0, "lot_gross", settings.cost_scenarios[0])
+    result = run_strategy(
+        series=series,
+        settings=settings,
+        window_days=4,
+        config=config,
+    )
+    assert result["mm_premium_paid_usdc"] > 0
+    assert result["option_transfer_reconciliation_usdc"] == pytest.approx(0)
+    assert result["mm_hedged_pnl_usdc"] == pytest.approx(
+        result["mm_unhedged_pnl_usdc"]
+        + result["mm_hedge_pnl_usdc"]
+        - result["mm_hedge_cost_usdc"]
+    )
+
+
+def test_multiyear_summary_has_percentiles_regimes_capacity_and_btc_config(tmp_path):
+    config_path = Path(__file__).parents[1] / "backtests" / "b1n_345" / "config.json"
+    loaded = load_settings(config_path)
+    assert {asset.symbol for asset in loaded.assets} == {"ETH", "BTC"}
+    assert loaded.asset("BTC").strike_increment_usd == 25
+
+    start = datetime(2025, 1, 1, 8, tzinfo=UTC)
+    series = _series(
+        tmp_path,
+        [(start, 2000), (start + timedelta(days=220), 2600)],
+    )
+    validation = ProductionValidationSettings(
+        lookback_days=220,
+        rolling_step_days=30,
+        target_deltas=(0.2,),
+        utilization=1.0,
+        minimum_premium_bps=0,
+        call_margin_usd=0,
+        protection_mode="lot_gross",
+        cost_scenario="base",
+        benchmark_usdc_apy=0.03,
+        minimum_risk_premium_apy=0.05,
+        regime_return_thresholds={30: 0.05},
+        crash_drawdown_threshold=-0.2,
+        crash_iv_spike_threshold=0.15,
+        maximum_loss_probability=1,
+        maximum_worst_drawdown=-1,
+        minimum_mm_hedged_return=-1,
+        minimum_regime_samples=0,
+        capacity_curve=(CapacityPoint(100_000, 0, 0),),
+    )
+    settings = replace(
+        _settings(window_days=(30,)),
+        assets=(AssetSettings("ETH", "ETH", "eth_usd", "ETH-PERPETUAL", 5, (0,)),),
+        production_validation=validation,
+    )
+    assert len(rolling_end_times(series, 30, 30)) > 1
+    rows = run_rolling_validation({"ETH": series}, settings)
+    summary = build_production_summary(rows, settings)
+    policy = summary["policies"][0]
+    assert set(policy["return_distribution"]) == {
+        "mean",
+        "p5",
+        "p25",
+        "p50",
+        "p75",
+        "p95",
+        "worst",
+    }
+    assert {item["regime"] for item in policy["regimes"]} == {
+        "bull",
+        "bear",
+        "sideways",
+        "volatility_crash",
+    }
+    assert policy["capacity"][0]["observation_class"] == "modeled"

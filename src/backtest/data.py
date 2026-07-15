@@ -165,6 +165,161 @@ def extract_market_snapshot(
     return market_path
 
 
+def extract_asset_market_snapshot(
+    output_dir: Path,
+    cutoff: datetime,
+    *,
+    symbol: str,
+    deribit_currency: str,
+    deribit_index_name: str,
+    deribit_perpetual: str,
+    lookback_days: int,
+    client: DeribitClient | None = None,
+) -> Path:
+    """Download multiyear hourly perpetual closes and DVOL for one asset.
+
+    Deribit's index chart endpoint is capped at one year. The multiyear production
+    validation therefore uses the observed Deribit perpetual close as the causal
+    USD underlying proxy and records that normalization explicitly.
+    """
+    api = client or DeribitClient(timeout=90)
+    raw_dir = output_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    cutoff_ms = utc_timestamp_ms(cutoff)
+    start = cutoff - timedelta(days=lookback_days, hours=12)
+    start_ms = utc_timestamp_ms(start)
+
+    spot_pages: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    spot_by_timestamp: dict[int, dict[str, Any]] = {}
+    end_ms = cutoff_ms
+    while True:
+        params = {
+            "instrument_name": deribit_perpetual,
+            "start_timestamp": start_ms,
+            "end_timestamp": end_ms,
+            "resolution": "60",
+        }
+        payload = api.get("get_tradingview_chart_data", params)
+        result = payload.get("result", {})
+        ticks = result.get("ticks", [])
+        closes = result.get("close", [])
+        if len(ticks) != len(closes) or not ticks:
+            raise RuntimeError(f"Deribit returned invalid {symbol} perpetual candles")
+        spot_pages.append((params, payload))
+        for timestamp, close in zip(ticks, closes, strict=True):
+            timestamp = int(timestamp)
+            if start_ms <= timestamp <= cutoff_ms:
+                spot_by_timestamp[timestamp] = {
+                    "timestamp_ms": timestamp,
+                    "value": float(close),
+                    "source": "observed",
+                }
+        first_timestamp = int(ticks[0])
+        if first_timestamp <= start_ms:
+            break
+        next_end = first_timestamp - 1
+        if next_end >= end_ms:
+            raise RuntimeError("Deribit perpetual pagination did not move backwards")
+        end_ms = next_end
+    for index, (_, payload) in enumerate(spot_pages):
+        (raw_dir / f"spot_{index:03d}.json").write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n"
+        )
+    spot_rows = [spot_by_timestamp[key] for key in sorted(spot_by_timestamp)]
+
+    dvol_pages: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    end_ms = cutoff_ms
+    while True:
+        params = {
+            "currency": deribit_currency,
+            "start_timestamp": start_ms,
+            "end_timestamp": end_ms,
+            "resolution": "3600",
+        }
+        payload = api.get("get_volatility_index_data", params)
+        dvol_pages.append((params, payload))
+        data = payload.get("result", {}).get("data", [])
+        continuation = payload.get("result", {}).get("continuation")
+        if not data or continuation is None or int(data[0][0]) <= start_ms:
+            break
+        next_end = int(continuation)
+        if next_end >= end_ms:
+            raise RuntimeError("Deribit DVOL pagination did not move backwards")
+        end_ms = next_end
+    for index, (_, payload) in enumerate(dvol_pages):
+        (raw_dir / f"dvol_{index:03d}.json").write_text(
+            json.dumps(payload, indent=2, sort_keys=True) + "\n"
+        )
+    dvol_by_timestamp: dict[int, dict[str, Any]] = {}
+    for _, payload in dvol_pages:
+        for row in payload["result"]["data"]:
+            timestamp = int(row[0])
+            if start_ms <= timestamp <= cutoff_ms:
+                dvol_by_timestamp[timestamp] = {
+                    "timestamp_ms": timestamp,
+                    "value": float(row[4]) / 100.0,
+                    "source": "observed",
+                }
+    iv_rows = [dvol_by_timestamp[key] for key in sorted(dvol_by_timestamp)]
+    normalized = {
+        "schema_version": 2,
+        "asset": symbol,
+        "cutoff": cutoff.isoformat(),
+        "start": start.isoformat(),
+        "normalization": {
+            "spot": (
+                f"Deribit {deribit_perpetual} observed hourly close in USD per {symbol}; "
+                f"proxy for {deribit_index_name} beyond the index endpoint's one-year cap"
+            ),
+            "iv": f"Deribit {symbol} DVOL close divided by 100; annualized decimal",
+            "premium": "not sourced from Deribit; replayed by Binary pricer",
+            "payoff": f"linear {symbol}/USDC, premium USD per {symbol}",
+        },
+        "spot": spot_rows,
+        "iv": iv_rows,
+    }
+    market_path = output_dir / "market.json"
+    market_path.write_text(json.dumps(normalized, indent=2, sort_keys=True) + "\n")
+    manifest = {
+        "schema_version": 2,
+        "asset": symbol,
+        "created_at": datetime.now(UTC).isoformat(),
+        "cutoff": cutoff.isoformat(),
+        "start": start.isoformat(),
+        "playbook_context_gap": "playbook/CONTEXT.md absent in staging checkout",
+        "sources": [
+            *[
+                {
+                    "method": "get_tradingview_chart_data",
+                    "params": params,
+                    "sha256": _sha256(payload),
+                    "rows": len(payload["result"]["ticks"]),
+                }
+                for params, payload in spot_pages
+            ],
+            *[
+                {
+                    "method": "get_volatility_index_data",
+                    "params": params,
+                    "sha256": _sha256(payload),
+                    "rows": len(payload["result"]["data"]),
+                }
+                for params, payload in dvol_pages
+            ],
+        ],
+        "normalized": {
+            "path": market_path.name,
+            "sha256": hashlib.sha256(market_path.read_bytes()).hexdigest(),
+            "spot_rows": len(spot_rows),
+            "iv_rows": len(iv_rows),
+        },
+    }
+    (output_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    )
+    return market_path
+
+
 @dataclass(frozen=True)
 class CausalValue:
     value: float
@@ -176,6 +331,8 @@ class CausalValue:
 class MarketSeries:
     def __init__(self, market_path: Path) -> None:
         payload = json.loads(market_path.read_text())
+        self.asset = str(payload.get("asset", "ETH"))
+        self.start = datetime.fromisoformat(payload.get("start", payload["cutoff"]))
         self.cutoff = datetime.fromisoformat(payload["cutoff"])
         self._spot = sorted(payload["spot"], key=lambda row: row["timestamp_ms"])
         self._iv = sorted(payload["iv"], key=lambda row: row["timestamp_ms"])
@@ -210,3 +367,15 @@ class MarketSeries:
 
     def iv_at(self, timestamp_ms: int, maximum_age_hours: float) -> CausalValue | None:
         return self._at(self._iv, self._iv_ts, timestamp_ms, maximum_age_hours)
+
+    def observed_range(
+        self, start_ms: int, end_ms: int
+    ) -> tuple[list[float], list[float]]:
+        spot_start = bisect.bisect_left(self._spot_ts, start_ms)
+        spot_end = bisect.bisect_right(self._spot_ts, end_ms)
+        iv_start = bisect.bisect_left(self._iv_ts, start_ms)
+        iv_end = bisect.bisect_right(self._iv_ts, end_ms)
+        return (
+            [float(row["value"]) for row in self._spot[spot_start:spot_end]],
+            [float(row["value"]) for row in self._iv[iv_start:iv_end]],
+        )

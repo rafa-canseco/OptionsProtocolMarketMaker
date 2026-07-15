@@ -8,12 +8,18 @@ from src.backtest.config import BacktestSettings
 from src.backtest.data import MarketSeries, utc_timestamp_ms
 
 
-def decision_times(series: MarketSeries, window_days: int, cadence_hours: int):
-    start = series.cutoff - timedelta(days=window_days)
+def decision_times(
+    series: MarketSeries,
+    window_days: int,
+    cadence_hours: int,
+    end=None,
+):
+    cutoff = end or series.cutoff
+    start = cutoff - timedelta(days=window_days)
     timestamp = start.replace(hour=8, minute=0, second=0, microsecond=0)
     if timestamp < start:
         timestamp += timedelta(days=1)
-    while timestamp < series.cutoff:
+    while timestamp < cutoff:
         yield timestamp
         timestamp += timedelta(hours=cadence_hours)
 

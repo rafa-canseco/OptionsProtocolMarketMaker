@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 import statistics
 from dataclasses import asdict
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from scipy.stats import norm
 
@@ -224,6 +224,7 @@ def _open_csp(
     opened_at: int,
     expiry: int,
     position_id: int,
+    strike_increment: float,
 ) -> OptionPosition | None:
     time_years = (expiry - opened_at) / (365 * 86_400)
     strike = select_strike(
@@ -233,7 +234,7 @@ def _open_csp(
         time_years=time_years,
         target_delta=config.target_delta,
         risk_free_rate=settings.risk_free_rate,
-        strike_increment=settings.strike_increment_usd,
+        strike_increment=strike_increment,
     )
     if strike is None:
         return None
@@ -285,6 +286,7 @@ def _open_calls(
     opened_at: int,
     expiry: int,
     first_position_id: int,
+    strike_increment: float,
 ) -> tuple[list[OptionPosition], set[int]]:
     positions = []
     covered_lots: set[int] = set()
@@ -299,7 +301,7 @@ def _open_calls(
             < lot.gross_basis + config.call_margin_usd
         ):
             ledger.lot_floor_breach_opportunities += 1
-        strike = select_protected_call_strike(floor, settings.strike_increment_usd)
+        strike = select_protected_call_strike(floor, strike_increment)
         premium_per_eth, _, _ = binary_bid_premium(
             is_put=False,
             spot=spot,
@@ -338,6 +340,96 @@ def _open_calls(
             )
         )
     return positions, covered_lots
+
+
+def _aggregate_long_option_delta(
+    positions: list[OptionPosition],
+    timestamp_ms: int,
+    spot: float,
+    iv: float,
+    risk_free_rate: float,
+) -> float:
+    delta = 0.0
+    for position in positions:
+        seconds = max((position.expiry * 1000 - timestamp_ms) / 1000, 1.0)
+        time_years = seconds / (365 * 86_400)
+        skewed_iv = apply_vol_skew(iv, spot, position.strike, position.is_put)
+        delta += (
+            bs_delta(
+                position.is_put,
+                spot,
+                position.strike,
+                time_years,
+                risk_free_rate,
+                skewed_iv,
+            )
+            * position.amount_eth
+        )
+    return delta
+
+
+def _record_mm_counterparty_economics(
+    *,
+    ledger: Ledger,
+    positions: list[OptionPosition],
+    opened_at_ms: int,
+    opening_spot: float,
+    opening_iv: float,
+    midpoint: tuple[int, float, float] | None,
+    settlement_spot: float,
+    risk_free_rate: float,
+    hedge_cost_bps: float,
+) -> None:
+    """Model Binary MM as the long-option counterparty with delta hedging.
+
+    The option transfer reconciles exactly: vault option PnL plus unhedged MM PnL
+    is zero. Hedge PnL and hedge execution costs are external market effects.
+    """
+    if not positions:
+        return
+    premium_paid = sum(position.premium_net_usdc for position in positions)
+    payoff = sum(
+        (
+            max(position.strike - settlement_spot, 0.0)
+            if position.is_put
+            else max(settlement_spot - position.strike, 0.0)
+        )
+        * position.amount_eth
+        for position in positions
+    )
+    long_delta = _aggregate_long_option_delta(
+        positions,
+        opened_at_ms,
+        opening_spot,
+        opening_iv,
+        risk_free_rate,
+    )
+    hedge_units = -long_delta
+    hedge_turnover = abs(hedge_units) * opening_spot
+    hedge_pnl = 0.0
+    previous_spot = opening_spot
+    if midpoint is not None:
+        midpoint_ms, midpoint_spot, midpoint_iv = midpoint
+        hedge_pnl += hedge_units * (midpoint_spot - previous_spot)
+        next_delta = _aggregate_long_option_delta(
+            positions,
+            midpoint_ms,
+            midpoint_spot,
+            midpoint_iv,
+            risk_free_rate,
+        )
+        next_hedge_units = -next_delta
+        hedge_turnover += abs(next_hedge_units - hedge_units) * midpoint_spot
+        hedge_units = next_hedge_units
+        previous_spot = midpoint_spot
+    hedge_pnl += hedge_units * (settlement_spot - previous_spot)
+    hedge_turnover += abs(hedge_units) * settlement_spot
+    hedge_cost = hedge_turnover * hedge_cost_bps / 10_000
+    ledger.mm_premium_paid_usdc += premium_paid
+    ledger.mm_option_payoff_usdc += payoff
+    ledger.mm_hedge_pnl_usdc += hedge_pnl
+    ledger.mm_hedge_turnover_usdc += hedge_turnover
+    ledger.mm_hedge_cost_usdc += hedge_cost
 
 
 def _settle_positions(
@@ -415,6 +507,9 @@ def _metrics(
     window_days: int,
     config: StrategyConfig,
     strategy: str,
+    asset: str,
+    window_start: datetime,
+    window_end: datetime,
 ) -> dict:
     final_nav = ledger.cash_usdc + ledger.eth_amount * final_spot
     daily_returns = [
@@ -431,9 +526,14 @@ def _metrics(
         if ledger.premium_gross_usdc
         else 0.0
     )
+    mm_unhedged = ledger.mm_option_payoff_usdc - ledger.mm_premium_paid_usdc
+    mm_hedged = mm_unhedged + ledger.mm_hedge_pnl_usdc - ledger.mm_hedge_cost_usdc
     result = {
+        "asset": asset,
         "strategy": strategy,
         "window_days": window_days,
+        "window_start": window_start.isoformat(),
+        "window_end": window_end.isoformat(),
         "initial_usdc": initial_usdc,
         "final_nav_usdc": final_nav,
         "absolute_return": final_nav / initial_usdc - 1,
@@ -451,7 +551,9 @@ def _metrics(
         "estimated_costs_usdc": ledger.estimated_costs_usdc,
         "realized_low_high_pnl_usdc": ledger.realized_low_high_pnl_usdc,
         "unrealized_eth_pnl_usdc": unrealized,
+        "unrealized_underlying_pnl_usdc": unrealized,
         "ending_eth": ledger.eth_amount,
+        "ending_underlying": ledger.eth_amount,
         "ending_weighted_gross_basis": weighted_gross,
         "csp_opened": ledger.csp_opened,
         "assignments": ledger.assignments,
@@ -478,6 +580,21 @@ def _metrics(
         "skipped_minimum_premium": ledger.skipped_minimum_premium,
         "missing_market_events": ledger.missing_market_events,
         "pricing_observation_class": "modeled",
+        "mm_pricing_observation_class": "modeled",
+        "mm_premium_paid_usdc": ledger.mm_premium_paid_usdc,
+        "mm_option_payoff_usdc": ledger.mm_option_payoff_usdc,
+        "mm_unhedged_pnl_usdc": mm_unhedged,
+        "mm_hedge_pnl_usdc": ledger.mm_hedge_pnl_usdc,
+        "mm_hedge_cost_usdc": ledger.mm_hedge_cost_usdc,
+        "mm_hedge_turnover_usdc": ledger.mm_hedge_turnover_usdc,
+        "mm_hedged_pnl_usdc": mm_hedged,
+        "mm_hedged_return_on_initial_vault_aum": mm_hedged / initial_usdc,
+        "vault_option_pnl_usdc": (
+            ledger.mm_premium_paid_usdc - ledger.mm_option_payoff_usdc
+        ),
+        "option_transfer_reconciliation_usdc": (
+            ledger.mm_premium_paid_usdc - ledger.mm_option_payoff_usdc + mm_unhedged
+        ),
         **asdict(config),
     }
     result["costs"] = config.costs.name
@@ -491,12 +608,18 @@ def run_strategy(
     window_days: int,
     config: StrategyConfig,
     csp_only: bool = False,
+    end: datetime | None = None,
 ) -> dict:
     ledger = Ledger(cash_usdc=settings.initial_usdc)
     nav_values = [settings.initial_usdc]
     position_counter = 1
+    window_end = end or series.cutoff
+    window_start = window_end - timedelta(days=window_days)
+    strike_increment = settings.asset(series.asset).strike_increment_usd
 
-    for decision in decision_times(series, window_days, settings.cadence_hours):
+    for decision in decision_times(
+        series, window_days, settings.cadence_hours, end=window_end
+    ):
         execution = decision + timedelta(minutes=config.costs.operational_delay_minutes)
         expiry_dt = decision + timedelta(hours=settings.cadence_hours)
         opened_at = int(execution.timestamp())
@@ -520,6 +643,7 @@ def run_strategy(
             opened_at=opened_at,
             expiry=expiry,
             position_id=position_counter,
+            strike_increment=strike_increment,
         )
         position_counter += 1
         if csp is not None:
@@ -536,6 +660,7 @@ def run_strategy(
                 opened_at=opened_at,
                 expiry=expiry,
                 first_position_id=position_counter,
+                strike_increment=strike_increment,
             )
             position_counter += len(ledger.lots) + 1
             positions.extend(calls)
@@ -569,8 +694,14 @@ def run_strategy(
         )
         midpoint = execution + timedelta(hours=settings.cadence_hours / 2)
         midpoint_market = _market_at(series, utc_timestamp_ms(midpoint), settings)
+        midpoint_hedge = None
         if midpoint_market is not None:
             midpoint_spot, midpoint_iv = midpoint_market
+            midpoint_hedge = (
+                utc_timestamp_ms(midpoint),
+                midpoint_spot,
+                midpoint_iv,
+            )
             nav_values.append(
                 _nav(
                     ledger,
@@ -582,13 +713,24 @@ def run_strategy(
                 )
             )
 
+        _record_mm_counterparty_economics(
+            ledger=ledger,
+            positions=positions,
+            opened_at_ms=utc_timestamp_ms(execution),
+            opening_spot=spot,
+            opening_iv=iv,
+            midpoint=midpoint_hedge,
+            settlement_spot=settlement.value,
+            risk_free_rate=settings.risk_free_rate,
+            hedge_cost_bps=config.costs.mm_hedge_cost_bps,
+        )
         _settle_positions(ledger, positions, settlement.value, expiry, csp_only)
         nav_values.append(ledger.cash_usdc + ledger.eth_amount * settlement.value)
         if ledger.cash_usdc < -1e-6 or ledger.eth_amount < -1e-12:
             raise AssertionError("backtest ledger produced negative collateral")
 
     final_spot_value = series.spot_at(
-        utc_timestamp_ms(series.cutoff), settings.coverage_gate.maximum_spot_age_hours
+        utc_timestamp_ms(window_end), settings.coverage_gate.maximum_spot_age_hours
     )
     if final_spot_value is None:
         raise RuntimeError("missing final spot")
@@ -600,6 +742,9 @@ def run_strategy(
         window_days=window_days,
         config=config,
         strategy="csp_only" if csp_only else "wheel",
+        asset=series.asset,
+        window_start=window_start,
+        window_end=window_end,
     )
 
 
@@ -607,8 +752,12 @@ def hold_benchmarks(
     series: MarketSeries,
     settings: BacktestSettings,
     window_days: int,
+    end: datetime | None = None,
 ) -> list[dict]:
-    decisions = list(decision_times(series, window_days, settings.cadence_hours))
+    window_end = end or series.cutoff
+    decisions = list(
+        decision_times(series, window_days, settings.cadence_hours, end=window_end)
+    )
     if not decisions:
         return []
     start = decisions[0]
@@ -616,7 +765,7 @@ def hold_benchmarks(
         utc_timestamp_ms(start), settings.coverage_gate.maximum_spot_age_hours
     )
     final_spot = series.spot_at(
-        utc_timestamp_ms(series.cutoff), settings.coverage_gate.maximum_spot_age_hours
+        utc_timestamp_ms(window_end), settings.coverage_gate.maximum_spot_age_hours
     )
     if start_spot is None or final_spot is None:
         raise RuntimeError("missing benchmark spot")
@@ -629,8 +778,11 @@ def hold_benchmarks(
     ):
         rows.append(
             {
+                "asset": series.asset,
                 "strategy": strategy,
                 "window_days": window_days,
+                "window_start": start.isoformat(),
+                "window_end": window_end.isoformat(),
                 "initial_usdc": settings.initial_usdc,
                 "final_nav_usdc": settings.initial_usdc * (1 + absolute_return),
                 "absolute_return": absolute_return,

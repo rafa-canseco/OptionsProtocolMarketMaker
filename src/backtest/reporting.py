@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import gzip
+import io
 import json
 from collections import defaultdict
 from pathlib import Path
@@ -16,15 +18,32 @@ def _flatten(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def write_results(rows: list[dict[str, Any]], output_dir: Path) -> None:
+def write_results(
+    rows: list[dict[str, Any]], output_dir: Path, *, compressed: bool = False
+) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    jsonl_path = output_dir / "results.jsonl"
-    with jsonl_path.open("w") as handle:
+    suffix = ".gz" if compressed else ""
+    jsonl_path = output_dir / f"results.jsonl{suffix}"
+    csv_path = output_dir / f"results.csv{suffix}"
+    if compressed:
+        (output_dir / "results.jsonl").unlink(missing_ok=True)
+        (output_dir / "results.csv").unlink(missing_ok=True)
+    jsonl_binary = (
+        gzip.GzipFile(filename=jsonl_path, mode="wb", mtime=0)
+        if compressed
+        else jsonl_path.open("wb")
+    )
+    with jsonl_binary, io.TextIOWrapper(jsonl_binary) as handle:
         for row in rows:
             handle.write(json.dumps(row, sort_keys=True) + "\n")
 
     fieldnames = sorted({key for row in rows for key in row})
-    with (output_dir / "results.csv").open("w", newline="") as handle:
+    csv_binary = (
+        gzip.GzipFile(filename=csv_path, mode="wb", mtime=0)
+        if compressed
+        else csv_path.open("wb")
+    )
+    with csv_binary, io.TextIOWrapper(csv_binary, newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(_flatten(row) for row in rows)

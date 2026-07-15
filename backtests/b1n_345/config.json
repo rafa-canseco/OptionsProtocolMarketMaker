@@ -13,6 +13,56 @@
   ],
   "strike_increment_usd": 5.0,
   "risk_free_rate": 0.05,
+  "assets": [
+    {
+      "symbol": "ETH",
+      "deribit_currency": "ETH",
+      "deribit_index_name": "eth_usd",
+      "deribit_perpetual": "ETH-PERPETUAL",
+      "strike_increment_usd": 5.0,
+      "call_margins_usd": [0.0, 50.0, 100.0, 200.0]
+    },
+    {
+      "symbol": "BTC",
+      "deribit_currency": "BTC",
+      "deribit_index_name": "btc_usd",
+      "deribit_perpetual": "BTC-PERPETUAL",
+      "strike_increment_usd": 25.0,
+      "call_margins_usd": [0.0, 250.0, 500.0, 1000.0]
+    }
+  ],
+  "production_validation": {
+    "lookback_days": 1095,
+    "rolling_step_days": 2,
+    "target_deltas": [0.1, 0.2, 0.3, 0.4],
+    "utilization": 1.0,
+    "minimum_premium_bps": 0,
+    "call_margin_usd": 0.0,
+    "protection_mode": "lot_gross",
+    "cost_scenario": "base",
+    "benchmark_usdc_apy": 0.032,
+    "minimum_risk_premium_apy": 0.05,
+    "regime_return_thresholds": {
+      "30": 0.05,
+      "90": 0.10,
+      "180": 0.15
+    },
+    "crash_drawdown_threshold": -0.20,
+    "crash_iv_spike_threshold": 0.15,
+    "maximum_loss_probability": 0.25,
+    "maximum_worst_drawdown": -0.30,
+    "minimum_mm_hedged_return": 0.0,
+    "minimum_regime_samples": 10,
+    "capacity_curve": [
+      {"aum_usdc": 100000, "premium_haircut_bps": 0, "hedge_cost_bps": 0},
+      {"aum_usdc": 250000, "premium_haircut_bps": 100, "hedge_cost_bps": 1},
+      {"aum_usdc": 500000, "premium_haircut_bps": 250, "hedge_cost_bps": 2},
+      {"aum_usdc": 1000000, "premium_haircut_bps": 500, "hedge_cost_bps": 4},
+      {"aum_usdc": 2500000, "premium_haircut_bps": 1000, "hedge_cost_bps": 8},
+      {"aum_usdc": 5000000, "premium_haircut_bps": 1500, "hedge_cost_bps": 15},
+      {"aum_usdc": 10000000, "premium_haircut_bps": 2500, "hedge_cost_bps": 25}
+    ]
+  },
   "coverage_gate": {
     "minimum_causal_coverage": 0.95,
     "maximum_missing_fraction": 0.05,
@@ -26,7 +76,8 @@
       "execution_slippage_bps": 0,
       "fee_bps_notional": 0,
       "gas_usdc": 0.0,
-      "operational_delay_minutes": 0
+      "operational_delay_minutes": 0,
+      "mm_hedge_cost_bps": 2.0
     },
     {
       "name": "base",
@@ -34,7 +85,8 @@
       "execution_slippage_bps": 0,
       "fee_bps_notional": 0,
       "gas_usdc": 0.0,
-      "operational_delay_minutes": 5
+      "operational_delay_minutes": 5,
+      "mm_hedge_cost_bps": 5.0
     },
     {
       "name": "stressed",
@@ -42,7 +94,8 @@
       "execution_slippage_bps": 0,
       "fee_bps_notional": 0,
       "gas_usdc": 0.0,
-      "operational_delay_minutes": 15
+      "operational_delay_minutes": 15,
+      "mm_hedge_cost_bps": 10.0
     }
   ]
 }

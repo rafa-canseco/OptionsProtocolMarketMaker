@@ -11,6 +11,7 @@ class CostScenario:
     fee_bps_notional: int
     gas_usdc: float
     operational_delay_minutes: int
+    mm_hedge_cost_bps: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,11 @@ class Ledger:
     eth_idle_amount_hours: float = 0.0
     idle_usdc_hours: float = 0.0
     total_usdc_hours: float = 0.0
+    mm_premium_paid_usdc: float = 0.0
+    mm_option_payoff_usdc: float = 0.0
+    mm_hedge_pnl_usdc: float = 0.0
+    mm_hedge_cost_usdc: float = 0.0
+    mm_hedge_turnover_usdc: float = 0.0
 
     @property
     def eth_amount(self) -> float:
