@@ -1,0 +1,48 @@
+{
+  "initial_usdc": 100000.0,
+  "cadence_hours": 48,
+  "window_days": [30, 90, 180],
+  "target_deltas": [0.1, 0.2, 0.3, 0.4],
+  "utilizations": [0.5, 0.75, 1.0],
+  "minimum_premium_bps": [0, 25, 50],
+  "call_margins_usd": [0.0, 50.0, 100.0, 200.0],
+  "protection_modes": [
+    "lot_gross",
+    "lot_gross_plus_weighted_gross",
+    "lot_gross_plus_weighted_net"
+  ],
+  "strike_increment_usd": 25.0,
+  "risk_free_rate": 0.05,
+  "coverage_gate": {
+    "minimum_causal_coverage": 0.95,
+    "maximum_missing_fraction": 0.05,
+    "maximum_spot_age_hours": 8.0,
+    "maximum_iv_age_hours": 6.0
+  },
+  "cost_scenarios": [
+    {
+      "name": "low",
+      "base_spread_bps": 150,
+      "execution_slippage_bps": 0,
+      "fee_bps_notional": 0,
+      "gas_usdc": 0.1,
+      "operational_delay_minutes": 0
+    },
+    {
+      "name": "base",
+      "base_spread_bps": 200,
+      "execution_slippage_bps": 25,
+      "fee_bps_notional": 5,
+      "gas_usdc": 0.25,
+      "operational_delay_minutes": 5
+    },
+    {
+      "name": "stressed",
+      "base_spread_bps": 300,
+      "execution_slippage_bps": 75,
+      "fee_bps_notional": 15,
+      "gas_usdc": 1.0,
+      "operational_delay_minutes": 15
+    }
+  ]
+}
