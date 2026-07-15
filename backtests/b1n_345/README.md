@@ -1,4 +1,4 @@
-# B1N-345 — 48-hour ETH/USDC Binary wheel backtest
+# B1N-345 — 48-hour ETH/BTC Binary wheel backtest
 
 This research package simulates the vault as if Binary had existed throughout the
 historical window. Deribit supplies historical ETH/USD spot and ETH DVOL only.
@@ -34,6 +34,9 @@ production Market Maker functions in `src/pricer.py`:
 This is a counterfactual Binary simulation. Deribit trades must never be
 described as historical Binary fills.
 
+BTC is included only in the research/production-validation package. It does not
+change the ETH/USDC-only scope of v2 Milestone 1.
+
 ## Coverage gate
 
 The gate is fixed in `config.json`, before returns are inspected:
@@ -65,6 +68,53 @@ coverage details, rankings, benchmarks, and sensitivities under `results/`.
 All windows share the same cutoff, $100,000 initial capital, data methodology,
 and 48-hour cadence. “One/three/six months” are fixed trailing 30/90/180-day
 research windows.
+
+## Multiyear production validation
+
+The production-validation extension uses three years of hourly Deribit
+perpetual closes and DVOL for both ETH and BTC. The public Deribit index-chart
+endpoint is limited to one year, so the observed perpetual close is explicitly
+normalized as the multiyear USD underlying proxy. Both candle and DVOL endpoints
+are paginated and hashed in per-asset manifests.
+
+It evaluates every 48-hour rolling endpoint available for 30/90/180-day
+windows: 533, 503, and 458 samples per asset respectively. To avoid selecting a
+policy after observing returns, the rolling test fixes:
+
+- target deltas 0.10, 0.20, 0.30, and 0.40 as four separate policies;
+- 100% utilization, zero minimum premium, `X=0`, gross lot protection;
+- the base Binary spread/delay scenario;
+- a 3.2% USDC APY benchmark plus a 5% annual risk-premium hurdle.
+
+Trend regimes are mutually exclusive bull/bear/sideways classifications using
+fixed horizon-specific return thresholds. `volatility_crash` is a separate,
+overlapping stress tag requiring both a 20% drawdown and a 15-vol-point IV
+spike. This avoids hiding bear windows inside the crash bucket.
+
+The MM is modeled as Binary's long-option counterparty. For each 48-hour option,
+the report separates premium paid, option payoff, unhedged PnL, midpoint delta
+hedge PnL, hedge turnover/cost, and net hedged PnL. The vault option PnL plus the
+MM's unhedged option PnL reconciles exactly to zero. Hedge effects are external
+market PnL and remain `modeled`.
+
+Capacity is also a sensitivity model, not an observed order-book limit. The
+configured $100k–$10m ladder applies increasing premium haircuts and hedge costs;
+a size is jointly viable only when the vault median beats its period hurdle and
+the MM median remains non-negative.
+
+Reproduce the gated multiyear run:
+
+```bash
+uv run python scripts/run_b1n_345_backtest.py extract-production \
+  --cutoff 2026-07-15T08:00:00+00:00
+uv run python scripts/run_b1n_345_backtest.py probe-production
+uv run python scripts/run_b1n_345_backtest.py run-production
+```
+
+`production_results/` contains the coverage probe, compressed raw CSV/JSONL,
+summary, report, and SHA-256 checksums. `summarize-production` can rebuild
+regime metadata and reports from an existing raw simulation without changing
+option outcomes.
 
 ## Known context gap
 

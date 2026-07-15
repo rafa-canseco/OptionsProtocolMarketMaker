@@ -1,0 +1,4287 @@
+{
+  "methodology": {
+    "benchmark_usdc_apy": 0.032,
+    "maximum_loss_probability": 0.25,
+    "maximum_worst_drawdown": -0.3,
+    "minimum_mm_hedged_return": 0.0,
+    "minimum_regime_samples": 10,
+    "minimum_risk_premium_apy": 0.05,
+    "rolling_step_days": 2
+  },
+  "policies": [
+    {
+      "asset": "BTC",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.013497327848231691,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.029629772298198853,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.013532500937880177,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.029333474575216865,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.013440427571954728,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.028889027990743884,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.013383527295677764,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.028079199415116253,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.013493366745581147,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.026601346814320654,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.014656799308761168,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.025105218669597924,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.01583863362359731,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.02212280754318847,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": true,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": true
+      },
+      "expected_shortfall_5": -0.17235740491218327,
+      "hurdle_return": 0.006498656494542621,
+      "loss_probability": 0.20825515947467166,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.008777098875572558,
+        "p25": -0.023287361320075334,
+        "p5": -0.03570816267854561,
+        "p50": -0.013497327848231691,
+        "p75": 0.004748979562802651,
+        "p95": 0.029653117746727194,
+        "worst": -0.04291684242987858
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.004901960784313725,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.030394198610912485,
+            "p25": 0.025196670893231854,
+            "p5": 0.020929612129740892,
+            "p50": 0.029932351926291845,
+            "p75": 0.032224246789040456,
+            "p95": 0.04866919002920267,
+            "worst": -0.008278146685495202
+          },
+          "sample_count": 204,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.6333333333333333,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.040554164212403265,
+            "p25": -0.08644861286575287,
+            "p5": -0.1965494939562804,
+            "p50": -0.03298494544109348,
+            "p75": 0.028089714570014135,
+            "p95": 0.056433849201973627,
+            "worst": -0.250629619347991
+          },
+          "sample_count": 150,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.08379888268156424,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.03267395926222625,
+            "p25": 0.02550334789822173,
+            "p5": -0.010085398379341757,
+            "p50": 0.03539206534049799,
+            "p75": 0.04235993985400721,
+            "p95": 0.05931946593137467,
+            "worst": -0.04028202065925235
+          },
+          "sample_count": 179,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.5581395348837209,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.06936308981201403,
+            "p25": -0.1883296520519827,
+            "p5": -0.24542888218564354,
+            "p50": -0.08244322405046989,
+            "p75": 0.04421149752736575,
+            "p95": 0.07422520855268565,
+            "worst": -0.250629619347991
+          },
+          "sample_count": 43,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.011193115558544381,
+        "p25": 0.018538665054835368,
+        "p5": -0.10847109219392331,
+        "p50": 0.029629772298198853,
+        "p75": 0.03876453264841917,
+        "p95": 0.05745542784339154,
+        "worst": -0.250629619347991
+      },
+      "sample_count": 533,
+      "target_delta": 0.1,
+      "window_days": 30,
+      "worst_maximum_drawdown": -0.2645360620757343
+    },
+    {
+      "asset": "BTC",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.024428236608541574,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.05692988557789658,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.024541548726374957,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.05632738728376698,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.024390843461578653,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.05547742187682568,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.024335217765466412,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.05401717205794645,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.024399550899484167,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.05112074321636177,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.0263324421251339,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.04829197623635181,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.027350010732636633,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.04234658883041302,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": true
+      },
+      "expected_shortfall_5": -0.19622806388127967,
+      "hurdle_return": 0.006498656494542621,
+      "loss_probability": 0.2570356472795497,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.022193011914038052,
+        "p25": -0.04239816086950284,
+        "p5": -0.06625528805513463,
+        "p50": -0.024428236608541574,
+        "p75": -0.0025353508040207168,
+        "p95": 0.025028723833387806,
+        "worst": -0.08262218031850933
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.00980392156862745,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.07102009104270772,
+            "p25": 0.06170787236936004,
+            "p5": 0.04492610705516122,
+            "p50": 0.07147324123656273,
+            "p75": 0.08179871178461207,
+            "p95": 0.09752337576436296,
+            "worst": -0.0139752429113843
+          },
+          "sample_count": 204,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.7133333333333334,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.05739034425193071,
+            "p25": -0.10965364255241034,
+            "p5": -0.21004570235501166,
+            "p50": -0.05205462068893596,
+            "p75": 0.006859116284325006,
+            "p95": 0.06766743288350452,
+            "worst": -0.25825534849900866
+          },
+          "sample_count": 150,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.1564245810055866,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.04399078685912412,
+            "p25": 0.01755946513954265,
+            "p5": -0.029726981787539852,
+            "p50": 0.054224500987022806,
+            "p75": 0.07056259485581062,
+            "p95": 0.09732568892062615,
+            "worst": -0.05092903723627973
+          },
+          "sample_count": 179,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.7209302325581395,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.10330388463594002,
+            "p25": -0.19789100459925102,
+            "p5": -0.25313719913138144,
+            "p50": -0.12413271419468652,
+            "p75": 0.006168223379770743,
+            "p95": 0.040317608320399885,
+            "worst": -0.25825534849900866
+          },
+          "sample_count": 43,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.02580468627149341,
+        "p25": -0.0030110817633911546,
+        "p5": -0.14837889779165525,
+        "p50": 0.05692988557789658,
+        "p75": 0.07389655134826012,
+        "p95": 0.09656813450449468,
+        "worst": -0.25825534849900866
+      },
+      "sample_count": 533,
+      "target_delta": 0.2,
+      "window_days": 30,
+      "worst_maximum_drawdown": -0.27587462508670046
+    },
+    {
+      "asset": "BTC",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.0316661073783704,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.06005321417067977,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.03165762876987884,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.05939716381884093,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.031242103902719105,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.05841308829108267,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.03091648727579688,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.05654936862634182,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.030188220640749663,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.05208056772085204,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.03219684529525421,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.048899752346758474,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.032197974363964654,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.0401810483041771,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.2106313209652999,
+      "hurdle_return": 0.006498656494542621,
+      "loss_probability": 0.2964352720450281,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.02961718048454236,
+        "p25": -0.04988192633663462,
+        "p5": -0.07787126115216184,
+        "p50": -0.0316661073783704,
+        "p75": -0.0068344788938347854,
+        "p95": 0.01735506434184246,
+        "worst": -0.1076144472736196
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.004901960784313725,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.10524334218574005,
+            "p25": 0.08911252605257236,
+            "p5": 0.0601818938191785,
+            "p50": 0.10951334325933815,
+            "p75": 0.12528492694533777,
+            "p95": 0.14544229010188314,
+            "worst": -0.01893189461391942
+          },
+          "sample_count": 204,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.8466666666666667,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.07963524505750932,
+            "p25": -0.13409875201304336,
+            "p5": -0.23469174774687174,
+            "p50": -0.07147512390289346,
+            "p75": -0.023423108679093307,
+            "p95": 0.04589097188959177,
+            "worst": -0.2752634248822551
+          },
+          "sample_count": 150,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.16759776536312848,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.04429430948789172,
+            "p25": 0.01386125043840769,
+            "p5": -0.03571968249611407,
+            "p50": 0.05206113185302974,
+            "p75": 0.07371838151378707,
+            "p95": 0.10951641306567332,
+            "worst": -0.055528954114958506
+          },
+          "sample_count": 179,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.7674418604651163,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.11300693877340516,
+            "p25": -0.2071474779182802,
+            "p5": -0.26301315176029805,
+            "p50": -0.09946348691410822,
+            "p75": -0.0065502902198066315,
+            "p95": 0.0281286355819061,
+            "worst": -0.2752634248822551
+          },
+          "sample_count": 43,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.03274490890355945,
+        "p25": -0.01893189461391942,
+        "p5": -0.15756241129019205,
+        "p50": 0.06005321417067977,
+        "p75": 0.10222611753396027,
+        "p95": 0.13143120851981313,
+        "worst": -0.2752634248822551
+      },
+      "sample_count": 533,
+      "target_delta": 0.3,
+      "window_days": 30,
+      "worst_maximum_drawdown": -0.3003486079573009
+    },
+    {
+      "asset": "BTC",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.0295892184623955,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.05823122103952927,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.02948099625065308,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.05698573606969844,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.028844277440384727,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.05553093903792689,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.028331740454518053,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.05371321423806322,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.027095923451572988,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.048974038628175724,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.029538211605201002,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.04397147987189323,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.029642981146625804,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.03569681247176755,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.2181707014251812,
+      "hurdle_return": 0.006498656494542621,
+      "loss_probability": 0.3076923076923077,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.0322796278933905,
+        "p25": -0.0554277113983811,
+        "p5": -0.08094959750183381,
+        "p50": -0.0295892184623955,
+        "p75": -0.008091114755163114,
+        "p95": 0.013172768283867917,
+        "worst": -0.13695955154421618
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.004901960784313725,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.13343449805450586,
+            "p25": 0.10784107390255732,
+            "p5": 0.07658503104933201,
+            "p50": 0.1368028722486958,
+            "p75": 0.15891323731215562,
+            "p95": 0.19326487585982427,
+            "worst": -0.014961472734761228
+          },
+          "sample_count": 204,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.86,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.08939280841444365,
+            "p25": -0.14508659664112322,
+            "p5": -0.24494019434717423,
+            "p50": -0.08012774816858048,
+            "p75": -0.03248297340541517,
+            "p95": 0.024406118774632665,
+            "worst": -0.29272414657060475
+          },
+          "sample_count": 150,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.18994413407821228,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.04250936125505951,
+            "p25": 0.014006817510245684,
+            "p5": -0.03673634382480932,
+            "p50": 0.044953511891876685,
+            "p75": 0.07341385235286457,
+            "p95": 0.11131777945090152,
+            "worst": -0.05646332175314983
+          },
+          "sample_count": 179,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.813953488372093,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.11491788212338429,
+            "p25": -0.2165042167877691,
+            "p5": -0.26713178286074446,
+            "p50": -0.07929211126332836,
+            "p75": -0.006391276412640812,
+            "p95": 0.03625983328730868,
+            "worst": -0.29272414657060475
+          },
+          "sample_count": 43,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.04018929081727636,
+        "p25": -0.022986882009539356,
+        "p5": -0.1646821190269612,
+        "p50": 0.05823122103952927,
+        "p75": 0.12042491232298702,
+        "p95": 0.17100343188670558,
+        "worst": -0.29272414657060475
+      },
+      "sample_count": 533,
+      "target_delta": 0.4,
+      "window_days": 30,
+      "worst_maximum_drawdown": -0.31383764459552965
+    },
+    {
+      "asset": "BTC",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.030517215919342797,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.09283456890413588,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.031220721323994578,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.09189181677515411,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.031290892738617154,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.09048529305541482,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.03180623681478481,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.08814108685584934,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.03285669998061176,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.08278949489090717,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.03832689580777345,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.07807752886321621,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.04056077458553647,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.0686359552863997,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": true,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.22999155681826758,
+      "hurdle_return": 0.01962294154707611,
+      "loss_probability": 0.24055666003976142,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.028330204205559942,
+        "p25": -0.05451210068506486,
+        "p5": -0.08032926921789514,
+        "p50": -0.030517215919342797,
+        "p75": -0.005001853264144851,
+        "p95": 0.032207096735604415,
+        "worst": -0.09442738829268692
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.0,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.1111456853302894,
+            "p25": 0.0894500904197576,
+            "p5": 0.06018789211376596,
+            "p50": 0.10486686403775503,
+            "p75": 0.13202293661859055,
+            "p95": 0.1734778188908419,
+            "worst": 0.03368366364761477
+          },
+          "sample_count": 227,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.7124183006535948,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.08164775330551939,
+            "p25": -0.17764946011820748,
+            "p5": -0.2269751820611822,
+            "p50": -0.09394183598239692,
+            "p75": 0.008004683624285303,
+            "p95": 0.12007077089142637,
+            "worst": -0.3393873561609493
+          },
+          "sample_count": 153,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.0975609756097561,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.09766481425728972,
+            "p25": 0.07146462284003863,
+            "p5": -0.05132964006576845,
+            "p50": 0.10705082267396882,
+            "p75": 0.14470956952212521,
+            "p95": 0.18127737805635205,
+            "worst": -0.1075311132950535
+          },
+          "sample_count": 123,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.4642857142857143,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": 0.004609584923181249,
+            "p25": -0.14850436509086268,
+            "p5": -0.22497290927517877,
+            "p50": 0.04805067647685424,
+            "p75": 0.1510764419872087,
+            "p95": 0.18147253971084598,
+            "worst": -0.3393873561609493
+          },
+          "sample_count": 224,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.049206235522620004,
+        "p25": 0.007410369189378985,
+        "p5": -0.20269532660785586,
+        "p50": 0.09283456890413588,
+        "p75": 0.12533839844060368,
+        "p95": 0.179710078577917,
+        "worst": -0.3393873561609493
+      },
+      "sample_count": 503,
+      "target_delta": 0.1,
+      "window_days": 90,
+      "worst_maximum_drawdown": -0.342202397855053
+    },
+    {
+      "asset": "BTC",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06803950606481553,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.1382249490878451,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06842900998950009,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.1366988837782616,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.0676928906898606,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.1344097858138863,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06693909506153684,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.12870622075434135,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06620230212032338,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.119229008198248,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.07173029154861792,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.10975332893499376,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.07518474945254235,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.08850906458875502,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.23209676193515377,
+      "hurdle_return": 0.01962294154707611,
+      "loss_probability": 0.25646123260437376,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.06745454531363386,
+        "p25": -0.10678493013267576,
+        "p5": -0.14900437811370265,
+        "p50": -0.06803950606481553,
+        "p75": -0.033157979548403375,
+        "p95": 0.017070610654687464,
+        "worst": -0.17415640398829466
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.0,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.21353423031704877,
+            "p25": 0.1951566099593639,
+            "p5": 0.08441689836718214,
+            "p50": 0.22670397943542575,
+            "p75": 0.24642692868910165,
+            "p95": 0.2879072128710862,
+            "worst": 0.06874472701735557
+          },
+          "sample_count": 227,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.7450980392156863,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.08433556478863959,
+            "p25": -0.16789295890458555,
+            "p5": -0.22873496595674508,
+            "p50": -0.09965175712619445,
+            "p75": 0.0006014309998005896,
+            "p95": 0.11964813218548988,
+            "worst": -0.34938436178530496
+          },
+          "sample_count": 153,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.12195121951219512,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.11090359467108096,
+            "p25": 0.061222315272946415,
+            "p5": -0.06936532813493282,
+            "p50": 0.10752695437967796,
+            "p75": 0.17401403250569036,
+            "p95": 0.23907039647943526,
+            "worst": -0.14578796518060777
+          },
+          "sample_count": 123,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.47767857142857145,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": 0.02446560495738957,
+            "p25": -0.13979181408010663,
+            "p5": -0.22520231451280903,
+            "p50": 0.017673221340899548,
+            "p75": 0.21136799323631944,
+            "p95": 0.24515252511559094,
+            "worst": -0.34938436178530496
+          },
+          "sample_count": 224,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.09783314316869021,
+        "p25": -0.0037371499417554466,
+        "p5": -0.20294173136505655,
+        "p50": 0.1382249490878451,
+        "p75": 0.22673877517201146,
+        "p95": 0.27054171003163147,
+        "worst": -0.34938436178530496
+      },
+      "sample_count": 503,
+      "target_delta": 0.2,
+      "window_days": 90,
+      "worst_maximum_drawdown": -0.3552323846880179
+    },
+    {
+      "asset": "BTC",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.07885296595888394,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.1360825807089947,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.0789073456557273,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.13355752453747635,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.07791222684134051,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.13028153102430715,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.07689337681911626,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.12641108341168833,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.07460572332741118,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.11783011366858356,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.07749778871171681,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.11085036915205602,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.07752927898327835,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.09252747090873138,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.24936443474829012,
+      "hurdle_return": 0.01962294154707611,
+      "loss_probability": 0.3220675944333996,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.0838737342411606,
+        "p25": -0.12370855125272517,
+        "p5": -0.17854453406998183,
+        "p50": -0.07885296595888394,
+        "p75": -0.04119305224922749,
+        "p95": 0.001814147752806232,
+        "worst": -0.20734269612942816
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.0,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.28298055909775943,
+            "p25": 0.24067072142679224,
+            "p5": 0.1175504946404719,
+            "p50": 0.30229054385161813,
+            "p75": 0.327501164717941,
+            "p95": 0.41132031705618055,
+            "worst": 0.09256182929568979
+          },
+          "sample_count": 227,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9215686274509803,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.12538823007790525,
+            "p25": -0.19401093453790863,
+            "p5": -0.2498452584447985,
+            "p50": -0.12601161708895992,
+            "p75": -0.060936847552610085,
+            "p95": 0.014122060461393164,
+            "worst": -0.360341544102208
+          },
+          "sample_count": 153,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.17073170731707318,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.09958188062576079,
+            "p25": 0.040347545393704,
+            "p5": -0.08770602666208151,
+            "p50": 0.11579222680518075,
+            "p75": 0.1687921477752513,
+            "p95": 0.22035026556444023,
+            "worst": -0.12198873072663718
+          },
+          "sample_count": 123,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.5491071428571429,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": 0.00659729549307731,
+            "p25": -0.16479498762072076,
+            "p5": -0.2425106761516156,
+            "p50": -0.02832688261226074,
+            "p75": 0.17927050239022607,
+            "p95": 0.3121898036163486,
+            "worst": -0.360341544102208
+          },
+          "sample_count": 224,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.11391801000047808,
+        "p25": -0.053465187632965205,
+        "p5": -0.22039609642487118,
+        "p50": 0.1360825807089947,
+        "p75": 0.2950074720907552,
+        "p95": 0.3670850029034701,
+        "worst": -0.360341544102208
+      },
+      "sample_count": 503,
+      "target_delta": 0.3,
+      "window_days": 90,
+      "worst_maximum_drawdown": -0.3683964470414385
+    },
+    {
+      "asset": "BTC",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.07293861532765367,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.13921412316901383,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.07285394642645059,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.1374932124913137,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.07206080276058519,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.1339889700998952,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.07110052161268667,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.1284717004101266,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06781325967305696,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.12013049478756412,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06959012567638652,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.1095899191870015,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06766360314320767,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.09417906835243921,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.2564550998849487,
+      "hurdle_return": 0.01962294154707611,
+      "loss_probability": 0.3399602385685885,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.08746374434476432,
+        "p25": -0.12343909151557572,
+        "p5": -0.21348940317520362,
+        "p50": -0.07293861532765367,
+        "p75": -0.041869060597671585,
+        "p95": -0.002853839138245367,
+        "worst": -0.27379025481918123
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.0,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.3465285961865182,
+            "p25": 0.2800859999379801,
+            "p5": 0.15183212518165914,
+            "p50": 0.3564927389105297,
+            "p75": 0.4120528410829887,
+            "p95": 0.5228694049537881,
+            "worst": 0.11122462480459094
+          },
+          "sample_count": 227,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9411764705882353,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.13602381824202076,
+            "p25": -0.20291961572492423,
+            "p5": -0.2551480814903583,
+            "p50": -0.14480290702042087,
+            "p75": -0.07365425373270729,
+            "p95": 0.003749403055346831,
+            "worst": -0.36576048124737737
+          },
+          "sample_count": 153,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.21951219512195122,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.09210327984834608,
+            "p25": 0.01965376428605825,
+            "p5": -0.06401922488649056,
+            "p50": 0.12029221911411403,
+            "p75": 0.14014499121257007,
+            "p95": 0.20924939338917337,
+            "worst": -0.0903511451658432
+          },
+          "sample_count": 123,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.5580357142857143,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": 0.013110730074435297,
+            "p25": -0.16941913644674128,
+            "p5": -0.25070292787674114,
+            "p50": -0.04539287959823157,
+            "p75": 0.1445811216721482,
+            "p95": 0.4140363519422682,
+            "worst": -0.36576048124737737
+          },
+          "sample_count": 224,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.13753290370707164,
+        "p25": -0.06363943642727105,
+        "p5": -0.22810938464976063,
+        "p50": 0.13921412316901383,
+        "p75": 0.34374946308085164,
+        "p95": 0.4965632699643267,
+        "worst": -0.36576048124737737
+      },
+      "sample_count": 503,
+      "target_delta": 0.4,
+      "window_days": 90,
+      "worst_maximum_drawdown": -0.37153177238004387
+    },
+    {
+      "asset": "BTC",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.059557339783616145,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.2053584538244584,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06021780041396912,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.20330507092896533,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.05949861153596272,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.20022499658572576,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.059396982998446674,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.19479177398950695,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.05820282578570507,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.1845405893114384,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.067384262281727,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.1740405520095165,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.07449766337991807,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.15339401152371693,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.39175692980961363,
+      "hurdle_return": 0.03963094292911218,
+      "loss_probability": 0.26200873362445415,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.056655821342054644,
+        "p25": -0.09092567346431767,
+        "p5": -0.13248792309527443,
+        "p50": -0.059557339783616145,
+        "p75": -0.02005412237675631,
+        "p95": 0.018885070918433524,
+        "worst": -0.16473286517545632
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.0,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.24158696724451434,
+            "p25": 0.1945324142963154,
+            "p5": 0.11249070796612076,
+            "p50": 0.2544092580209344,
+            "p75": 0.2933708647214104,
+            "p95": 0.33757740935821245,
+            "worst": 0.05463097279482665
+          },
+          "sample_count": 258,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9375,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.22440131551205825,
+            "p25": -0.3510361094265785,
+            "p5": -0.4035623529086578,
+            "p50": -0.25028849599603403,
+            "p75": -0.14879676939127945,
+            "p95": 0.027869873966025076,
+            "worst": -0.4290667889320976
+          },
+          "sample_count": 112,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.17045454545454544,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.1860729135978563,
+            "p25": 0.17950368178982773,
+            "p5": -0.08916624400700246,
+            "p50": 0.20870093500748188,
+            "p75": 0.3125043511817309,
+            "p95": 0.3250031064079022,
+            "worst": -0.13940601279072884
+          },
+          "sample_count": 88,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.32786885245901637,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": 0.10022444106076378,
+            "p25": -0.12678070528827004,
+            "p5": -0.37409028198687266,
+            "p50": 0.21214716980958237,
+            "p75": 0.2931000754436683,
+            "p95": 0.3373475930278043,
+            "worst": -0.4290667889320976
+          },
+          "sample_count": 366,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.11696704499638762,
+        "p25": -0.05255126793518419,
+        "p5": -0.36808645387130867,
+        "p50": 0.2053584538244584,
+        "p75": 0.2887776457084989,
+        "p95": 0.33638655149360647,
+        "worst": -0.4290667889320976
+      },
+      "sample_count": 458,
+      "target_delta": 0.1,
+      "window_days": 180,
+      "worst_maximum_drawdown": -0.44430880846648646
+    },
+    {
+      "asset": "BTC",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.15560265753593955,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.3323445628049789,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.15588253018292503,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.32885362562268405,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.15423698773624084,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.32284522871016086,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.15227298909619968,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.31180249877788657,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.14981307174168895,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.2907828090558355,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.1604935400672818,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.2733804535989326,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.16456701819982883,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.23636364957103323,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.39141054057635083,
+      "hurdle_return": 0.03963094292911218,
+      "loss_probability": 0.2554585152838428,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.13818608023121715,
+        "p25": -0.1959738484937274,
+        "p5": -0.23400626503646055,
+        "p50": -0.15560265753593955,
+        "p75": -0.08795778400620172,
+        "p95": 0.014933020598718112,
+        "worst": -0.3027666550707722
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.0,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.41154821502497274,
+            "p25": 0.3223640844196277,
+            "p5": 0.23056141384303164,
+            "p50": 0.4184896840005303,
+            "p75": 0.5113898859667578,
+            "p95": 0.5602475874326203,
+            "worst": 0.1489152056207974
+          },
+          "sample_count": 258,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9375,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.22394896719643542,
+            "p25": -0.3467088763090621,
+            "p5": -0.41234859123588075,
+            "p50": -0.24971912809660318,
+            "p75": -0.14430467844860861,
+            "p95": 0.04672954611679925,
+            "worst": -0.4242973031442191
+          },
+          "sample_count": 112,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.13636363636363635,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.2765497382309717,
+            "p25": 0.2836869576842708,
+            "p5": -0.06896248533034025,
+            "p50": 0.3379146592728579,
+            "p75": 0.3703996512333128,
+            "p95": 0.4349998470303058,
+            "worst": -0.13524225676069923
+          },
+          "sample_count": 88,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.319672131147541,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": 0.2017284249882942,
+            "p25": -0.12522904943838978,
+            "p5": -0.36742507586333306,
+            "p50": 0.33801681503475545,
+            "p75": 0.44777106749008466,
+            "p95": 0.5574424451782785,
+            "worst": -0.4242973031442191
+          },
+          "sample_count": 366,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.23020421859119586,
+        "p25": -0.007881319566403394,
+        "p5": -0.3618458927299471,
+        "p50": 0.3323445628049789,
+        "p75": 0.44639788307545974,
+        "p95": 0.5514799553475926,
+        "worst": -0.4242973031442191
+      },
+      "sample_count": 458,
+      "target_delta": 0.2,
+      "window_days": 180,
+      "worst_maximum_drawdown": -0.4579782372109885
+    },
+    {
+      "asset": "BTC",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.16255092174912755,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.2944539645321179,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.16298736431777394,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.29111119329655466,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.16072420376715943,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.28653518348521423,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.1579151888136489,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.278812356538163,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.15199276667699255,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.26263677147070263,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.15714656514434328,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.24667068714784426,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.1503410698306497,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.20396742257632378,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.4063189146373168,
+      "hurdle_return": 0.03963094292911218,
+      "loss_probability": 0.26419213973799127,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.15275204753382507,
+        "p25": -0.21790720503731054,
+        "p5": -0.2824077426992017,
+        "p50": -0.16255092174912755,
+        "p75": -0.09273199311065485,
+        "p95": -0.002961204341049092,
+        "worst": -0.3344717546142752
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.0,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.46229452750635397,
+            "p25": 0.30832409546469447,
+            "p5": 0.20114529518674487,
+            "p50": 0.4404747911078224,
+            "p75": 0.587756215041976,
+            "p95": 0.7940661376970197,
+            "worst": 0.08718417931591382
+          },
+          "sample_count": 258,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9642857142857143,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.24995482902272687,
+            "p25": -0.36015234532238716,
+            "p5": -0.42391051430342785,
+            "p50": -0.2760625270137521,
+            "p75": -0.1560168542736848,
+            "p95": -0.03463053889862264,
+            "worst": -0.44332910840374107
+          },
+          "sample_count": 112,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.14772727272727273,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.192919350609301,
+            "p25": 0.1292143221440462,
+            "p5": -0.06634971836326087,
+            "p50": 0.2246350943224823,
+            "p75": 0.29691338097548403,
+            "p95": 0.35488184467052175,
+            "worst": -0.13296046900326286
+          },
+          "sample_count": 88,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.33060109289617484,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": 0.19947969635991783,
+            "p25": -0.13286253489688227,
+            "p5": -0.38508100019060487,
+            "p50": 0.2684699676109389,
+            "p75": 0.44438921885329125,
+            "p95": 0.7706689351583327,
+            "worst": -0.44332910840374107
+          },
+          "sample_count": 366,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.23636233646225416,
+        "p25": -0.04205184715477964,
+        "p5": -0.3740388026690282,
+        "p50": 0.2944539645321179,
+        "p75": 0.47453728561372305,
+        "p95": 0.7523379586959582,
+        "worst": -0.44332910840374107
+      },
+      "sample_count": 458,
+      "target_delta": 0.3,
+      "window_days": 180,
+      "worst_maximum_drawdown": -0.47466443623074606
+    },
+    {
+      "asset": "BTC",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.12808538718651852,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.2768804276450285,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.12812601026498527,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.27226425895210127,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.12559028841094005,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.26371234383377906,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.12213867283806237,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.2511409834253131,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.11864772627301096,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.23293446912852378,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.12460996071877178,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.21769776431522309,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.11564366808479573,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.18712717149926875,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.4053450110159423,
+      "hurdle_return": 0.03963094292911218,
+      "loss_probability": 0.27292576419213976,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.14540838940974557,
+        "p25": -0.2062099909152999,
+        "p5": -0.3356055574892835,
+        "p50": -0.12808538718651852,
+        "p75": -0.06192846237697477,
+        "p95": -0.004751780115977142,
+        "worst": -0.3900371383588775
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.0,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.538040501567598,
+            "p25": 0.3075328148099655,
+            "p5": 0.19195566217131932,
+            "p50": 0.5144388771691256,
+            "p75": 0.6442038371978108,
+            "p95": 1.1382225571918931,
+            "worst": 0.07374776092344493
+          },
+          "sample_count": 258,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9910714285714286,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.2530554254957881,
+            "p25": -0.35676868422791463,
+            "p5": -0.42261445180595425,
+            "p50": -0.2850243538413456,
+            "p75": -0.13522544300200118,
+            "p95": -0.061895422611989694,
+            "worst": -0.4482628250144697
+          },
+          "sample_count": 112,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.1590909090909091,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.16063489765477498,
+            "p25": 0.09291384751298731,
+            "p5": -0.04953871101078422,
+            "p50": 0.18585190076481106,
+            "p75": 0.2466378438450023,
+            "p95": 0.3182437406441739,
+            "worst": -0.120058647367556
+          },
+          "sample_count": 88,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.34153005464480873,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": 0.23456668908775472,
+            "p25": -0.11248175872131752,
+            "p5": -0.38317786898055406,
+            "p50": 0.22781636440242026,
+            "p75": 0.5206306781360206,
+            "p95": 1.0862015051607408,
+            "worst": -0.4482628250144697
+          },
+          "sample_count": 366,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.2720701151583672,
+        "p25": -0.040673328681037096,
+        "p5": -0.3672253717003084,
+        "p50": 0.2768804276450285,
+        "p75": 0.5397870870344106,
+        "p95": 0.9951811553124383,
+        "worst": -0.4482628250144697
+      },
+      "sample_count": 458,
+      "target_delta": 0.4,
+      "window_days": 180,
+      "worst_maximum_drawdown": -0.477624448326356
+    },
+    {
+      "asset": "ETH",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.005401891458755835,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.03528337504303014,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.005465609539937324,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.03493054129259984,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.005285637365756211,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.03440129066695439,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.005431703325900003,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.03330399078010554,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.004901665360286043,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.03103218540926221,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.006357662676478159,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.028936014804932037,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.007116819449482175,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.024123627568804963,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.2757016103372493,
+      "hurdle_return": 0.006498656494542621,
+      "loss_probability": 0.324577861163227,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.0030832310113886466,
+        "p25": -0.021922397709741553,
+        "p5": -0.04232217150654055,
+        "p50": -0.005401891458755835,
+        "p75": 0.010398090483028068,
+        "p95": 0.04932238288118517,
+        "worst": -0.059867867574727125
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.026041666666666668,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.04511085616333163,
+            "p25": 0.034799744840319835,
+            "p5": 0.019634112275788186,
+            "p50": 0.03994973295935422,
+            "p75": 0.061775115357071975,
+            "p95": 0.06902650865738007,
+            "worst": -0.08149683949074404
+          },
+          "sample_count": 192,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.6883720930232559,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.06893249889853074,
+            "p25": -0.11991945889690353,
+            "p5": -0.27865684992128126,
+            "p50": -0.05756960518747711,
+            "p75": 0.02413834416950622,
+            "p95": 0.0566440667461008,
+            "worst": -0.36501998709438244
+          },
+          "sample_count": 215,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.15873015873015872,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.0361263294163291,
+            "p25": 0.02068622351392274,
+            "p5": -0.04112762351601512,
+            "p50": 0.04098483192298452,
+            "p75": 0.062325016390719024,
+            "p95": 0.08170361862140879,
+            "worst": -0.07398576509764199
+          },
+          "sample_count": 126,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.1303064676685165,
+            "p25": -0.20332371548921407,
+            "p5": -0.3376069320931765,
+            "p50": -0.10235079621803322,
+            "p75": -0.07355337870975531,
+            "p95": 0.06304432511417042,
+            "worst": -0.36501998709438244
+          },
+          "sample_count": 70,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": -0.0030155447905571655,
+        "p25": -0.03405298853066163,
+        "p5": -0.21388153682519317,
+        "p50": 0.03528337504303014,
+        "p75": 0.05241814423449975,
+        "p95": 0.0687365558533823,
+        "worst": -0.36501998709438244
+      },
+      "sample_count": 533,
+      "target_delta": 0.1,
+      "window_days": 30,
+      "worst_maximum_drawdown": -0.37295705993876793
+    },
+    {
+      "asset": "ETH",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.01180230017375486,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.04934740324109321,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.011794474167433617,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.04852707864884748,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.011247376154715561,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.047076818737562365,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.010869340199350937,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.04434185816942605,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.00985587191783639,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.039501401861390326,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.011454547505666487,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.034330768026091724,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.011655204407514164,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.024319677882757393,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.2840922331317807,
+      "hurdle_return": 0.006498656494542621,
+      "loss_probability": 0.350844277673546,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.01166754895280379,
+        "p25": -0.03193865968792664,
+        "p5": -0.06840228367673121,
+        "p50": -0.01180230017375486,
+        "p75": 0.007901114738620584,
+        "p95": 0.044666930529022084,
+        "worst": -0.10515841470988091
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.015625,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.07949783850261931,
+            "p25": 0.06739709821650736,
+            "p5": 0.02583402399414526,
+            "p50": 0.08694880530499505,
+            "p75": 0.09333939966094001,
+            "p95": 0.11162363303545841,
+            "worst": -0.07632972075928701
+          },
+          "sample_count": 192,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.7674418604651163,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.08426618447622367,
+            "p25": -0.14814613134527155,
+            "p5": -0.2847222283930737,
+            "p50": -0.07583428550353699,
+            "p75": -0.003894148898913652,
+            "p95": 0.07406142827701669,
+            "worst": -0.35888053136483655
+          },
+          "sample_count": 215,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.15079365079365079,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.048896672657346936,
+            "p25": 0.024316594493351273,
+            "p5": -0.03342595602405701,
+            "p50": 0.05410096800285635,
+            "p75": 0.07826152704545403,
+            "p95": 0.113458510280882,
+            "worst": -0.07704934745271208
+          },
+          "sample_count": 126,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9285714285714286,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.1463439983357187,
+            "p25": -0.2155521117084539,
+            "p5": -0.3494514407956994,
+            "p50": -0.1345859588053861,
+            "p75": -0.0764820560543123,
+            "p95": 0.06385341635428332,
+            "worst": -0.35888053136483655
+          },
+          "sample_count": 70,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.006205133367618264,
+        "p25": -0.04747414949806461,
+        "p5": -0.22516219155518274,
+        "p50": 0.04934740324109321,
+        "p75": 0.08323275917244533,
+        "p95": 0.11103905342623714,
+        "worst": -0.35888053136483655
+      },
+      "sample_count": 533,
+      "target_delta": 0.2,
+      "window_days": 30,
+      "worst_maximum_drawdown": -0.3902646821675896
+    },
+    {
+      "asset": "ETH",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.013220568997689813,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.03673832137963284,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.012978692838396625,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.03512671534177401,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.012580150445537012,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.034119989463057665,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.011852392652977627,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.03153831316283721,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.010818285949563257,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.027337697817665,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.012094956173368539,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.022784451453847148,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.01186496666698419,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.013478934341035385,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.29595351602132797,
+      "hurdle_return": 0.006498656494542621,
+      "loss_probability": 0.38649155722326456,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.016823626965311044,
+        "p25": -0.03843937702115438,
+        "p5": -0.08137008177655243,
+        "p50": -0.013220568997689813,
+        "p75": 0.0062087630416855855,
+        "p95": 0.033066504281815,
+        "worst": -0.12085273430954287
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.010416666666666666,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.11579876746377549,
+            "p25": 0.08781212827801044,
+            "p5": 0.03161371928495519,
+            "p50": 0.12696076504181997,
+            "p75": 0.1524074585472029,
+            "p95": 0.18091764191151163,
+            "worst": -0.04945390363650903
+          },
+          "sample_count": 192,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.8418604651162791,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.10616411100661031,
+            "p25": -0.18233960993399262,
+            "p5": -0.2915953422547122,
+            "p50": -0.09211212093557897,
+            "p75": -0.022531639480941,
+            "p95": 0.05225340233587449,
+            "worst": -0.38294679514657237
+          },
+          "sample_count": 215,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.18253968253968253,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.04685531320119381,
+            "p25": 0.011540665327723021,
+            "p5": -0.030060534890589546,
+            "p50": 0.048658749666039336,
+            "p75": 0.0870749143588721,
+            "p95": 0.12665129056573504,
+            "worst": -0.07500718232462633
+          },
+          "sample_count": 126,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9285714285714286,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.16723833692482895,
+            "p25": -0.24217097024486336,
+            "p5": -0.3533502573787949,
+            "p50": -0.1646652021742414,
+            "p75": -0.09823702695113537,
+            "p95": 0.09162405827813039,
+            "worst": -0.38294679514657237
+          },
+          "sample_count": 70,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.009965945497137139,
+        "p25": -0.06464588433296337,
+        "p5": -0.24659585895113928,
+        "p50": 0.03673832137963284,
+        "p75": 0.10689913359128833,
+        "p95": 0.16255806998758038,
+        "worst": -0.38294679514657237
+      },
+      "sample_count": 533,
+      "target_delta": 0.3,
+      "window_days": 30,
+      "worst_maximum_drawdown": -0.40937850472325665
+    },
+    {
+      "asset": "ETH",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.01600629755878557,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.026010367683419355,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.015894891701024635,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.024892297162634743,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.015000298979219503,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.023479757926217253,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.014029391212949997,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.02082039761088504,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.01164940370180177,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.015463488968737909,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.012144736834899538,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.010826709140206742,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.00974380064779418,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.0005807516455331469,
+          "vault_passes_hurdle": false
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.3000374016529036,
+      "hurdle_return": 0.006498656494542621,
+      "loss_probability": 0.42213883677298314,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.019346316478831085,
+        "p25": -0.040390825206260625,
+        "p5": -0.08297518844996987,
+        "p50": -0.01600629755878557,
+        "p75": 0.003975553789745869,
+        "p95": 0.034272796446801285,
+        "worst": -0.15593982386896604
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.015625,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.14693430843865005,
+            "p25": 0.09534488770822847,
+            "p5": 0.039935388754139815,
+            "p50": 0.1521471427824237,
+            "p75": 0.20224363004736096,
+            "p95": 0.23793359296913438,
+            "worst": -0.007755165740398473
+          },
+          "sample_count": 192,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.8976744186046511,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.11784984020431476,
+            "p25": -0.1906700293460561,
+            "p5": -0.2885335886126171,
+            "p50": -0.10417984076308351,
+            "p75": -0.037855502203076596,
+            "p95": 0.02010304521639382,
+            "worst": -0.3985426199230697
+          },
+          "sample_count": 215,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.23015873015873015,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.041351551092049806,
+            "p25": 0.0020734314010659727,
+            "p5": -0.03121843857714174,
+            "p50": 0.03257541798697461,
+            "p75": 0.07610453646834708,
+            "p95": 0.13110879610570164,
+            "worst": -0.06923771948491764
+          },
+          "sample_count": 126,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9285714285714286,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.17973631073588944,
+            "p25": -0.2542461295733507,
+            "p5": -0.3575133086249709,
+            "p50": -0.16737278866106137,
+            "p75": -0.12149338267153789,
+            "p95": 0.04863039024012762,
+            "worst": -0.3985426199230697
+          },
+          "sample_count": 70,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.015166917474467936,
+        "p25": -0.07420370877665294,
+        "p5": -0.25412041404407987,
+        "p50": 0.026010367683419355,
+        "p75": 0.12824874347957405,
+        "p95": 0.22593312129310417,
+        "worst": -0.3985426199230697
+      },
+      "sample_count": 533,
+      "target_delta": 0.4,
+      "window_days": 30,
+      "worst_maximum_drawdown": -0.4238660479082784
+    },
+    {
+      "asset": "ETH",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.01686645342991304,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.03684014807657543,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.017030473489666843,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.035933486366757764,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.016614615160729148,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.0350674433010035,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.016100238754772327,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.03424376071796102,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.014497203396304139,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.030238680051235898,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.017045856159321988,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.021745033048410432,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.015955294856850422,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.00625392620157475,
+          "vault_passes_hurdle": false
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.4296605125082734,
+      "hurdle_return": 0.01962294154707611,
+      "loss_probability": 0.4194831013916501,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.013732081807802214,
+        "p25": -0.045465196358080065,
+        "p5": -0.07508709963354993,
+        "p50": -0.01686645342991304,
+        "p75": 0.012044443923437724,
+        "p95": 0.0701305326551872,
+        "worst": -0.10963393464330153
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.0776255707762557,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.13193524726995887,
+            "p25": 0.1005981548887479,
+            "p5": -0.023150615477035816,
+            "p50": 0.14802686990615777,
+            "p75": 0.18497930404583074,
+            "p95": 0.23550419293495262,
+            "worst": -0.11251016124239466
+          },
+          "sample_count": 219,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.893719806763285,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.1911204879076633,
+            "p25": -0.28851189193442683,
+            "p5": -0.4594546334541664,
+            "p50": -0.20206488735880135,
+            "p75": -0.07309658664062157,
+            "p95": 0.026026520199320405,
+            "worst": -0.477427133551931
+          },
+          "sample_count": 207,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.11688311688311688,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.08293613044986443,
+            "p25": 0.035206206614402547,
+            "p5": -0.0907194381246845,
+            "p50": 0.10682322507627395,
+            "p75": 0.1397616999010698,
+            "p95": 0.2227130237894076,
+            "worst": -0.24696453076383518
+          },
+          "sample_count": 77,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.6026200873362445,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.09998955524488402,
+            "p25": -0.2676705582556693,
+            "p5": -0.44301962532641936,
+            "p50": -0.08441027227523923,
+            "p75": 0.07910458456873481,
+            "p95": 0.1521104552795186,
+            "worst": -0.477427133551931
+          },
+          "sample_count": 229,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": -0.008513001590707265,
+        "p25": -0.15259490360095157,
+        "p5": -0.36478413670259524,
+        "p50": 0.03684014807657543,
+        "p75": 0.14590685642158574,
+        "p95": 0.22142943420167702,
+        "worst": -0.477427133551931
+      },
+      "sample_count": 503,
+      "target_delta": 0.1,
+      "window_days": 90,
+      "worst_maximum_drawdown": -0.5166611760343347
+    },
+    {
+      "asset": "ETH",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.029572513661669145,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.07074499274224033,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.029581754500971225,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.0683982848125645,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.028302448090081367,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.06548744063899947,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.026983392586459126,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.061294479428859745,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.024998651957117556,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.05275520505960046,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.028078933100209563,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.045837737531056834,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.028296082695965452,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.0285359178810239,
+          "vault_passes_hurdle": true
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.4375929358611143,
+      "hurdle_return": 0.01962294154707611,
+      "loss_probability": 0.43737574552683894,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.0308989032334324,
+        "p25": -0.07348184284197005,
+        "p5": -0.10556570368798876,
+        "p50": -0.029572513661669145,
+        "p75": 0.0028015727830440432,
+        "p95": 0.05643015681764351,
+        "worst": -0.1803608037726375
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.0684931506849315,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.20216003695212326,
+            "p25": 0.14556633811683473,
+            "p5": -0.012130644521200159,
+            "p50": 0.21872960618177673,
+            "p75": 0.27144210359182797,
+            "p95": 0.33281091158234655,
+            "worst": -0.11747539600955748
+          },
+          "sample_count": 219,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9130434782608695,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.20164972288957364,
+            "p25": -0.28219196170940397,
+            "p5": -0.450419126981285,
+            "p50": -0.19954695112740095,
+            "p75": -0.13158664892863486,
+            "p95": 0.07469041894126494,
+            "worst": -0.495087738484994
+          },
+          "sample_count": 207,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.2077922077922078,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.09551937886426701,
+            "p25": 0.04537398366353229,
+            "p5": -0.15552006736729318,
+            "p50": 0.10928591753294103,
+            "p75": 0.15561857470222273,
+            "p95": 0.30394696004131555,
+            "worst": -0.21388843209479425
+          },
+          "sample_count": 77,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.6593886462882096,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.10830727196932449,
+            "p25": -0.24528398274305796,
+            "p5": -0.4457306182418802,
+            "p50": -0.1652603459408427,
+            "p75": 0.09056271304467223,
+            "p95": 0.19724548939831305,
+            "worst": -0.495087738484994
+          },
+          "sample_count": 229,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.0196551642682342,
+        "p25": -0.18558461397946147,
+        "p5": -0.365437121005981,
+        "p50": 0.07074499274224033,
+        "p75": 0.20627053028387532,
+        "p95": 0.32593350627148643,
+        "worst": -0.495087738484994
+      },
+      "sample_count": 503,
+      "target_delta": 0.2,
+      "window_days": 90,
+      "worst_maximum_drawdown": -0.5254517670031295
+    },
+    {
+      "asset": "ETH",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.03529556191993618,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.07326526277577661,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.03487014456339102,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.07231393022488977,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.033441506655548264,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.07055490008612628,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.03252344411275725,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.06379168863137114,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.02892542002930591,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.05439037122946104,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.03163494782222334,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.043454736394844214,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.026658213343438587,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.018199513056242594,
+          "vault_passes_hurdle": false
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.44237253399465326,
+      "hurdle_return": 0.01962294154707611,
+      "loss_probability": 0.44731610337972166,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.03637293784271261,
+        "p25": -0.0729551568583903,
+        "p5": -0.1244411842830895,
+        "p50": -0.03529556191993618,
+        "p75": -0.002881334872842873,
+        "p95": 0.06046138042509041,
+        "worst": -0.2026469106259718
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.0365296803652968,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.2620651884525984,
+            "p25": 0.19964138174011858,
+            "p5": 0.030179090188371796,
+            "p50": 0.2744331781876572,
+            "p75": 0.3415867438296286,
+            "p95": 0.4373231836292527,
+            "worst": -0.0916836175726885
+          },
+          "sample_count": 219,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9758454106280193,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.23228399113558282,
+            "p25": -0.3037687956431542,
+            "p5": -0.44961906849467403,
+            "p50": -0.2289188582071151,
+            "p75": -0.15988702553264367,
+            "p95": -0.04693020178963178,
+            "worst": -0.5028886631089949
+          },
+          "sample_count": 207,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.19480519480519481,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.10350812400860677,
+            "p25": 0.04495656364666978,
+            "p5": -0.12874431194649189,
+            "p50": 0.10496769271671336,
+            "p75": 0.17329022638618885,
+            "p95": 0.26952688455277113,
+            "worst": -0.16487955511604147
+          },
+          "sample_count": 77,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.6986899563318777,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.11368692056435528,
+            "p25": -0.2649554569168866,
+            "p5": -0.4383850451640627,
+            "p50": -0.16487955511604147,
+            "p75": 0.07731811154088142,
+            "p95": 0.24262226970303896,
+            "worst": -0.5028886631089949
+          },
+          "sample_count": 229,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.034353112633630487,
+        "p25": -0.19813391779329353,
+        "p5": -0.38809973799434605,
+        "p50": 0.07326526277577661,
+        "p75": 0.2584424355587893,
+        "p95": 0.42418035719096525,
+        "worst": -0.5028886631089949
+      },
+      "sample_count": 503,
+      "target_delta": 0.3,
+      "window_days": 90,
+      "worst_maximum_drawdown": -0.5300579026743182
+    },
+    {
+      "asset": "ETH",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.034144629286881355,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.06768057896056479,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.03393652768207984,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.06489085359179604,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.03209053079514873,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.06070626553864294,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.02981691600828009,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.05384507350574719,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.025175443003862534,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": 0.04519465928372863,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.025485532864366507,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": 0.03491983382411519,
+          "vault_passes_hurdle": true
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.019185033104241682,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": 0.014720541095504858,
+          "vault_passes_hurdle": false
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": true,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.454815748111096,
+      "hurdle_return": 0.01962294154707611,
+      "loss_probability": 0.4433399602385686,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.039197086886411825,
+        "p25": -0.06180179707639666,
+        "p5": -0.15642384709666227,
+        "p50": -0.034144629286881355,
+        "p75": -0.004872559465652305,
+        "p95": 0.03511554947306275,
+        "worst": -0.22992881882854005
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.0182648401826484,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.3237760489604964,
+            "p25": 0.2246001873836152,
+            "p5": 0.08530163902922057,
+            "p50": 0.32257204032174713,
+            "p75": 0.42214296326607115,
+            "p95": 0.5717263074138109,
+            "worst": -0.04038002596699797
+          },
+          "sample_count": 219,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9806763285024155,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.24221842659589474,
+            "p25": -0.3134892392331041,
+            "p5": -0.45931178612780743,
+            "p50": -0.24850156827303183,
+            "p75": -0.15252414075438026,
+            "p95": -0.045125992679725106,
+            "worst": -0.5090943915409913
+          },
+          "sample_count": 207,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.2077922077922078,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.09044314561896746,
+            "p25": 0.019137973334178104,
+            "p5": -0.10130274065885776,
+            "p50": 0.07636049532586076,
+            "p75": 0.16113310543716342,
+            "p95": 0.2996002190189311,
+            "worst": -0.19095900974314395
+          },
+          "sample_count": 77,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.6986899563318777,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.11434887869343673,
+            "p25": -0.2849262037538398,
+            "p5": -0.45765804866899945,
+            "p50": -0.16115267192467542,
+            "p75": 0.057839534561765715,
+            "p95": 0.29109347164035443,
+            "worst": -0.5090943915409913
+          },
+          "sample_count": 229,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.05513292769315904,
+        "p25": -0.209794622284165,
+        "p5": -0.40037011589738347,
+        "p50": 0.06768057896056479,
+        "p75": 0.29626647277630724,
+        "p95": 0.5189161588567297,
+        "worst": -0.5090943915409913
+      },
+      "sample_count": 503,
+      "target_delta": 0.4,
+      "window_days": 90,
+      "worst_maximum_drawdown": -0.5418100585267271
+    },
+    {
+      "asset": "ETH",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.031687780480471654,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": 0.01596847378621946,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.031624491985091235,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": 0.013359985125882417,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.030478710618445967,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": 0.009606279569404961,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.029751854995665773,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": 0.004629247989669623,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.028152026160666803,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": -0.004695328220783085,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.032044363771377524,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": -0.010235060332641223,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.030606461045708744,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": -0.029451511940376457,
+          "vault_passes_hurdle": false
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": false,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.5118492410918125,
+      "hurdle_return": 0.03963094292911218,
+      "loss_probability": 0.4868995633187773,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.028943569822725432,
+        "p25": -0.07592296951797048,
+        "p5": -0.10654191963069626,
+        "p50": -0.031687780480471654,
+        "p75": 0.0030861076650860377,
+        "p95": 0.07631369909083682,
+        "worst": -0.13523759178265943
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.09944751381215469,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.22983513917817772,
+            "p25": 0.16077409057196346,
+            "p5": -0.12203283306238488,
+            "p50": 0.27056125818569043,
+            "p75": 0.3310528773170469,
+            "p95": 0.422156020834914,
+            "worst": -0.18202296050968902
+          },
+          "sample_count": 181,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.9027027027027027,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.2852885190971301,
+            "p25": -0.45023766337779836,
+            "p5": -0.5141936286882943,
+            "p50": -0.3247781298383955,
+            "p75": -0.1505481822467596,
+            "p95": 0.05111176794369872,
+            "worst": -0.5403253958346645
+          },
+          "sample_count": 185,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.41304347826086957,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.018549653605992873,
+            "p25": -0.08154638327688865,
+            "p5": -0.21415397098509695,
+            "p50": 0.032006082810087544,
+            "p75": 0.14538675013481484,
+            "p95": 0.1784376475181878,
+            "worst": -0.2798466689433795
+          },
+          "sample_count": 92,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.5013698630136987,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.04592133617027435,
+            "p25": -0.320914668590753,
+            "p5": -0.49864379941503,
+            "p50": -0.0003783987613551476,
+            "p75": 0.17909385919113885,
+            "p95": 0.395118597909097,
+            "worst": -0.5403253958346645
+          },
+          "sample_count": 365,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": -0.02068045351521299,
+        "p25": -0.2629188996062706,
+        "p5": -0.4930314828430345,
+        "p50": 0.01596847378621946,
+        "p75": 0.2179585883927898,
+        "p95": 0.37733947794303085,
+        "worst": -0.5403253958346645
+      },
+      "sample_count": 458,
+      "target_delta": 0.1,
+      "window_days": 180,
+      "worst_maximum_drawdown": -0.5910409359693385
+    },
+    {
+      "asset": "ETH",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06816877412837552,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": -0.028488994409099633,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06820028910582929,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": -0.030634749180207994,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06694880410545359,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": -0.034154685750818314,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06409702072379621,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": -0.04455741963084234,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.060330961831772494,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": -0.0533187131277641,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.0661599830124856,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": -0.06875015433073663,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06484896827609053,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": -0.1073674261761377,
+          "vault_passes_hurdle": false
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": false,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.5044146673866955,
+      "hurdle_return": 0.03963094292911218,
+      "loss_probability": 0.517467248908297,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.05483710392092962,
+        "p25": -0.09964086182752287,
+        "p5": -0.1391113546113307,
+        "p50": -0.06816877412837552,
+        "p75": -0.011733244946242696,
+        "p95": 0.05403896124060993,
+        "worst": -0.17675343408905447
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.06629834254143646,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.3264712639433128,
+            "p25": 0.22559630584533275,
+            "p5": -0.05181287725730721,
+            "p50": 0.33408807801125917,
+            "p75": 0.4568736624902774,
+            "p95": 0.6095517270820723,
+            "worst": -0.10106623549258975
+          },
+          "sample_count": 181,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 1.0,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.3086325508365957,
+            "p25": -0.43745787782656564,
+            "p5": -0.5052436573784669,
+            "p50": -0.31435343530085813,
+            "p75": -0.19738056310832852,
+            "p95": -0.10195428310706992,
+            "worst": -0.5375296407072822
+          },
+          "sample_count": 185,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.43478260869565216,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.017811698781096046,
+            "p25": -0.055660484563841955,
+            "p5": -0.15311381855580786,
+            "p50": 0.012608540967117943,
+            "p75": 0.07536250573675729,
+            "p95": 0.2651195985190916,
+            "worst": -0.19579685846977724
+          },
+          "sample_count": 92,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.5616438356164384,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.04114377937786385,
+            "p25": -0.31411525970459375,
+            "p5": -0.48522777137895,
+            "p50": -0.09168711509270988,
+            "p75": 0.22559630584533275,
+            "p95": 0.4805538425009642,
+            "worst": -0.5375296407072822
+          },
+          "sample_count": 365,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.007932212132817126,
+        "p25": -0.2410887268476464,
+        "p5": -0.48357217808537245,
+        "p50": -0.028488994409099633,
+        "p75": 0.28016274586152445,
+        "p95": 0.515364629203366,
+        "worst": -0.5375296407072822
+      },
+      "sample_count": 458,
+      "target_delta": 0.2,
+      "window_days": 180,
+      "worst_maximum_drawdown": -0.6059195522601044
+    },
+    {
+      "asset": "ETH",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.06037849361151855,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": -0.021949241329575264,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.060157981237351055,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": -0.02502388332107857,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.058133951690069643,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": -0.028515773844108444,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.05575753266986371,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": -0.033920161304830096,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.0511671417618795,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": -0.05902303176267157,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.05405545981132023,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": -0.0683723698054863,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.05087900216441146,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": -0.10383220498586476,
+          "vault_passes_hurdle": false
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": false,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.511689862680791,
+      "hurdle_return": 0.03963094292911218,
+      "loss_probability": 0.517467248908297,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.058225444082032236,
+        "p25": -0.10929367836644369,
+        "p5": -0.1747746811542125,
+        "p50": -0.06037849361151855,
+        "p75": -0.012288102796919767,
+        "p95": 0.0712025394951669,
+        "worst": -0.24097687451855745
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.06629834254143646,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.4167625271319922,
+            "p25": 0.2602799838256984,
+            "p5": -0.02768503516772558,
+            "p50": 0.4598761485229026,
+            "p75": 0.5847579750600636,
+            "p95": 0.7350625800467481,
+            "worst": -0.09458474559203578
+          },
+          "sample_count": 181,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 1.0,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.31387053297683015,
+            "p25": -0.4301891552455648,
+            "p5": -0.5136558734478399,
+            "p50": -0.2935258744588519,
+            "p75": -0.20872933162693486,
+            "p95": -0.0916017485524646,
+            "worst": -0.5457696554388236
+          },
+          "sample_count": 185,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.43478260869565216,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.02653393446451942,
+            "p25": -0.04911484516699943,
+            "p5": -0.11084949447465439,
+            "p50": 0.022699528798822866,
+            "p75": 0.08035188332262477,
+            "p95": 0.24983585402753733,
+            "worst": -0.15296612075045302
+          },
+          "sample_count": 92,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.5589041095890411,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": -0.014136900922710445,
+            "p25": -0.292062294467055,
+            "p5": -0.4934589523164389,
+            "p50": -0.06927854740654171,
+            "p75": 0.2591905662021814,
+            "p95": 0.6092831513563955,
+            "worst": -0.5457696554388236
+          },
+          "sample_count": 365,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.043251289914656765,
+        "p25": -0.25373180042925975,
+        "p5": -0.48452241330823814,
+        "p50": -0.021949241329575264,
+        "p75": 0.3459812132136019,
+        "p95": 0.6531302475182863,
+        "worst": -0.5457696554388236
+      },
+      "sample_count": 458,
+      "target_delta": 0.3,
+      "window_days": 180,
+      "worst_maximum_drawdown": -0.6130966895289996
+    },
+    {
+      "asset": "ETH",
+      "capacity": [
+        {
+          "additional_hedge_cost_bps": 0,
+          "aum_usdc": 100000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.053557989477184965,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 0,
+          "vault_median_return": -0.017398123763877116,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 1,
+          "aum_usdc": 250000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.053332464810272054,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 100,
+          "vault_median_return": -0.022705985975282263,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 2,
+          "aum_usdc": 500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.05074201512600583,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 250,
+          "vault_median_return": -0.026993011398794606,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 4,
+          "aum_usdc": 1000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.045738456155226884,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 500,
+          "vault_median_return": -0.0385578764752709,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 8,
+          "aum_usdc": 2500000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.039236694854266854,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1000,
+          "vault_median_return": -0.05872575344531772,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 15,
+          "aum_usdc": 5000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.040134239979275066,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 1500,
+          "vault_median_return": -0.08008873560934435,
+          "vault_passes_hurdle": false
+        },
+        {
+          "additional_hedge_cost_bps": 25,
+          "aum_usdc": 10000000,
+          "jointly_viable": false,
+          "mm_is_profitable": false,
+          "mm_median_return_on_vault_aum": -0.03420943735704643,
+          "observation_class": "modeled",
+          "premium_haircut_bps": 2500,
+          "vault_median_return": -0.12336481688041365,
+          "vault_passes_hurdle": false
+        }
+      ],
+      "checks": {
+        "all_regimes_sufficient": true,
+        "loss_probability_within_limit": false,
+        "median_mm_hedged_return_nonnegative": false,
+        "median_return_above_hurdle": false,
+        "worst_drawdown_within_limit": false
+      },
+      "expected_shortfall_5": -0.5221906123914501,
+      "hurdle_return": 0.03963094292911218,
+      "loss_probability": 0.5152838427947598,
+      "maximum_modeled_jointly_viable_aum_usdc": 0,
+      "mm_hedged_return_distribution": {
+        "mean": -0.05216342307009363,
+        "p25": -0.09445238708740132,
+        "p5": -0.1405131376413642,
+        "p50": -0.053557989477184965,
+        "p75": -0.015521535954633863,
+        "p95": 0.035667726948683205,
+        "worst": -0.1998528662241486
+      },
+      "production_ready": false,
+      "regimes": [
+        {
+          "loss_probability": 0.055248618784530384,
+          "regime": "bull",
+          "return_distribution": {
+            "mean": 0.4859471947700741,
+            "p25": 0.2999809423596369,
+            "p5": -7.18102706759316e-05,
+            "p50": 0.4967373931373531,
+            "p75": 0.6943654055357451,
+            "p95": 0.9090581911877913,
+            "worst": -0.06417442988349487
+          },
+          "sample_count": 181,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 1.0,
+          "regime": "bear",
+          "return_distribution": {
+            "mean": -0.32290897693531434,
+            "p25": -0.42727663976485364,
+            "p5": -0.5268254901955134,
+            "p50": -0.306302499625709,
+            "p75": -0.21530023292322975,
+            "p95": -0.13641927078958013,
+            "worst": -0.5538767048732507
+          },
+          "sample_count": 185,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.44565217391304346,
+          "regime": "sideways",
+          "return_distribution": {
+            "mean": 0.030303055520228012,
+            "p25": -0.05695713884120432,
+            "p5": -0.12930897949169384,
+            "p50": 0.02836973700184342,
+            "p75": 0.0958228244321343,
+            "p95": 0.24525807266844624,
+            "worst": -0.18813007437330753
+          },
+          "sample_count": 92,
+          "sufficient_sample": true
+        },
+        {
+          "loss_probability": 0.5616438356164384,
+          "regime": "volatility_crash",
+          "return_distribution": {
+            "mean": 0.002367617557296739,
+            "p25": -0.29314340935512184,
+            "p5": -0.5050412022136087,
+            "p50": -0.10393708682461356,
+            "p75": 0.2743239381529612,
+            "p95": 0.7383161814922687,
+            "worst": -0.5538767048732507
+          },
+          "sample_count": 365,
+          "sufficient_sample": true
+        }
+      ],
+      "return_distribution": {
+        "mean": 0.06769904503976253,
+        "p25": -0.25459345111820963,
+        "p5": -0.4977665415156004,
+        "p50": -0.017398123763877116,
+        "p75": 0.36817661948030855,
+        "p95": 0.791364305729085,
+        "worst": -0.5538767048732507
+      },
+      "sample_count": 458,
+      "target_delta": 0.4,
+      "window_days": 180,
+      "worst_maximum_drawdown": -0.6179266277959261
+    }
+  ],
+  "production_ready_policy_count": 0,
+  "warning": "Research output only. Premiums, MM hedging and capacity are modeled; none are observed Binary fills. BTC is research-only and does not alter the ETH/USDC Milestone 1 scope."
+}
