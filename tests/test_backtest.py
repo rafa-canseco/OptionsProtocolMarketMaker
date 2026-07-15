@@ -10,6 +10,7 @@ from src.backtest.engine import (
     binary_bid_premium,
     protected_call_floor,
     run_strategy,
+    select_protected_call_strike,
 )
 from src.backtest.models import AssignmentLot, CostScenario, StrategyConfig
 from src.backtest.probe import run_coverage_probe
@@ -34,7 +35,7 @@ def _settings(window_days=(4,)) -> BacktestSettings:
         minimum_premium_bps=(0,),
         call_margins_usd=(0,),
         protection_modes=("lot_gross",),
-        strike_increment_usd=25,
+        strike_increment_usd=5,
         risk_free_rate=0.05,
         coverage_gate=CoverageGate(0.95, 0.05, 8, 6),
         cost_scenarios=(costs,),
@@ -96,6 +97,19 @@ def test_call_floor_never_relaxes_an_individual_lot_basis():
     assert protected_call_floor(high, lots, "lot_gross", 50) == 2250
     assert protected_call_floor(high, lots, "lot_gross_plus_weighted_gross", 50) == 2250
     assert protected_call_floor(high, lots, "lot_gross_plus_weighted_net", 50) == 2250
+
+
+def test_call_uses_nearest_five_dollar_strike_strictly_above_basis():
+    assert select_protected_call_strike(2000, 5) == 2005
+    assert select_protected_call_strike(2050, 5) == 2055
+
+
+def test_call_strike_does_not_move_with_spot_or_target_delta():
+    lot = AssignmentLot(1, 1, 2000, 1950, 0, 2000, 50)
+    floor = protected_call_floor(lot, [lot], "lot_gross", 0)
+    strike = select_protected_call_strike(floor, 5)
+    assert strike == 2005
+    assert strike < 2100  # ITM is valid when it still protects gross basis.
 
 
 def test_assignment_lot_is_called_only_above_gross_basis(tmp_path):

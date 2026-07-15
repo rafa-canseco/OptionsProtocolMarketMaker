@@ -137,6 +137,11 @@ def protected_call_floor(
     return max(lot.gross_basis, aggregate_floor) + margin_usd
 
 
+def select_protected_call_strike(floor: float, strike_increment: float) -> float:
+    """Select the nearest listed strike strictly above the protected floor."""
+    return (math.floor(floor / strike_increment) + 1) * strike_increment
+
+
 def _execution_cost(notional: float, config: StrategyConfig) -> float:
     return notional * config.costs.fee_bps_notional / 10_000 + config.costs.gas_usdc
 
@@ -294,18 +299,7 @@ def _open_calls(
             < lot.gross_basis + config.call_margin_usd
         ):
             ledger.lot_floor_breach_opportunities += 1
-        strike = select_strike(
-            is_put=False,
-            spot=spot,
-            iv=iv,
-            time_years=time_years,
-            target_delta=config.target_delta,
-            risk_free_rate=settings.risk_free_rate,
-            strike_increment=settings.strike_increment_usd,
-            minimum_call_strike=floor,
-        )
-        if strike is None:
-            continue
+        strike = select_protected_call_strike(floor, settings.strike_increment_usd)
         premium_per_eth, _, _ = binary_bid_premium(
             is_put=False,
             spot=spot,

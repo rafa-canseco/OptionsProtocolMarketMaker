@@ -25,7 +25,7 @@ def write_results(rows: list[dict[str, Any]], output_dir: Path) -> None:
 
     fieldnames = sorted({key for row in rows for key in row})
     with (output_dir / "results.csv").open("w", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = csv.DictWriter(handle, fieldnames=fieldnames, lineterminator="\n")
         writer.writeheader()
         writer.writerows(_flatten(row) for row in rows)
 
@@ -161,6 +161,7 @@ def write_markdown_report(
             "|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
     )
+    base_bests: dict[int, dict[str, Any]] = {}
     for window_days in (30, 90, 180):
         candidates = [
             row
@@ -171,6 +172,7 @@ def write_markdown_report(
             and row["protection_mode"] == "lot_gross"
         ]
         best = max(candidates, key=lambda row: row["absolute_return"])
+        base_bests[window_days] = best
         lines.append(
             f"| {window_days}d | {best['absolute_return']:.2%} | "
             f"{best['maximum_drawdown']:.2%} | ${best['premium_net_usdc']:,.0f} | "
@@ -207,13 +209,18 @@ def write_markdown_report(
             "",
             "## Material tradeoffs",
             "",
-            "- The leading 30-day base result is dominated by unrealized assigned-ETH PnL;",
-            "  it completed no full wheel cycle and should not be read as stable premium yield.",
-            "- The leading 90-day base result had no assignment and is a premium-only CSP path.",
-            "- The leading 180-day base result completed one cycle but assigned ETH was idle",
-            "  for most of its exposure because the protected call floor excluded lower strikes.",
-            "- Low-cost rankings are optimistic sensitivities. Base and stressed execution",
-            "  assumptions must remain visible when B1N-346 evaluates a policy.",
+            *[
+                f"- The leading {window_days}-day base result completed "
+                f"{base_bests[window_days]['complete_cycles']} cycle(s), used "
+                f"X=${base_bests[window_days]['call_margin_usd']:,.0f}, and had "
+                f"{base_bests[window_days]['eth_idle_share']:.1%} ETH idle exposure."
+                for window_days in (30, 90, 180)
+            ],
+            "- X=0 selects the first $5 strike strictly above each lot's gross basis; larger",
+            "  X values intentionally trade less call premium/frequency for a higher sale price.",
+            "- Low/base/stressed sensitivities vary Binary's embedded MM spread and",
+            "  operational delay only; sponsored gas and platform fees are not deducted",
+            "  a second time.",
             "- All positive-premium wheel rows have a modeled-premium fraction of 100%; there",
             "  are no historical Binary fills in these windows.",
             "- `lot_floor_breach_opportunities` quantifies occasions where an average basis",

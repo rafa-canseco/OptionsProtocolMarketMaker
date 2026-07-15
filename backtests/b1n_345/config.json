@@ -11,7 +11,7 @@
     "lot_gross_plus_weighted_gross",
     "lot_gross_plus_weighted_net"
   ],
-  "strike_increment_usd": 25.0,
+  "strike_increment_usd": 5.0,
   "risk_free_rate": 0.05,
   "coverage_gate": {
     "minimum_causal_coverage": 0.95,
@@ -25,23 +25,23 @@
       "base_spread_bps": 150,
       "execution_slippage_bps": 0,
       "fee_bps_notional": 0,
-      "gas_usdc": 0.1,
+      "gas_usdc": 0.0,
       "operational_delay_minutes": 0
     },
     {
       "name": "base",
       "base_spread_bps": 200,
-      "execution_slippage_bps": 25,
-      "fee_bps_notional": 5,
-      "gas_usdc": 0.25,
+      "execution_slippage_bps": 0,
+      "fee_bps_notional": 0,
+      "gas_usdc": 0.0,
       "operational_delay_minutes": 5
     },
     {
       "name": "stressed",
       "base_spread_bps": 300,
-      "execution_slippage_bps": 75,
-      "fee_bps_notional": 15,
-      "gas_usdc": 1.0,
+      "execution_slippage_bps": 0,
+      "fee_bps_notional": 0,
+      "gas_usdc": 0.0,
       "operational_delay_minutes": 15
     }
   ]

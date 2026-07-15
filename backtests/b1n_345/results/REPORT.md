@@ -28,9 +28,9 @@ not a recommendation.
 
 | Window | Return | Max DD | Net premium | Buy-low/sell-high | Unrealized ETH | Delta | Util. | Min premium | X | Assign. | Cycles | ETH idle |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 30d | 16.84% | -4.53% | $1,466 | $0 | $15,375 | 0.10 | 100% | 0 bps | $100 | 1 | 0 | 30.0% |
-| 90d | 1.56% | -0.20% | $1,562 | $0 | $0 | 0.10 | 100% | 25 bps | $0 | 0 | 0 | 0.0% |
-| 180d | 7.23% | -15.91% | $4,957 | $2,272 | $0 | 0.10 | 100% | 25 bps | $0 | 1 | 1 | 85.0% |
+| 30d | 15.94% | -5.02% | $3,302 | $12,639 | $0 | 0.10 | 100% | 0 bps | $200 | 1 | 1 | 0.0% |
+| 90d | 11.24% | -5.66% | $10,706 | $531 | $0 | 0.20 | 100% | 50 bps | $0 | 2 | 2 | 21.3% |
+| 180d | 20.59% | -4.03% | $9,863 | $10,730 | $0 | 0.10 | 100% | 25 bps | $200 | 1 | 1 | 60.0% |
 
 ### Benchmarks
 
@@ -42,13 +42,14 @@ not a recommendation.
 
 ## Material tradeoffs
 
-- The leading 30-day base result is dominated by unrealized assigned-ETH PnL;
-  it completed no full wheel cycle and should not be read as stable premium yield.
-- The leading 90-day base result had no assignment and is a premium-only CSP path.
-- The leading 180-day base result completed one cycle but assigned ETH was idle
-  for most of its exposure because the protected call floor excluded lower strikes.
-- Low-cost rankings are optimistic sensitivities. Base and stressed execution
-  assumptions must remain visible when B1N-346 evaluates a policy.
+- The leading 30-day base result completed 1 cycle(s), used X=$200, and had 0.0% ETH idle exposure.
+- The leading 90-day base result completed 2 cycle(s), used X=$0, and had 21.3% ETH idle exposure.
+- The leading 180-day base result completed 1 cycle(s), used X=$200, and had 60.0% ETH idle exposure.
+- X=0 selects the first $5 strike strictly above each lot's gross basis; larger
+  X values intentionally trade less call premium/frequency for a higher sale price.
+- Low/base/stressed sensitivities vary Binary's embedded MM spread and
+  operational delay only; sponsored gas and platform fees are not deducted
+  a second time.
 - All positive-premium wheel rows have a modeled-premium fraction of 100%; there
   are no historical Binary fills in these windows.
 - `lot_floor_breach_opportunities` quantifies occasions where an average basis
