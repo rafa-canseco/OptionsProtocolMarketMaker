@@ -31,6 +31,7 @@ def _base_env() -> dict[str, str]:
         "MM_API_KEY": "test-api-key",
         "BACKEND_URL": "https://backend.example.com",
         "RPC_URL": "https://base-rpc.example.com",
+        "PYTHON_DOTENV_DISABLED": "1",
     }
 
 
