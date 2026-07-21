@@ -3,8 +3,9 @@ from __future__ import annotations
 import math
 import statistics
 from dataclasses import asdict
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
+import numpy as np
 from scipy.stats import norm
 
 from src.backtest.config import BacktestSettings
@@ -22,6 +23,10 @@ from src.pricer import (
     bs_price,
     calculate_spread,
     price_with_spread,
+    VOL_SKEW_MAX_MULT,
+    VOL_SKEW_MIN_MULT,
+    VOL_SKEW_PUT_BIAS,
+    VOL_SKEW_SLOPE,
 )
 
 
@@ -199,6 +204,124 @@ def _nav(
         for position in positions
     )
     return ledger.cash_usdc + ledger.eth_amount * spot - liabilities
+
+
+def _vectorized_option_liability(
+    position: OptionPosition,
+    timestamps_ms: np.ndarray,
+    spots: np.ndarray,
+    ivs: np.ndarray,
+    risk_free_rate: float,
+) -> np.ndarray:
+    time_years = np.maximum(
+        (position.expiry * 1000 - timestamps_ms) / 1000 / (365 * 86_400),
+        0.0,
+    )
+    moneyness = np.log(position.strike / spots)
+    adjustment = VOL_SKEW_SLOPE * moneyness**2
+    if position.is_put:
+        adjustment += np.where(
+            moneyness < 0,
+            VOL_SKEW_PUT_BIAS * np.abs(moneyness),
+            0.0,
+        )
+    else:
+        adjustment += np.where(
+            moneyness > 0,
+            VOL_SKEW_PUT_BIAS * np.abs(moneyness) * 0.5,
+            0.0,
+        )
+    multiplier = np.clip(
+        1.0 + adjustment,
+        VOL_SKEW_MIN_MULT,
+        VOL_SKEW_MAX_MULT,
+    )
+    sigma = ivs * multiplier
+    sqrt_time = np.sqrt(time_years)
+    d1 = np.zeros_like(time_years)
+    valid = (time_years > 0) & (sigma > 0)
+    d1[valid] = (
+        np.log(spots[valid] / position.strike)
+        + (risk_free_rate + 0.5 * sigma[valid] ** 2) * time_years[valid]
+    ) / (sigma[valid] * sqrt_time[valid])
+    d2 = d1 - sigma * sqrt_time
+    discounted_strike = position.strike * np.exp(-risk_free_rate * time_years)
+    if position.is_put:
+        prices = discounted_strike * norm.cdf(-d2) - spots * norm.cdf(-d1)
+        prices = np.where(
+            time_years <= 0, np.maximum(position.strike - spots, 0), prices
+        )
+    else:
+        prices = spots * norm.cdf(d1) - discounted_strike * norm.cdf(d2)
+        prices = np.where(
+            time_years <= 0, np.maximum(spots - position.strike, 0), prices
+        )
+    return prices * position.amount_eth
+
+
+def _record_nav_marks(
+    *,
+    series: MarketSeries,
+    settings: BacktestSettings,
+    ledger: Ledger,
+    positions: list[OptionPosition],
+    start: datetime,
+    end: datetime,
+    nav_marks: list[tuple[int, float]],
+) -> None:
+    timestamp = start
+    timestamps_ms = []
+    spots = []
+    ivs = []
+    while timestamp < end:
+        timestamp_ms = utc_timestamp_ms(timestamp)
+        spot = series.spot_at(
+            timestamp_ms, settings.coverage_gate.maximum_spot_age_hours
+        )
+        iv = series.iv_at(timestamp_ms, settings.coverage_gate.maximum_iv_age_hours)
+        if spot is not None and (iv is not None or not positions):
+            timestamps_ms.append(timestamp_ms)
+            spots.append(spot.value)
+            ivs.append(iv.value if iv is not None else 0.0)
+        timestamp += timedelta(hours=1)
+    if not timestamps_ms:
+        return
+    timestamp_values = np.asarray(timestamps_ms, dtype=np.float64)
+    spot_values = np.asarray(spots)
+    iv_values = np.asarray(ivs)
+    values = ledger.cash_usdc + ledger.eth_amount * spot_values
+    for position in positions:
+        values -= _vectorized_option_liability(
+            position,
+            timestamp_values,
+            spot_values,
+            iv_values,
+            settings.risk_free_rate,
+        )
+    nav_marks.extend(zip(timestamps_ms, values.tolist(), strict=True))
+
+
+def _record_interval_accounting(
+    ledger: Ledger,
+    csp: OptionPosition | None,
+    covered_lots: set[int],
+    hours: float,
+) -> None:
+    eth_amount = ledger.eth_amount
+    if eth_amount > 0:
+        ledger.eth_exposure_hours += hours
+        ledger.eth_amount_hours += eth_amount * hours
+        idle_amount = sum(
+            lot.eth_amount for lot in ledger.lots if lot.lot_id not in covered_lots
+        )
+        if idle_amount > 0:
+            ledger.eth_idle_hours += hours
+            ledger.eth_idle_amount_hours += idle_amount * hours
+
+    deployed = csp.strike * csp.amount_eth if csp is not None else 0.0
+    idle_cash = max(ledger.cash_usdc - deployed, 0.0)
+    ledger.idle_usdc_hours += idle_cash * hours
+    ledger.total_usdc_hours += max(ledger.cash_usdc, 0.0) * hours
 
 
 def _record_premium(
@@ -501,7 +624,7 @@ def _drawdown(values: list[float]) -> float:
 def _metrics(
     *,
     ledger: Ledger,
-    nav_values: list[float],
+    nav_marks: list[tuple[int, float]],
     final_spot: float,
     initial_usdc: float,
     window_days: int,
@@ -512,10 +635,15 @@ def _metrics(
     window_end: datetime,
 ) -> dict:
     final_nav = ledger.cash_usdc + ledger.eth_amount * final_spot
+    daily_closes: dict[object, float] = {}
+    for timestamp_ms, value in nav_marks:
+        day = datetime.fromtimestamp(timestamp_ms / 1000, UTC).date()
+        daily_closes[day] = value
+    daily_values = list(daily_closes.values())
     daily_returns = [
-        nav_values[index] / nav_values[index - 1] - 1
-        for index in range(1, len(nav_values))
-        if nav_values[index - 1] > 0
+        daily_values[index] / daily_values[index - 1] - 1
+        for index in range(1, len(daily_values))
+        if daily_values[index - 1] > 0
     ]
     weighted_gross = _weighted_basis(ledger.lots, "gross_basis")
     unrealized = sum(
@@ -538,7 +666,7 @@ def _metrics(
         "final_nav_usdc": final_nav,
         "absolute_return": final_nav / initial_usdc - 1,
         "total_pnl_usdc": final_nav - initial_usdc,
-        "maximum_drawdown": _drawdown(nav_values),
+        "maximum_drawdown": _drawdown([value for _, value in nav_marks]),
         "daily_volatility": statistics.pstdev(daily_returns) if daily_returns else 0.0,
         "annualized_volatility_secondary": (
             statistics.pstdev(daily_returns) * math.sqrt(365) if daily_returns else 0.0
@@ -611,10 +739,10 @@ def run_strategy(
     end: datetime | None = None,
 ) -> dict:
     ledger = Ledger(cash_usdc=settings.initial_usdc)
-    nav_values = [settings.initial_usdc]
     position_counter = 1
     window_end = end or series.cutoff
     window_start = window_end - timedelta(days=window_days)
+    nav_marks = [(utc_timestamp_ms(window_start), settings.initial_usdc)]
     strike_increment = settings.asset(series.asset).strike_increment_usd
 
     for decision in decision_times(
@@ -630,6 +758,21 @@ def run_strategy(
         )
         if market is None or settlement is None:
             ledger.missing_market_events += 1
+            _record_interval_accounting(
+                ledger,
+                csp=None,
+                covered_lots=set(),
+                hours=settings.cadence_hours,
+            )
+            _record_nav_marks(
+                series=series,
+                settings=settings,
+                ledger=ledger,
+                positions=[],
+                start=execution,
+                end=expiry_dt,
+                nav_marks=nav_marks,
+            )
             continue
         spot, iv = market
         positions: list[OptionPosition] = []
@@ -665,32 +808,20 @@ def run_strategy(
             position_counter += len(ledger.lots) + 1
             positions.extend(calls)
 
-        hours = settings.cadence_hours
-        eth_amount = ledger.eth_amount
-        if eth_amount > 0:
-            ledger.eth_exposure_hours += hours
-            ledger.eth_amount_hours += eth_amount * hours
-            idle_amount = sum(
-                lot.eth_amount for lot in ledger.lots if lot.lot_id not in covered_lots
-            )
-            if idle_amount > 0:
-                ledger.eth_idle_hours += hours
-                ledger.eth_idle_amount_hours += idle_amount * hours
-
-        deployed = csp.strike * csp.amount_eth if csp is not None else 0.0
-        idle_cash = max(ledger.cash_usdc - deployed, 0.0)
-        ledger.idle_usdc_hours += idle_cash * hours
-        ledger.total_usdc_hours += max(ledger.cash_usdc, 0.0) * hours
-
-        nav_values.append(
-            _nav(
-                ledger,
-                positions,
-                utc_timestamp_ms(execution),
-                spot,
-                iv,
-                settings.risk_free_rate,
-            )
+        _record_interval_accounting(
+            ledger,
+            csp=csp,
+            covered_lots=covered_lots,
+            hours=settings.cadence_hours,
+        )
+        _record_nav_marks(
+            series=series,
+            settings=settings,
+            ledger=ledger,
+            positions=positions,
+            start=execution,
+            end=expiry_dt,
+            nav_marks=nav_marks,
         )
         midpoint = execution + timedelta(hours=settings.cadence_hours / 2)
         midpoint_market = _market_at(series, utc_timestamp_ms(midpoint), settings)
@@ -702,17 +833,6 @@ def run_strategy(
                 midpoint_spot,
                 midpoint_iv,
             )
-            nav_values.append(
-                _nav(
-                    ledger,
-                    positions,
-                    utc_timestamp_ms(midpoint),
-                    midpoint_spot,
-                    midpoint_iv,
-                    settings.risk_free_rate,
-                )
-            )
-
         _record_mm_counterparty_economics(
             ledger=ledger,
             positions=positions,
@@ -725,7 +845,12 @@ def run_strategy(
             hedge_cost_bps=config.costs.mm_hedge_cost_bps,
         )
         _settle_positions(ledger, positions, settlement.value, expiry, csp_only)
-        nav_values.append(ledger.cash_usdc + ledger.eth_amount * settlement.value)
+        nav_marks.append(
+            (
+                utc_timestamp_ms(expiry_dt),
+                ledger.cash_usdc + ledger.eth_amount * settlement.value,
+            )
+        )
         if ledger.cash_usdc < -1e-6 or ledger.eth_amount < -1e-12:
             raise AssertionError("backtest ledger produced negative collateral")
 
@@ -736,7 +861,7 @@ def run_strategy(
         raise RuntimeError("missing final spot")
     return _metrics(
         ledger=ledger,
-        nav_values=nav_values,
+        nav_marks=nav_marks,
         final_spot=final_spot_value.value,
         initial_usdc=settings.initial_usdc,
         window_days=window_days,

@@ -28,9 +28,9 @@ not a recommendation.
 
 | Window | Return | Max DD | Net premium | Buy-low/sell-high | Unrealized ETH | Delta | Util. | Min premium | X | Assign. | Cycles | ETH idle |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 30d | 15.94% | -5.02% | $3,302 | $12,639 | $0 | 0.10 | 100% | 0 bps | $200 | 1 | 1 | 0.0% |
-| 90d | 11.24% | -5.66% | $10,706 | $531 | $0 | 0.20 | 100% | 50 bps | $0 | 2 | 2 | 21.3% |
-| 180d | 20.59% | -4.03% | $9,863 | $10,730 | $0 | 0.10 | 100% | 25 bps | $200 | 1 | 1 | 60.0% |
+| 30d | 11.77% | -11.27% | $5,554 | $6,217 | $0 | 0.10 | 100% | 0 bps | $100 | 2 | 2 | 0.0% |
+| 90d | 15.22% | -13.96% | $2,692 | $12,531 | $0 | 0.10 | 100% | 25 bps | $200 | 1 | 1 | 78.9% |
+| 180d | 37.57% | -13.96% | $11,909 | $25,663 | $0 | 0.10 | 100% | 25 bps | $200 | 2 | 2 | 75.9% |
 
 ### Benchmarks
 
@@ -42,9 +42,9 @@ not a recommendation.
 
 ## Material tradeoffs
 
-- The leading 30-day base result completed 1 cycle(s), used X=$200, and had 0.0% ETH idle exposure.
-- The leading 90-day base result completed 2 cycle(s), used X=$0, and had 21.3% ETH idle exposure.
-- The leading 180-day base result completed 1 cycle(s), used X=$200, and had 60.0% ETH idle exposure.
+- The leading 30-day base result completed 2 cycle(s), used X=$100, and had 0.0% ETH idle exposure.
+- The leading 90-day base result completed 1 cycle(s), used X=$200, and had 78.9% ETH idle exposure.
+- The leading 180-day base result completed 2 cycle(s), used X=$200, and had 75.9% ETH idle exposure.
 - X=0 selects the first $5 strike strictly above each lot's gross basis; larger
   X values intentionally trade less call premium/frequency for a higher sale price.
 - Low/base/stressed sensitivities vary Binary's embedded MM spread and

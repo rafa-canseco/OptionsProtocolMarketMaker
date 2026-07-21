@@ -3,6 +3,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from src.backtest.config import (
@@ -13,14 +14,22 @@ from src.backtest.config import (
     ProductionValidationSettings,
     load_settings,
 )
-from src.backtest.data import MarketSeries
+from src.backtest import production
+from src.backtest.data import MarketSeries, extract_asset_market_snapshot
 from src.backtest.engine import (
+    _fair_option_liability,
+    _vectorized_option_liability,
     binary_bid_premium,
     protected_call_floor,
     run_strategy,
     select_protected_call_strike,
 )
-from src.backtest.models import AssignmentLot, CostScenario, StrategyConfig
+from src.backtest.models import (
+    AssignmentLot,
+    CostScenario,
+    OptionPosition,
+    StrategyConfig,
+)
 from src.backtest.probe import run_coverage_probe
 from src.backtest.production import (
     build_production_summary,
@@ -82,6 +91,28 @@ def _series(tmp_path: Path, spots: list[tuple[datetime, float]]) -> MarketSeries
     path = tmp_path / "market.json"
     path.write_text(json.dumps(payload))
     return MarketSeries(path)
+
+
+class _HourlyCandleClient:
+    def __init__(self, timestamp_ms: int) -> None:
+        self.timestamp_ms = timestamp_ms
+
+    def get(self, method: str, params: dict) -> dict:
+        if method == "get_tradingview_chart_data":
+            return {
+                "result": {
+                    "ticks": [self.timestamp_ms],
+                    "close": [2000.0],
+                }
+            }
+        if method == "get_volatility_index_data":
+            return {
+                "result": {
+                    "data": [[self.timestamp_ms, 0, 0, 0, 60.0]],
+                    "continuation": None,
+                }
+            }
+        raise AssertionError(f"Unexpected method: {method}")
 
 
 def test_binary_premium_replays_production_pricer():
@@ -173,6 +204,139 @@ def test_market_lookup_is_causal_when_future_rows_are_added(tmp_path):
     assert before.value == 2000
 
 
+def test_hourly_close_is_available_only_after_candle_ends(tmp_path):
+    cutoff = datetime(2026, 1, 2, 20, tzinfo=UTC)
+    raw_timestamp = cutoff - timedelta(days=1, hours=12)
+    path = extract_asset_market_snapshot(
+        output_dir=tmp_path / "ETH",
+        cutoff=cutoff,
+        symbol="ETH",
+        deribit_currency="ETH",
+        deribit_index_name="eth_usd",
+        deribit_perpetual="ETH-PERPETUAL",
+        lookback_days=1,
+        client=_HourlyCandleClient(int(raw_timestamp.timestamp() * 1000)),
+    )
+    series = MarketSeries(path)
+
+    unavailable = series.spot_at(int(raw_timestamp.timestamp() * 1000), 8)
+    available_at = raw_timestamp + timedelta(hours=1)
+    available = series.spot_at(int(available_at.timestamp() * 1000), 8)
+
+    assert unavailable is None
+    assert available is not None
+    assert available.value == 2000
+    assert available.age_hours == 0
+
+
+def test_maximum_drawdown_marks_intracycle_option_liability(tmp_path):
+    start = datetime(2026, 1, 1, 8, tzinfo=UTC)
+    series = _series(
+        tmp_path,
+        [
+            (start, 2000),
+            (start + timedelta(hours=10), 100),
+            (start + timedelta(hours=11), 2000),
+            (start + timedelta(days=2), 2000),
+        ],
+    )
+    settings = _settings(window_days=(2,))
+    config = StrategyConfig(0.4, 0.5, 0, 0, "lot_gross", settings.cost_scenarios[0])
+
+    result = run_strategy(
+        series=series,
+        settings=settings,
+        window_days=2,
+        config=config,
+    )
+
+    assert result["maximum_drawdown"] < -0.4
+    assert result["daily_volatility"] < 0.01
+
+
+def test_vectorized_liability_matches_scalar_black_scholes():
+    opened_at = int(datetime(2026, 1, 1, 8, tzinfo=UTC).timestamp())
+    position = OptionPosition(
+        position_id=1,
+        is_put=True,
+        strike=1900,
+        amount_eth=10,
+        opened_at=opened_at,
+        expiry=opened_at + 48 * 3600,
+        premium_gross_usdc=100,
+        premium_net_usdc=100,
+    )
+    timestamps = np.array(
+        [
+            opened_at * 1000,
+            (opened_at + 10 * 3600) * 1000,
+            position.expiry * 1000,
+        ],
+        dtype=np.float64,
+    )
+    spots = np.array([2000.0, 1700.0, 2100.0])
+    ivs = np.array([0.6, 0.0, 0.8])
+
+    for is_put in (True, False):
+        candidate = replace(position, is_put=is_put)
+        vectorized = _vectorized_option_liability(
+            candidate, timestamps, spots, ivs, 0.05
+        )
+        scalar = [
+            _fair_option_liability(candidate, int(timestamp), spot, iv, 0.05)
+            for timestamp, spot, iv in zip(timestamps, spots, ivs, strict=True)
+        ]
+        assert vectorized == pytest.approx(scalar)
+
+
+def test_missing_opening_market_preserves_assigned_eth_exposure(tmp_path):
+    start = datetime(2026, 1, 1, 8, tzinfo=UTC)
+    series = _series(
+        tmp_path,
+        [
+            (start, 2000),
+            (start + timedelta(days=2), 1500),
+            (start + timedelta(days=3), 100),
+            (start + timedelta(days=3, hours=1), 1500),
+            (start + timedelta(days=4), 1500),
+        ],
+    )
+    payload = json.loads((tmp_path / "market.json").read_text())
+    missing_start = int((start + timedelta(hours=42)).timestamp() * 1000)
+    missing_end = int((start + timedelta(days=4)).timestamp() * 1000)
+    payload["iv"] = [
+        row
+        for row in payload["iv"]
+        if not missing_start <= row["timestamp_ms"] <= missing_end
+    ]
+    (tmp_path / "market.json").write_text(json.dumps(payload))
+    series = MarketSeries(tmp_path / "market.json")
+    settings = _settings()
+    config = StrategyConfig(0.4, 0.5, 0, 0, "lot_gross", settings.cost_scenarios[0])
+
+    result = run_strategy(
+        series=series,
+        settings=settings,
+        window_days=4,
+        config=config,
+    )
+
+    assert result["ending_eth"] > 0
+    assert result["eth_exposure_hours"] == 48
+    assert result["missing_market_events"] == 1
+    assert result["maximum_drawdown"] < -0.2
+
+
+@pytest.mark.parametrize(
+    ("window_days", "raw_count", "expected"),
+    [(30, 91, 7), (90, 91, 3), (180, 91, 2)],
+)
+def test_effective_sample_count_discounts_overlapping_windows(
+    window_days, raw_count, expected
+):
+    assert production.effective_sample_count(raw_count, window_days, 2) == expected
+
+
 def test_mm_counterparty_option_transfer_reconciles(tmp_path):
     start = datetime(2026, 1, 1, 8, tzinfo=UTC)
     series = _series(
@@ -236,6 +400,7 @@ def test_multiyear_summary_has_percentiles_regimes_capacity_and_btc_config(tmp_p
     rows = run_rolling_validation({"ETH": series}, settings)
     summary = build_production_summary(rows, settings)
     policy = summary["policies"][0]
+    assert policy["effective_sample_count"] == policy["sample_count"]
     assert set(policy["return_distribution"]) == {
         "mean",
         "p5",
@@ -252,3 +417,27 @@ def test_multiyear_summary_has_percentiles_regimes_capacity_and_btc_config(tmp_p
         "volatility_crash",
     }
     assert policy["capacity"][0]["observation_class"] == "modeled"
+
+    wheel_row = next(row for row in rows if row["strategy"] == "wheel")
+    overlapping_validation = replace(
+        validation,
+        rolling_step_days=2,
+        minimum_regime_samples=2,
+    )
+    overlapping_settings = replace(
+        settings,
+        production_validation=overlapping_validation,
+    )
+    overlapping = build_production_summary(
+        [dict(wheel_row) for _ in range(15)],
+        overlapping_settings,
+    )
+    row_regime = wheel_row["regime"]
+    regime = next(
+        item
+        for item in overlapping["policies"][0]["regimes"]
+        if item["regime"] == row_regime
+    )
+    assert regime["sample_count"] == 15
+    assert regime["effective_sample_count"] == 1
+    assert regime["sufficient_sample"] is False

@@ -1,10 +1,10 @@
 {
-  "created_at": "2026-07-15T18:05:46.808719+00:00",
+  "created_at": "2026-07-21T01:53:26.352502+00:00",
   "cutoff": "2026-07-15T08:00:00+00:00",
   "normalized": {
-    "iv_rows": 4333,
+    "iv_rows": 4332,
     "path": "market.json",
-    "sha256": "33a8bd6632c10631c8f0aa695280f795feb46f20fa3d7d6662540ea7de607bb2",
+    "sha256": "dea76330865193d2065a8ba7e53f465ec88e5be290d2048770dccfad6b934540",
     "spot_rows": 722
   },
   "playbook_context_gap": "playbook/CONTEXT.md absent in staging checkout",
@@ -17,7 +17,7 @@
         "range": "1y"
       },
       "rows": 722,
-      "sha256": "ef53b1a3e0bb30b40b9ee9c5e800a93e0f0423cad74933cd6481b3b96cb56d98"
+      "sha256": "1935a0a553ed389ef23973732065a746376c91d3d0efedc05921e00386b7b48b"
     },
     {
       "method": "get_volatility_index_data",
@@ -28,7 +28,7 @@
         "start_timestamp": 1768507200000
       },
       "rows": 1000,
-      "sha256": "851342169b3413450cb3a914dbc9a85981f5ce326df1a06afc0f6d880c70294d"
+      "sha256": "2107cf89a8355e06df587e5cbbb16aab16a328f16c80a71d721ee6ad3d933435"
     },
     {
       "method": "get_volatility_index_data",
@@ -39,7 +39,7 @@
         "start_timestamp": 1768507200000
       },
       "rows": 1000,
-      "sha256": "4c9c29e92d9d6a0bb3d56fcea9b811e15d8b2c4e8dc3b447983a8c3c9db6a18f"
+      "sha256": "b8dbc9d9f085cbc5b1fdb2ac7b75ed67fa6e47976b4a23469b6d4bd6edc533f6"
     },
     {
       "method": "get_volatility_index_data",
@@ -50,7 +50,7 @@
         "start_timestamp": 1768507200000
       },
       "rows": 1000,
-      "sha256": "e46e2be3902f2744376b01e84bdbb25308e00349afe256300391c84fbfe4735f"
+      "sha256": "03328072ecc0ffbdedcb8d1bc8832b0a0b427c49535e0127926182407e9d235b"
     },
     {
       "method": "get_volatility_index_data",
@@ -61,7 +61,7 @@
         "start_timestamp": 1768507200000
       },
       "rows": 1000,
-      "sha256": "8b7f701ecaac27e4d0a19134ea060061cff27cc2ed5d53539a7b6418d089a57d"
+      "sha256": "4d04afa4fafdc0bfdb394096713a8bcb484243e8dbdf3ea71b569e9757feb6b1"
     },
     {
       "method": "get_volatility_index_data",
@@ -72,7 +72,7 @@
         "start_timestamp": 1768507200000
       },
       "rows": 333,
-      "sha256": "bf914e3fdb7d41e53fc838b8bcf57233e2e912189c56f98d3bc159f3ef4c5c41"
+      "sha256": "16ff37d6eb49d881924510f846dc835231a1d614e82338b3d5c2763f3a09b4e8"
     }
   ],
   "start": "2026-01-15T20:00:00+00:00"

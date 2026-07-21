@@ -75,11 +75,14 @@ The production-validation extension uses three years of hourly Deribit
 perpetual closes and DVOL for both ETH and BTC. The public Deribit index-chart
 endpoint is limited to one year, so the observed perpetual close is explicitly
 normalized as the multiyear USD underlying proxy. Both candle and DVOL endpoints
-are paginated and hashed in per-asset manifests.
+are paginated and hashed in per-asset manifests. Hourly closes become available
+only at the end of their candle; normalized timestamps record that causal time.
 
 It evaluates every 48-hour rolling endpoint available for 30/90/180-day
-windows: 533, 503, and 458 samples per asset respectively. To avoid selecting a
-policy after observing returns, the rolling test fixes:
+windows: 533, 503, and 458 raw samples per asset respectively. Because those
+windows overlap, regime gates use a conservative effective sample count based
+on non-overlapping windows. To avoid selecting a policy after observing returns,
+the rolling test fixes:
 
 - target deltas 0.10, 0.20, 0.30, and 0.40 as four separate policies;
 - 100% utilization, zero minimum premium, `X=0`, gross lot protection;
@@ -96,6 +99,10 @@ the report separates premium paid, option payoff, unhedged PnL, midpoint delta
 hedge PnL, hedge turnover/cost, and net hedged PnL. The vault option PnL plus the
 MM's unhedged option PnL reconciles exactly to zero. Hedge effects are external
 market PnL and remain `modeled`.
+
+Portfolio NAV and open-option liabilities are marked on every available hourly
+observation for drawdown measurement. Missing opening or settlement data prevents
+new positions but does not erase assigned inventory or its exposure accounting.
 
 Capacity is also a sensitivity model, not an observed order-book limit. The
 configured $100k–$10m ladder applies increasing premium haircuts and hedge costs;

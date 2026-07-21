@@ -105,10 +105,10 @@ def extract_market_snapshot(
     dvol_by_timestamp: dict[int, dict[str, Any]] = {}
     for _, payload in dvol_pages:
         for row in payload["result"]["data"]:
-            timestamp = int(row[0])
-            if start_ms <= timestamp <= cutoff_ms:
-                dvol_by_timestamp[timestamp] = {
-                    "timestamp_ms": timestamp,
+            available_at = int(row[0]) + 3_600_000
+            if start_ms <= available_at <= cutoff_ms:
+                dvol_by_timestamp[available_at] = {
+                    "timestamp_ms": available_at,
                     "value": float(row[4]) / 100.0,
                     "source": "observed",
                 }
@@ -120,7 +120,10 @@ def extract_market_snapshot(
         "start": start.isoformat(),
         "normalization": {
             "spot": "Deribit ETH/USD index in USD per ETH",
-            "iv": "Deribit ETH DVOL close divided by 100; annualized decimal",
+            "iv": (
+                "Deribit ETH DVOL close divided by 100; annualized decimal; "
+                "timestamped when the candle becomes available"
+            ),
             "premium": "not sourced from Deribit; replayed by Binary pricer",
             "payoff": "linear ETH/USDC, premium USD per ETH",
         },
@@ -207,10 +210,10 @@ def extract_asset_market_snapshot(
             raise RuntimeError(f"Deribit returned invalid {symbol} perpetual candles")
         spot_pages.append((params, payload))
         for timestamp, close in zip(ticks, closes, strict=True):
-            timestamp = int(timestamp)
-            if start_ms <= timestamp <= cutoff_ms:
-                spot_by_timestamp[timestamp] = {
-                    "timestamp_ms": timestamp,
+            available_at = int(timestamp) + 3_600_000
+            if start_ms <= available_at <= cutoff_ms:
+                spot_by_timestamp[available_at] = {
+                    "timestamp_ms": available_at,
                     "value": float(close),
                     "source": "observed",
                 }
@@ -253,10 +256,10 @@ def extract_asset_market_snapshot(
     dvol_by_timestamp: dict[int, dict[str, Any]] = {}
     for _, payload in dvol_pages:
         for row in payload["result"]["data"]:
-            timestamp = int(row[0])
-            if start_ms <= timestamp <= cutoff_ms:
-                dvol_by_timestamp[timestamp] = {
-                    "timestamp_ms": timestamp,
+            available_at = int(row[0]) + 3_600_000
+            if start_ms <= available_at <= cutoff_ms:
+                dvol_by_timestamp[available_at] = {
+                    "timestamp_ms": available_at,
                     "value": float(row[4]) / 100.0,
                     "source": "observed",
                 }
@@ -269,9 +272,13 @@ def extract_asset_market_snapshot(
         "normalization": {
             "spot": (
                 f"Deribit {deribit_perpetual} observed hourly close in USD per {symbol}; "
-                f"proxy for {deribit_index_name} beyond the index endpoint's one-year cap"
+                f"proxy for {deribit_index_name} beyond the index endpoint's one-year cap; "
+                "timestamped when the candle becomes available"
             ),
-            "iv": f"Deribit {symbol} DVOL close divided by 100; annualized decimal",
+            "iv": (
+                f"Deribit {symbol} DVOL close divided by 100; annualized decimal; "
+                "timestamped when the candle becomes available"
+            ),
             "premium": "not sourced from Deribit; replayed by Binary pricer",
             "payoff": f"linear {symbol}/USDC, premium USD per {symbol}",
         },

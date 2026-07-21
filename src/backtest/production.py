@@ -52,6 +52,14 @@ def rolling_end_times(
     return values
 
 
+def effective_sample_count(raw_count: int, window_days: int, step_days: int) -> int:
+    """Conservatively discount rolling windows that reuse observations."""
+    if raw_count <= 0:
+        return 0
+    overlap = math.ceil(window_days / step_days)
+    return 1 + (raw_count - 1) // overlap
+
+
 def _drawdown(values: list[float]) -> float:
     peak = -math.inf
     result = 0.0
@@ -280,12 +288,16 @@ def build_production_summary(
                 )
             ]
             regime_returns = [float(row["absolute_return"]) for row in regime_group]
+            regime_effective_count = effective_sample_count(
+                len(regime_group), window_days, validation.rolling_step_days
+            )
             regimes.append(
                 {
                     "regime": regime,
                     "sample_count": len(regime_group),
+                    "effective_sample_count": regime_effective_count,
                     "sufficient_sample": (
-                        len(regime_group) >= validation.minimum_regime_samples
+                        regime_effective_count >= validation.minimum_regime_samples
                     ),
                     "return_distribution": _distribution(regime_returns),
                     "loss_probability": (
@@ -360,6 +372,9 @@ def build_production_summary(
                 "window_days": window_days,
                 "target_delta": target_delta,
                 "sample_count": len(group),
+                "effective_sample_count": effective_sample_count(
+                    len(group), window_days, validation.rolling_step_days
+                ),
                 "hurdle_return": hurdle,
                 "return_distribution": return_distribution,
                 "loss_probability": loss_probability,
@@ -456,8 +471,8 @@ def write_production_outputs(
             "",
             "## Fixed-policy distributions",
             "",
-            "| Asset | Window | Delta | N | P5 | Median | P95 | Loss prob. | Worst DD | MM median | Capacity | Ready |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+            "| Asset | Window | Delta | N raw | N effective | P5 | Median | P95 | Loss prob. | Worst DD | MM median | Capacity | Ready |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
         ]
     )
     for policy in summary["policies"]:
@@ -466,6 +481,7 @@ def write_production_outputs(
         lines.append(
             f"| {policy['asset']} | {policy['window_days']}d | "
             f"{policy['target_delta']:.2f} | {policy['sample_count']} | "
+            f"{policy['effective_sample_count']} | "
             f"{distribution['p5']:.2%} | {distribution['p50']:.2%} | "
             f"{distribution['p95']:.2%} | {policy['loss_probability']:.1%} | "
             f"{policy['worst_maximum_drawdown']:.2%} | {mm['p50']:.2%} | "

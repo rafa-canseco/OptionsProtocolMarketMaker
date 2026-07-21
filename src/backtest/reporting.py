@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import gzip
+import hashlib
 import io
 import json
 from collections import defaultdict
@@ -252,3 +253,16 @@ def write_markdown_report(
         ]
     )
     (output_dir / "REPORT.md").write_text("\n".join(lines))
+    checksum_files = (
+        "results.jsonl",
+        "results.csv",
+        "summary.json",
+        "coverage_probe.json",
+        "REPORT.md",
+    )
+    (output_dir / "checksums.sha256").write_text(
+        "".join(
+            f"{hashlib.sha256((output_dir / name).read_bytes()).hexdigest()}  {name}\n"
+            for name in checksum_files
+        )
+    )

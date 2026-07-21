@@ -1,12 +1,12 @@
 {
   "asset": "BTC",
-  "created_at": "2026-07-15T19:12:57.842342+00:00",
+  "created_at": "2026-07-21T00:15:00.589762+00:00",
   "cutoff": "2026-07-15T08:00:00+00:00",
   "normalized": {
-    "iv_rows": 26293,
+    "iv_rows": 26292,
     "path": "market.json",
-    "sha256": "d78e1f608293cc6775991c6fdcc8efacbee1305b9e7e14ea04c6dee5fdabcd4b",
-    "spot_rows": 26293
+    "sha256": "d8b783d13e6c83235ee05c9122ad52149a020b1bdf184e1cec6ba352ca830edc",
+    "spot_rows": 26292
   },
   "playbook_context_gap": "playbook/CONTEXT.md absent in staging checkout",
   "schema_version": 2,
@@ -20,7 +20,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 5001,
-      "sha256": "740b48578391ff68d6ba67dfe45b8848a47122bf9899806d5a8cf1a8e30edc24"
+      "sha256": "c71864141f7125ce407344e7043158415c4485f5fe2a4f650b118b75971bc941"
     },
     {
       "method": "get_tradingview_chart_data",
@@ -31,7 +31,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 5001,
-      "sha256": "13157bd9b33062831608e625bcd62406171a6599c51eadb8bec8fc2a7230d881"
+      "sha256": "04d0b9665519324e0c1ce2ffb79326404f992f022e4079a4a5cd061640811974"
     },
     {
       "method": "get_tradingview_chart_data",
@@ -42,7 +42,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 5001,
-      "sha256": "f3ba9531006d81f609a68fbb77396ae19877621cb8f6579ce79148170fe5432d"
+      "sha256": "5ee00ab04d097aead23a1223d31dade02945e7957be0dc1ba54e07f9b1a2ae56"
     },
     {
       "method": "get_tradingview_chart_data",
@@ -53,7 +53,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 5001,
-      "sha256": "7c5d1c32a9d3af9ff8e200026b84018fe1da9d2aa5e47f71f041705749c08702"
+      "sha256": "1fa7ca45d6bf2f3dbada80d06097e26da124f4f28f104958d7f1359590cf55b2"
     },
     {
       "method": "get_tradingview_chart_data",
@@ -64,7 +64,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 5001,
-      "sha256": "c041c24881a52b2a1c34c6bfbea2e531c1b023ccbb749c7dd2cae1372a47cbd7"
+      "sha256": "dd42c6862e506fa98e2e1b99bd1e9283b135dcacec69e6ad435514a37388a5ea"
     },
     {
       "method": "get_tradingview_chart_data",
@@ -75,7 +75,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1288,
-      "sha256": "69552788d92f0bef0ab0bacb027a84fcf16f89d65124b85cc60ea338aecff3b3"
+      "sha256": "3cada9e5ac28279084d4b50d595503693e666491bbd587ba5195816218db12f4"
     },
     {
       "method": "get_volatility_index_data",
@@ -86,7 +86,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "d699e902abef5002b0ec3e4bafa929393ac9db9e2a923d53d4dd19d3b31ca546"
+      "sha256": "b41ae69579e36cef5bea3563e4ac044d75f32922c01cd4631a591f289352f7fd"
     },
     {
       "method": "get_volatility_index_data",
@@ -97,7 +97,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "de51623d5216ed30196582706b573fcd398374a4381038b3fae3a9294270b692"
+      "sha256": "f81639155c1c6e4b0cc8780ca8f1738e712339b0cbe610ece47f66a0e10b1da3"
     },
     {
       "method": "get_volatility_index_data",
@@ -108,7 +108,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "7d455040d76beee69404cd4e97f945a4f03bbe8ba444d839e295921513fba242"
+      "sha256": "becdfa1592dbb82f3c71cf1f1d66bcfeddade8671721f9c319aa2cbc3948c500"
     },
     {
       "method": "get_volatility_index_data",
@@ -119,7 +119,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "3c96fd26bc59bfbc4ee5eeb718f2831e6fe8e60b2ed829e3c49c72b6b07f64f7"
+      "sha256": "aae8cd30ff8d74d1d09fde3b34a66b67bbd1d0958aebf5893fc0bf3cb23927c2"
     },
     {
       "method": "get_volatility_index_data",
@@ -130,7 +130,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "e7165617d3107ccf6d900cc76c3d77fc02721753ce3f8ab339723f2efcaaa5cc"
+      "sha256": "70c60828e1f5ec4325008769161d5459776a80502750ab39596be6f6560b737c"
     },
     {
       "method": "get_volatility_index_data",
@@ -141,7 +141,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "69c4438ed353a649923e9799a542fc5a6a9e85194011bc798b137f3b254ee95d"
+      "sha256": "953305e97e5ca3b5e71360964d2ca8da11f9110f5ffbb9be90e7fc2180f0ef4b"
     },
     {
       "method": "get_volatility_index_data",
@@ -152,7 +152,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "b77634eaa03a73713bc636802b371a27520be69e320ae3f24805153dc7436e1b"
+      "sha256": "59c2b50727126ebf68ed41defbfda8a2b9890e46ddba28a0b96fdcac9b448aa0"
     },
     {
       "method": "get_volatility_index_data",
@@ -163,7 +163,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "995a7598a0210ec65c336783787c9453b65eba825b02f31250cb6bbf994a2e29"
+      "sha256": "961debfea3bebf907bc210a6a189452cbd8a6798fcc4971e2332074752b2e9a9"
     },
     {
       "method": "get_volatility_index_data",
@@ -174,7 +174,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "0ec4337c25c0f6a591f58b1c3f7b4de446b191759551243409fa82d33870d810"
+      "sha256": "ba8c2735239f60dc7c562da6d278cf1680228ad1ea1bdf499f6c7b947fba0750"
     },
     {
       "method": "get_volatility_index_data",
@@ -185,7 +185,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "7a8b32d931caa821e94d97b1408ab63b27ee888fe6ae431aed6d36bf1dc23c1a"
+      "sha256": "0423ffb7f9661f5e340f4211f564fdd7413973a33398c5b9dac28db95b4a616f"
     },
     {
       "method": "get_volatility_index_data",
@@ -196,7 +196,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "f3992188aee12c6f96f5ef4fdd93b1b75e5663dee226981b236782009592bb11"
+      "sha256": "2eb5d7285f13cb3b743a865bbdb6301e5064a16bc74f359eac55bd96a650b713"
     },
     {
       "method": "get_volatility_index_data",
@@ -207,7 +207,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "b351fb0730edeb6e220982a6eca64fbb3b0e68419b0a29550faa9d7c9b9a64a7"
+      "sha256": "20ee0b3fa631a1a6451464df3c83cb0e732f8f2a2884666b8915a11fca4789c4"
     },
     {
       "method": "get_volatility_index_data",
@@ -218,7 +218,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "435382302308b7c9660a0c924308dafed8a6617c442857fe6156b46981ade5aa"
+      "sha256": "a5a72a36acb3114fc744f06778407fc463716c71ad6ab3fc04d7dc498382631d"
     },
     {
       "method": "get_volatility_index_data",
@@ -229,7 +229,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "c432020fe7fdc95cf17fb6b738efb179420cc3167be13b825c5a7403090ddfa2"
+      "sha256": "5b83aa909b19bc78da8dc0fb4389395ea30c0eea52cb38d912fdafdd03bfb7c9"
     },
     {
       "method": "get_volatility_index_data",
@@ -240,7 +240,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "8d95ee08ff36c9c394b4b9faef6d6bffb1cf7c63c56a9036c3e065c134c7286a"
+      "sha256": "da8618604df80aeae324de5bceb4324a5a6a09d00f6917c44dcf40db3cef2f11"
     },
     {
       "method": "get_volatility_index_data",
@@ -251,7 +251,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "9818754fb41780026519f59b57ffeb0d1e8bc029dd3cb32f1c31d912921c2fd5"
+      "sha256": "3a156b51b27406677715b99c0e22cb0f5db61fa524dccc6ea1287ada06bf5c71"
     },
     {
       "method": "get_volatility_index_data",
@@ -262,7 +262,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "fe20feeeb4394a5dd155ef865db196c584eddfa5d96a6e2a4e5503866a165537"
+      "sha256": "4f53ab6b4901e5a4d2edc42fa49f6fb9dfcfd512a7112e3216ee477b29258b2c"
     },
     {
       "method": "get_volatility_index_data",
@@ -273,7 +273,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "ede2329bdce50ff0cc6f05dd86c385f547cd33505c70e0b0cfb6be0dcd0cec48"
+      "sha256": "59b5f3f6a4014ffd39315baa565c31a110b890f10f64008b7ea820508c451e25"
     },
     {
       "method": "get_volatility_index_data",
@@ -284,7 +284,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "504dc88340185df0d7c348a1ef2e64a206ee5ef0410e03cb70fac8f1290f2dd4"
+      "sha256": "34d48b16e33d8e72597b94326f8a4bc652469346c7eca4130eb5108dd35dff19"
     },
     {
       "method": "get_volatility_index_data",
@@ -295,7 +295,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "83ddb3f631bcfa69fbb6aa9ba697c3ae1f096ef79f342df4a8f45274159911bf"
+      "sha256": "4f6c04c31e45aa47aa4aa534fbcc603a10ddbc32a30a6de92e1be0adbc6b3f98"
     },
     {
       "method": "get_volatility_index_data",
@@ -306,7 +306,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "b9b3372a2dd6939bf1dd6265947b59362915523e66426bd1a8ce62853bb99edd"
+      "sha256": "37668fa529d6d945b8e4a921f683f25b174f230a795610e0e93123dd96fda621"
     },
     {
       "method": "get_volatility_index_data",
@@ -317,7 +317,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "8e5e06712953dcb0d534923e6a6522091cc1b2ae7321dabd49ad33c901a46709"
+      "sha256": "7a239f6dd36c19f4b1639d20d7d82dd29f7cfe83b866f1774b6d10edd1d7d2dd"
     },
     {
       "method": "get_volatility_index_data",
@@ -328,7 +328,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "c3cc829d6c6d15961508db088ff0bd5f4ed6dbade68c9c44425f9bb627d08794"
+      "sha256": "143c2e1f9a613feef853261631d3567e75eee18bc82b7f5ca1294ce7e38c1736"
     },
     {
       "method": "get_volatility_index_data",
@@ -339,7 +339,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "1bae67426a08d211d240943fbc65052c7ae446031ddf822c3bc714ecac3c03fa"
+      "sha256": "ee9475a1f18903678d6064b1ad1925055c627f8299aca140fd2f622430a453f7"
     },
     {
       "method": "get_volatility_index_data",
@@ -350,7 +350,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "c0ab97d77a99f454ede496af8935a8e747f13ebef37b9bde547054fcb152fac6"
+      "sha256": "6eaecda79544054c16dc0be65b4c1f2bcb1d0fc558cebf3da5d3c8fd99c49648"
     },
     {
       "method": "get_volatility_index_data",
@@ -361,7 +361,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 1000,
-      "sha256": "0a8d7a5bcbd0169a5d2138bc1e9015d03f278235ac6a0048291b223e998f91b2"
+      "sha256": "38555c3dc160f5fa65718bdcb21cfea03357d42605261742c0ce5270d10cb55b"
     },
     {
       "method": "get_volatility_index_data",
@@ -372,7 +372,7 @@
         "start_timestamp": 1689451200000
       },
       "rows": 293,
-      "sha256": "924cd6e88377338505da1bddc876bb5e55b926132245113e99284d5d203728bc"
+      "sha256": "1cd0006dfb9989984b4210c754b5f79623f05d9afd056cc71e52ca774ab1b875"
     }
   ],
   "start": "2023-07-15T20:00:00+00:00"
