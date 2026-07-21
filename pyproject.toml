@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "eth-account>=0.13",
     "web3>=7",
+    "numpy>=2.0",
     "scipy>=1.14",
     "requests>=2.32",
     "python-dotenv>=1.0",

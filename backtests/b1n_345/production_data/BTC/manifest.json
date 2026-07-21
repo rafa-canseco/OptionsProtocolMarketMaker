@@ -1,0 +1,379 @@
+{
+  "asset": "BTC",
+  "created_at": "2026-07-21T00:15:00.589762+00:00",
+  "cutoff": "2026-07-15T08:00:00+00:00",
+  "normalized": {
+    "iv_rows": 26292,
+    "path": "market.json",
+    "sha256": "d8b783d13e6c83235ee05c9122ad52149a020b1bdf184e1cec6ba352ca830edc",
+    "spot_rows": 26292
+  },
+  "playbook_context_gap": "playbook/CONTEXT.md absent in staging checkout",
+  "schema_version": 2,
+  "sources": [
+    {
+      "method": "get_tradingview_chart_data",
+      "params": {
+        "end_timestamp": 1784102400000,
+        "instrument_name": "BTC-PERPETUAL",
+        "resolution": "60",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 5001,
+      "sha256": "c71864141f7125ce407344e7043158415c4485f5fe2a4f650b118b75971bc941"
+    },
+    {
+      "method": "get_tradingview_chart_data",
+      "params": {
+        "end_timestamp": 1766102399999,
+        "instrument_name": "BTC-PERPETUAL",
+        "resolution": "60",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 5001,
+      "sha256": "04d0b9665519324e0c1ce2ffb79326404f992f022e4079a4a5cd061640811974"
+    },
+    {
+      "method": "get_tradingview_chart_data",
+      "params": {
+        "end_timestamp": 1748098799999,
+        "instrument_name": "BTC-PERPETUAL",
+        "resolution": "60",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 5001,
+      "sha256": "5ee00ab04d097aead23a1223d31dade02945e7957be0dc1ba54e07f9b1a2ae56"
+    },
+    {
+      "method": "get_tradingview_chart_data",
+      "params": {
+        "end_timestamp": 1730095199999,
+        "instrument_name": "BTC-PERPETUAL",
+        "resolution": "60",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 5001,
+      "sha256": "1fa7ca45d6bf2f3dbada80d06097e26da124f4f28f104958d7f1359590cf55b2"
+    },
+    {
+      "method": "get_tradingview_chart_data",
+      "params": {
+        "end_timestamp": 1712091599999,
+        "instrument_name": "BTC-PERPETUAL",
+        "resolution": "60",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 5001,
+      "sha256": "dd42c6862e506fa98e2e1b99bd1e9283b135dcacec69e6ad435514a37388a5ea"
+    },
+    {
+      "method": "get_tradingview_chart_data",
+      "params": {
+        "end_timestamp": 1694087999999,
+        "instrument_name": "BTC-PERPETUAL",
+        "resolution": "60",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1288,
+      "sha256": "3cada9e5ac28279084d4b50d595503693e666491bbd587ba5195816218db12f4"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1784102400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "b41ae69579e36cef5bea3563e4ac044d75f32922c01cd4631a591f289352f7fd"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1780502400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "f81639155c1c6e4b0cc8780ca8f1738e712339b0cbe610ece47f66a0e10b1da3"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1776902400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "becdfa1592dbb82f3c71cf1f1d66bcfeddade8671721f9c319aa2cbc3948c500"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1773302400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "aae8cd30ff8d74d1d09fde3b34a66b67bbd1d0958aebf5893fc0bf3cb23927c2"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1769702400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "70c60828e1f5ec4325008769161d5459776a80502750ab39596be6f6560b737c"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1766102400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "953305e97e5ca3b5e71360964d2ca8da11f9110f5ffbb9be90e7fc2180f0ef4b"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1762502400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "59c2b50727126ebf68ed41defbfda8a2b9890e46ddba28a0b96fdcac9b448aa0"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1758902400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "961debfea3bebf907bc210a6a189452cbd8a6798fcc4971e2332074752b2e9a9"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1755302400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "ba8c2735239f60dc7c562da6d278cf1680228ad1ea1bdf499f6c7b947fba0750"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1751702400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "0423ffb7f9661f5e340f4211f564fdd7413973a33398c5b9dac28db95b4a616f"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1748102400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "2eb5d7285f13cb3b743a865bbdb6301e5064a16bc74f359eac55bd96a650b713"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1744502400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "20ee0b3fa631a1a6451464df3c83cb0e732f8f2a2884666b8915a11fca4789c4"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1740902400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "a5a72a36acb3114fc744f06778407fc463716c71ad6ab3fc04d7dc498382631d"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1737302400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "5b83aa909b19bc78da8dc0fb4389395ea30c0eea52cb38d912fdafdd03bfb7c9"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1733702400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "da8618604df80aeae324de5bceb4324a5a6a09d00f6917c44dcf40db3cef2f11"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1730102400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "3a156b51b27406677715b99c0e22cb0f5db61fa524dccc6ea1287ada06bf5c71"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1726502400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "4f53ab6b4901e5a4d2edc42fa49f6fb9dfcfd512a7112e3216ee477b29258b2c"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1722902400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "59b5f3f6a4014ffd39315baa565c31a110b890f10f64008b7ea820508c451e25"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1719302400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "34d48b16e33d8e72597b94326f8a4bc652469346c7eca4130eb5108dd35dff19"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1715702400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "4f6c04c31e45aa47aa4aa534fbcc603a10ddbc32a30a6de92e1be0adbc6b3f98"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1712102400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "37668fa529d6d945b8e4a921f683f25b174f230a795610e0e93123dd96fda621"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1708502400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "7a239f6dd36c19f4b1639d20d7d82dd29f7cfe83b866f1774b6d10edd1d7d2dd"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1704902400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "143c2e1f9a613feef853261631d3567e75eee18bc82b7f5ca1294ce7e38c1736"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1701302400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "ee9475a1f18903678d6064b1ad1925055c627f8299aca140fd2f622430a453f7"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1697702400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "6eaecda79544054c16dc0be65b4c1f2bcb1d0fc558cebf3da5d3c8fd99c49648"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1694102400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "38555c3dc160f5fa65718bdcb21cfea03357d42605261742c0ce5270d10cb55b"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "BTC",
+        "end_timestamp": 1690502400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 293,
+      "sha256": "1cd0006dfb9989984b4210c754b5f79623f05d9afd056cc71e52ca774ab1b875"
+    }
+  ],
+  "start": "2023-07-15T20:00:00+00:00"
+}
