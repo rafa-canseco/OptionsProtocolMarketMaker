@@ -10,13 +10,12 @@ from src.backtest.config import (
     CoverageGate,
 )
 from src.backtest.csp_fund_policy import (
-    EntryFilterSettings,
     FundRiskSettings,
     PhysicalCspCandidate,
-    annualized_realized_volatility,
     build_candidates,
     build_policy,
-    entry_filter_snapshot,
+    candidate_put_strike,
+    fixed_moneyness_put_strike,
     run_physical_csp_window,
     selection_sort_key,
     summarize_candidate,
@@ -80,16 +79,12 @@ def _series(
     return MarketSeries(path)
 
 
-def _filter_settings() -> EntryFilterSettings:
-    return EntryFilterSettings(30, 24, 0, 0.05)
-
-
 def _candidate(settings: BacktestSettings, utilization=0.5) -> PhysicalCspCandidate:
     return PhysicalCspCandidate(
-        target_delta=0.4,
+        strike_rule="fixed_moneyness_below_spot",
+        strike_parameter=0.1,
         utilization=utilization,
         minimum_net_premium_bps=0,
-        entry_filter="none",
         costs=settings.cost_scenarios[0],
     )
 
@@ -110,7 +105,6 @@ def test_itm_put_physically_exchanges_usdc_for_weth(tmp_path):
         window_days=2,
         end=end,
         candidate=_candidate(settings),
-        entry_filters=_filter_settings(),
         fund_risk=FundRiskSettings(1.0, 0.01),
     )
 
@@ -141,7 +135,6 @@ def test_weth_inventory_cap_stops_the_next_entry(tmp_path):
         window_days=4,
         end=end,
         candidate=_candidate(settings),
-        entry_filters=_filter_settings(),
         fund_risk=FundRiskSettings(0.25, 0.01),
     )
 
@@ -151,34 +144,58 @@ def test_weth_inventory_cap_stops_the_next_entry(tmp_path):
     assert result["peak_weth_nav_fraction"] >= 0.25
 
 
-def test_trend_filter_does_not_read_future_spot(tmp_path):
-    start = datetime(2025, 12, 1, 8, tzinfo=UTC)
-    decision = start + timedelta(days=30)
-    future = decision + timedelta(days=1)
-    series = _series(
-        tmp_path,
-        start=start,
-        end=future,
-        spot_points={start: 2000, decision: 1800, future: 9999},
+@pytest.mark.parametrize(
+    ("distance", "expected"),
+    ((0.1, 1800.0), (0.15, 1700.0)),
+)
+def test_fixed_moneyness_strike_is_the_requested_distance(distance, expected):
+    assert (
+        fixed_moneyness_put_strike(
+            spot=2000,
+            moneyness_below_spot=distance,
+            strike_increment=5,
+        )
+        == expected
     )
-    spot = series.spot_at(int(decision.timestamp() * 1000), 8)
-    iv = series.iv_at(int(decision.timestamp() * 1000), 6)
-    assert spot is not None and iv is not None
 
-    result = entry_filter_snapshot(
-        series=series,
-        decision=decision,
-        spot=spot.value,
-        iv=iv.value,
-        filter_name="trend",
-        settings=EntryFilterSettings(30, 24, 0, 0.05),
+
+def test_fixed_moneyness_strike_rounds_away_from_spot():
+    strike = fixed_moneyness_put_strike(
+        spot=2003,
+        moneyness_below_spot=0.1,
+        strike_increment=5,
     )
-    assert result["passed"] is False
-    assert result["trend_return"] == pytest.approx(-0.1)
+    assert strike == 1800
+    assert strike <= 2003 * 0.9
 
 
-def test_realized_volatility_is_zero_for_flat_hourly_series():
-    assert annualized_realized_volatility([2000.0] * 24) == 0
+def test_delta_strike_moves_with_implied_volatility():
+    settings = _settings()
+    candidate = PhysicalCspCandidate(
+        strike_rule="target_put_delta",
+        strike_parameter=0.1,
+        utilization=0.25,
+        minimum_net_premium_bps=0,
+        costs=settings.cost_scenarios[0],
+    )
+    lower_iv = candidate_put_strike(
+        candidate=candidate,
+        spot=2000,
+        iv=0.4,
+        time_years=2 / 365,
+        risk_free_rate=0.05,
+        strike_increment=5,
+    )
+    higher_iv = candidate_put_strike(
+        candidate=candidate,
+        spot=2000,
+        iv=1.0,
+        time_years=2 / 365,
+        risk_free_rate=0.05,
+        strike_increment=5,
+    )
+    assert lower_iv is not None and higher_iv is not None
+    assert higher_iv < lower_iv
 
 
 def test_candidate_family_is_closed_and_contains_primary():
@@ -189,12 +206,19 @@ def test_candidate_family_is_closed_and_contains_primary():
         settings=_settings(),
         cost_name="base",
     )
-    assert len(candidates) == 36
+    assert len(candidates) == 30
     assert any(
-        candidate.target_delta == 0.1
+        candidate.strike_rule == "fixed_moneyness_below_spot"
+        and candidate.strike_parameter == 0.1
         and candidate.utilization == 0.25
-        and candidate.minimum_net_premium_bps == 50
-        and candidate.entry_filter == "trend_vrp"
+        and candidate.minimum_net_premium_bps == 25
+        for candidate in candidates
+    )
+    assert any(
+        candidate.strike_rule == "target_put_delta"
+        and candidate.strike_parameter == 0.15
+        and candidate.utilization == 0.5
+        and candidate.minimum_net_premium_bps == 0
         for candidate in candidates
     )
 
@@ -202,15 +226,18 @@ def test_candidate_family_is_closed_and_contains_primary():
 def test_summary_requires_returns_risk_activity_and_coverage():
     row = {
         "candidate_id": "candidate",
-        "target_delta": 0.1,
+        "strike_rule": "target_put_delta",
+        "strike_parameter": 0.1,
         "utilization": 0.25,
-        "minimum_net_premium_bps": 50,
-        "entry_filter": "trend_vrp",
+        "minimum_net_premium_bps": 25,
         "costs": "base",
         "window_days": 30,
         "absolute_return": 0.02,
         "maximum_drawdown": -0.1,
         "open_rate": 0.5,
+        "assignment_frequency": 0.1,
+        "assignments": 1,
+        "positions_settled": 10,
         "missing_market_fraction": 0.0,
     }
     gates = {
@@ -233,10 +260,10 @@ def test_summary_requires_returns_risk_activity_and_coverage():
 
 def test_policy_can_authorize_capped_testnet_validation_without_economic_go():
     candidate = {
-        "target_delta": 0.15,
+        "strike_rule": "fixed_moneyness_below_spot",
+        "strike_parameter": 0.15,
         "utilization": 0.25,
         "minimum_net_premium_bps": 25,
-        "entry_filter": "none",
         "costs": "base",
     }
     checks = {
@@ -249,6 +276,7 @@ def test_policy_can_authorize_capped_testnet_validation_without_economic_go():
     summary = {
         "candidate": candidate,
         "all_economic_gates_pass": False,
+        "all_activity_gates_pass": True,
         "windows": [{"checks": checks}],
     }
     config = {

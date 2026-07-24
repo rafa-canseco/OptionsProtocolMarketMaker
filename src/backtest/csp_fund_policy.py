@@ -19,32 +19,26 @@ from src.backtest.engine import (
 )
 from src.backtest.models import CostScenario, OptionPosition
 from src.backtest.probe import decision_times
+from src.pricer import bs_delta
 
 
 @dataclass(frozen=True)
 class PhysicalCspCandidate:
-    target_delta: float
+    strike_rule: str
+    strike_parameter: float
     utilization: float
     minimum_net_premium_bps: int
-    entry_filter: str
     costs: CostScenario
 
     @property
     def candidate_id(self) -> str:
-        delta = f"{self.target_delta:.3f}".rstrip("0").rstrip(".")
+        parameter = f"{self.strike_parameter:.3f}".rstrip("0").rstrip(".")
+        prefix = "m" if self.strike_rule == "fixed_moneyness_below_spot" else "d"
         utilization = f"{self.utilization:.2f}".rstrip("0").rstrip(".")
         return (
-            f"d{delta}-u{utilization}-p{self.minimum_net_premium_bps}"
-            f"-{self.entry_filter}-{self.costs.name}"
+            f"{prefix}{parameter}-u{utilization}-p{self.minimum_net_premium_bps}"
+            f"-{self.costs.name}"
         )
-
-
-@dataclass(frozen=True)
-class EntryFilterSettings:
-    lookback_days: int
-    minimum_observations: int
-    minimum_trend_return: float
-    minimum_iv_minus_realized_volatility: float
 
 
 @dataclass(frozen=True)
@@ -65,7 +59,6 @@ class PhysicalFundLedger:
     positions_settled: int = 0
     assignments: int = 0
     eligible_decisions: int = 0
-    skipped_entry_filter: int = 0
     skipped_minimum_premium: int = 0
     skipped_weth_inventory: int = 0
     skipped_insufficient_collateral: int = 0
@@ -110,63 +103,52 @@ def _drawdown(values: list[float]) -> float:
     return result
 
 
-def annualized_realized_volatility(spots: list[float]) -> float | None:
-    if len(spots) < 2 or any(value <= 0 for value in spots):
-        return None
-    returns = [
-        math.log(spots[index] / spots[index - 1]) for index in range(1, len(spots))
-    ]
-    if not returns:
-        return None
-    return statistics.pstdev(returns) * math.sqrt(365 * 24)
-
-
-def entry_filter_snapshot(
+def fixed_moneyness_put_strike(
     *,
-    series: MarketSeries,
-    decision: datetime,
+    spot: float,
+    moneyness_below_spot: float,
+    strike_increment: float,
+) -> float | None:
+    """Return a put strike at least the configured percentage below spot."""
+    if spot <= 0:
+        raise ValueError("spot must be positive")
+    if not 0 < moneyness_below_spot < 1:
+        raise ValueError("moneyness_below_spot must be between zero and one")
+    if strike_increment <= 0:
+        raise ValueError("strike_increment must be positive")
+    raw_strike = spot * (1 - moneyness_below_spot)
+    strike = math.floor(raw_strike / strike_increment) * strike_increment
+    if strike <= 0 or strike >= spot:
+        return None
+    return float(strike)
+
+
+def candidate_put_strike(
+    *,
+    candidate: PhysicalCspCandidate,
     spot: float,
     iv: float,
-    filter_name: str,
-    settings: EntryFilterSettings,
-) -> dict[str, Any]:
-    if filter_name == "none":
-        return {
-            "passed": True,
-            "trend_return": None,
-            "realized_volatility": None,
-            "iv_minus_realized_volatility": None,
-            "observation_count": 0,
-        }
-    if filter_name not in {"trend", "trend_vrp"}:
-        raise ValueError(f"Unknown entry filter: {filter_name}")
-    start = decision - timedelta(days=settings.lookback_days)
-    spots, _ = series.observed_range(
-        utc_timestamp_ms(start),
-        utc_timestamp_ms(decision),
-    )
-    if len(spots) < settings.minimum_observations:
-        return {
-            "passed": False,
-            "trend_return": None,
-            "realized_volatility": None,
-            "iv_minus_realized_volatility": None,
-            "observation_count": len(spots),
-        }
-    trend_return = spot / spots[0] - 1
-    realized = annualized_realized_volatility(spots)
-    vrp = None if realized is None else iv - realized
-    trend_passed = trend_return >= settings.minimum_trend_return
-    vrp_passed = (
-        vrp is not None and vrp >= settings.minimum_iv_minus_realized_volatility
-    )
-    return {
-        "passed": trend_passed and (filter_name == "trend" or vrp_passed),
-        "trend_return": trend_return,
-        "realized_volatility": realized,
-        "iv_minus_realized_volatility": vrp,
-        "observation_count": len(spots),
-    }
+    time_years: float,
+    risk_free_rate: float,
+    strike_increment: float,
+) -> float | None:
+    if candidate.strike_rule == "fixed_moneyness_below_spot":
+        return fixed_moneyness_put_strike(
+            spot=spot,
+            moneyness_below_spot=candidate.strike_parameter,
+            strike_increment=strike_increment,
+        )
+    if candidate.strike_rule == "target_put_delta":
+        return select_strike(
+            is_put=True,
+            spot=spot,
+            iv=iv,
+            time_years=time_years,
+            target_delta=candidate.strike_parameter,
+            risk_free_rate=risk_free_rate,
+            strike_increment=strike_increment,
+        )
+    raise ValueError(f"Unknown strike rule: {candidate.strike_rule}")
 
 
 def _nav(
@@ -244,7 +226,6 @@ def run_physical_csp_window(
     window_days: int,
     end: datetime,
     candidate: PhysicalCspCandidate,
-    entry_filters: EntryFilterSettings,
     fund_risk: FundRiskSettings,
 ) -> dict[str, Any]:
     window_start = end - timedelta(days=window_days)
@@ -252,7 +233,8 @@ def run_physical_csp_window(
     nav_marks: list[tuple[int, float]] = [
         (utc_timestamp_ms(window_start), settings.initial_usdc)
     ]
-    filter_observations: list[dict[str, Any]] = []
+    opened_strike_distances: list[float] = []
+    opened_absolute_put_deltas: list[float] = []
     strike_increment = settings.asset(series.asset).strike_increment_usd
     position_counter = 1
     decisions = 0
@@ -315,38 +297,15 @@ def run_physical_csp_window(
             )
             continue
 
-        filter_result = entry_filter_snapshot(
-            series=series,
-            decision=execution,
-            spot=spot,
-            iv=iv,
-            filter_name=candidate.entry_filter,
-            settings=entry_filters,
-        )
-        filter_observations.append(filter_result)
-        if not filter_result["passed"]:
-            ledger.skipped_entry_filter += 1
-            _record_interval_nav(
-                series=series,
-                settings=settings,
-                ledger=ledger,
-                position=None,
-                start=execution,
-                end=expiry_dt,
-                nav_marks=nav_marks,
-            )
-            continue
-
         ledger.eligible_decisions += 1
         opened_at = int(execution.timestamp())
         expiry = int(expiry_dt.timestamp())
         time_years = (expiry - opened_at) / (365 * 86_400)
-        strike = select_strike(
-            is_put=True,
+        strike = candidate_put_strike(
+            candidate=candidate,
             spot=spot,
             iv=iv,
             time_years=time_years,
-            target_delta=candidate.target_delta,
             risk_free_rate=settings.risk_free_rate,
             strike_increment=strike_increment,
         )
@@ -414,6 +373,19 @@ def run_physical_csp_window(
             continue
 
         ledger.cash_usdc += net_premium
+        opened_strike_distances.append(1 - strike / spot)
+        opened_absolute_put_deltas.append(
+            abs(
+                bs_delta(
+                    True,
+                    spot,
+                    strike,
+                    time_years,
+                    settings.risk_free_rate,
+                    iv,
+                )
+            )
+        )
         ledger.premium_net_usdc += net_premium
         ledger.estimated_costs_usdc += (
             gross_premium - net_before_cost
@@ -470,16 +442,6 @@ def run_physical_csp_window(
     nav_marks.append((utc_timestamp_ms(end), final_nav))
     ending_weth_fraction = _weth_nav_fraction(ledger, final_spot.value)
     missing_fraction = ledger.missing_market_events / decisions if decisions else 1.0
-    trend_values = [
-        float(item["trend_return"])
-        for item in filter_observations
-        if item["trend_return"] is not None
-    ]
-    vrp_values = [
-        float(item["iv_minus_realized_volatility"])
-        for item in filter_observations
-        if item["iv_minus_realized_volatility"] is not None
-    ]
     result = {
         "candidate_id": candidate.candidate_id,
         "asset": series.asset,
@@ -512,22 +474,31 @@ def run_physical_csp_window(
         "decisions": decisions,
         "eligible_decisions": ledger.eligible_decisions,
         "open_rate": ledger.positions_opened / decisions if decisions else 0.0,
-        "skipped_entry_filter": ledger.skipped_entry_filter,
+        "median_opened_strike_distance_below_spot": (
+            statistics.median(opened_strike_distances)
+            if opened_strike_distances
+            else None
+        ),
+        "minimum_opened_strike_distance_below_spot": (
+            min(opened_strike_distances) if opened_strike_distances else None
+        ),
+        "maximum_opened_strike_distance_below_spot": (
+            max(opened_strike_distances) if opened_strike_distances else None
+        ),
+        "median_opened_absolute_put_delta": (
+            statistics.median(opened_absolute_put_deltas)
+            if opened_absolute_put_deltas
+            else None
+        ),
         "skipped_minimum_premium": ledger.skipped_minimum_premium,
         "skipped_weth_inventory": ledger.skipped_weth_inventory,
         "skipped_insufficient_collateral": ledger.skipped_insufficient_collateral,
         "missing_market_events": ledger.missing_market_events,
         "missing_market_fraction": missing_fraction,
-        "median_trend_return": (
-            statistics.median(trend_values) if trend_values else None
-        ),
-        "median_iv_minus_realized_volatility": (
-            statistics.median(vrp_values) if vrp_values else None
-        ),
-        "target_delta": candidate.target_delta,
+        "strike_rule": candidate.strike_rule,
+        "strike_parameter": candidate.strike_parameter,
         "utilization": candidate.utilization,
         "minimum_net_premium_bps": candidate.minimum_net_premium_bps,
-        "entry_filter": candidate.entry_filter,
         "costs": candidate.costs.name,
         "pricing_observation_class": "modeled",
         "assignment_settlement": "physical_weth_inventory",
@@ -569,6 +540,29 @@ def summarize_candidate(
         returns = [float(row["absolute_return"]) for row in group]
         drawdowns = [float(row["maximum_drawdown"]) for row in group]
         open_rates = [float(row["open_rate"]) for row in group]
+        assignment_frequencies = [float(row["assignment_frequency"]) for row in group]
+        total_assignments = sum(int(row["assignments"]) for row in group)
+        total_settled_positions = sum(int(row["positions_settled"]) for row in group)
+        median_strike_distances = [
+            float(row["median_opened_strike_distance_below_spot"])
+            for row in group
+            if row.get("median_opened_strike_distance_below_spot") is not None
+        ]
+        minimum_strike_distances = [
+            float(row["minimum_opened_strike_distance_below_spot"])
+            for row in group
+            if row.get("minimum_opened_strike_distance_below_spot") is not None
+        ]
+        maximum_strike_distances = [
+            float(row["maximum_opened_strike_distance_below_spot"])
+            for row in group
+            if row.get("maximum_opened_strike_distance_below_spot") is not None
+        ]
+        median_absolute_put_deltas = [
+            float(row["median_opened_absolute_put_delta"])
+            for row in group
+            if row.get("median_opened_absolute_put_delta") is not None
+        ]
         missing = [float(row["missing_market_fraction"]) for row in group]
         hurdle = (
             1
@@ -586,6 +580,14 @@ def summarize_candidate(
         )
         worst_drawdown = min(drawdowns, default=-1.0)
         median_open_rate = statistics.median(open_rates) if open_rates else 0.0
+        median_assignment_frequency = (
+            statistics.median(assignment_frequencies) if assignment_frequencies else 0.0
+        )
+        aggregate_assignment_frequency = (
+            total_assignments / total_settled_positions
+            if total_settled_positions
+            else 0.0
+        )
         maximum_missing = max(missing, default=1.0)
         checks = {
             "median_return_above_hurdle": distribution["p50"] >= hurdle,
@@ -615,6 +617,24 @@ def summarize_candidate(
                 "expected_shortfall_5": expected_shortfall_5,
                 "worst_maximum_drawdown": worst_drawdown,
                 "median_open_rate": median_open_rate,
+                "median_assignment_frequency": median_assignment_frequency,
+                "aggregate_assignment_frequency": aggregate_assignment_frequency,
+                "median_opened_strike_distance_below_spot": (
+                    statistics.median(median_strike_distances)
+                    if median_strike_distances
+                    else None
+                ),
+                "minimum_opened_strike_distance_below_spot": (
+                    min(minimum_strike_distances) if minimum_strike_distances else None
+                ),
+                "maximum_opened_strike_distance_below_spot": (
+                    max(maximum_strike_distances) if maximum_strike_distances else None
+                ),
+                "median_opened_absolute_put_delta": (
+                    statistics.median(median_absolute_put_deltas)
+                    if median_absolute_put_deltas
+                    else None
+                ),
                 "maximum_missing_market_fraction": maximum_missing,
                 "checks": checks,
                 "passed": all(checks.values()),
@@ -626,10 +646,10 @@ def summarize_candidate(
             {
                 key: rows[0][key]
                 for key in (
-                    "target_delta",
+                    "strike_rule",
+                    "strike_parameter",
                     "utilization",
                     "minimum_net_premium_bps",
-                    "entry_filter",
                     "costs",
                 )
             }
@@ -641,6 +661,8 @@ def summarize_candidate(
         "economic_gate_total": checks_total,
         "all_economic_gates_pass": bool(windows)
         and all(window["passed"] for window in windows),
+        "all_activity_gates_pass": bool(windows)
+        and all(window["checks"]["minimum_open_rate_met"] for window in windows),
         "worst_loss_probability": max(
             (float(window["loss_probability"]) for window in windows),
             default=1.0,
@@ -662,17 +684,16 @@ def summarize_candidate(
 
 def selection_sort_key(summary: dict[str, Any]) -> tuple[Any, ...]:
     candidate = summary["candidate"]
-    filter_strength = {"none": 0, "trend": 1, "trend_vrp": 2}
     return (
         -int(summary["all_economic_gates_pass"]),
+        -int(summary["all_activity_gates_pass"]),
         -int(summary["economic_gate_count"]),
         float(summary["worst_loss_probability"]),
         -float(summary["worst_drawdown"]),
         -float(summary["minimum_median_excess_return"]),
         float(candidate["utilization"]),
-        float(candidate["target_delta"]),
         -int(candidate["minimum_net_premium_bps"]),
-        -filter_strength[str(candidate["entry_filter"])],
+        str(summary["candidate_id"]),
     )
 
 
@@ -684,18 +705,21 @@ def build_candidates(
 ) -> list[PhysicalCspCandidate]:
     family = config["candidate_family"]
     costs = next(item for item in settings.cost_scenarios if item.name == cost_name)
+    strike_rules = [
+        ("fixed_moneyness_below_spot", float(value))
+        for value in family["fixed_moneyness_below_spot"]
+    ] + [("target_put_delta", float(value)) for value in family["target_put_deltas"]]
     return [
         PhysicalCspCandidate(
-            target_delta=float(delta),
+            strike_rule=strike_rule,
+            strike_parameter=strike_parameter,
             utilization=float(utilization),
             minimum_net_premium_bps=int(premium),
-            entry_filter=str(entry_filter),
             costs=costs,
         )
-        for delta in family["target_deltas"]
+        for strike_rule, strike_parameter in strike_rules
         for utilization in family["utilizations"]
         for premium in family["minimum_net_premium_bps"]
-        for entry_filter in family["entry_filters"]
     ]
 
 
@@ -708,10 +732,10 @@ def candidate_from_summary(
     raw = summary["candidate"]
     costs = next(item for item in settings.cost_scenarios if item.name == cost_name)
     return PhysicalCspCandidate(
-        target_delta=float(raw["target_delta"]),
+        strike_rule=str(raw["strike_rule"]),
+        strike_parameter=float(raw["strike_parameter"]),
         utilization=float(raw["utilization"]),
         minimum_net_premium_bps=int(raw["minimum_net_premium_bps"]),
-        entry_filter=str(raw["entry_filter"]),
         costs=costs,
     )
 
@@ -794,10 +818,15 @@ def build_policy(
         "selection": {
             "target_duration_hours": int(config["scope"]["cadence_hours"]),
             "reopen_cadence_hours": int(config["scope"]["cadence_hours"]),
-            "target_put_delta": float(selected["target_delta"]),
+            "strike_rule": str(selected["strike_rule"]),
+            "strike_parameter": float(selected["strike_parameter"]),
+            "strike_rounding": (
+                "down_to_exchange_increment"
+                if selected["strike_rule"] == "fixed_moneyness_below_spot"
+                else "nearest_exchange_increment_from_target_delta"
+            ),
             "maximum_utilization": float(selected["utilization"]),
             "minimum_net_premium_bps": int(selected["minimum_net_premium_bps"]),
-            "entry_filter": str(selected["entry_filter"]),
             "maximum_weth_nav_fraction": float(
                 config["fund_policy"]["maximum_weth_nav_fraction_for_new_entry"]
             ),
@@ -901,10 +930,10 @@ def write_report(
         "",
         "| Parameter | Value |",
         "|---|---:|",
-        f"| Target delta | {selected['candidate']['target_delta']:.3f} |",
+        f"| Strike rule | {selected['candidate']['strike_rule']} |",
+        f"| Strike parameter | {selected['candidate']['strike_parameter']:.0%} |",
         f"| Utilization | {selected['candidate']['utilization']:.0%} |",
         f"| Minimum net premium | {selected['candidate']['minimum_net_premium_bps']} bps |",
-        f"| Entry filter | {selected['candidate']['entry_filter']} |",
         "| Cadence | 48 hours |",
         "| WETH inventory cap for new entries | 25% NAV |",
         "",
@@ -931,24 +960,38 @@ def write_report(
         f"{policy['base_sepolia_overrides']['maximum_assignments_before_review']} |",
         "| Mainnet | Not authorized |",
         "",
-        "## Validation",
+        "## Validation comparison",
         "",
-        "| Cost | Window | N | Median | Hurdle | Loss probability | Worst DD | Open rate | Gate |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---|",
+        "Each row uses the development winner for its exact strike variant.",
+        "",
+        "| Rule | Parameter | Actual distance | Actual delta | Cost | Window | N | Median | Loss probability | Worst DD | Open rate | Assignment | Gate |",
+        "|---|---:|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
-    for cost_key in ("validation_base", "validation_stressed"):
-        result = summary[cost_key]
-        cost = result["candidate"]["costs"]
-        for window in result["windows"]:
-            lines.append(
-                f"| {cost} | {window['window_days']}d | {window['sample_count']} | "
-                f"{window['return_distribution']['p50']:.2%} | "
-                f"{window['hurdle_return']:.2%} | "
-                f"{window['loss_probability']:.1%} | "
-                f"{window['worst_maximum_drawdown']:.2%} | "
-                f"{window['median_open_rate']:.1%} | "
-                f"{'PASS' if window['passed'] else 'FAIL'} |"
-            )
+    for comparison in summary["validation_comparison"].values():
+        for cost_key in ("validation_base", "validation_stressed"):
+            result = comparison[cost_key]
+            candidate = result["candidate"]
+            for window in result["windows"]:
+                distance = window["median_opened_strike_distance_below_spot"]
+                distance_label = (
+                    f"{distance:.1%}" if distance is not None else "No opens"
+                )
+                delta = window["median_opened_absolute_put_delta"]
+                delta_label = f"{delta:.3f}" if delta is not None else "No opens"
+                lines.append(
+                    f"| {candidate['strike_rule']} | "
+                    f"{candidate['strike_parameter']:.0%} | "
+                    f"{distance_label} | "
+                    f"{delta_label} | "
+                    f"{candidate['costs']} | {window['window_days']}d | "
+                    f"{window['sample_count']} | "
+                    f"{window['return_distribution']['p50']:.2%} | "
+                    f"{window['loss_probability']:.1%} | "
+                    f"{window['worst_maximum_drawdown']:.2%} | "
+                    f"{window['median_open_rate']:.1%} | "
+                    f"{window['aggregate_assignment_frequency']:.1%} | "
+                    f"{'PASS' if window['passed'] else 'FAIL'} |"
+                )
     lines.extend(
         [
             "",

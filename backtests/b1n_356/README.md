@@ -1,9 +1,14 @@
 # B1N-356 CSP Fund policy v2
 
-This experiment evaluates a standalone ETH/USDC cash-secured-put fund with
-physical WETH assignment. It does not reuse the B1N-345 cash-settlement shortcut:
-an ITM put spends its USDC collateral, adds WETH inventory, marks that inventory
-in NAV, and reduces the cash available to future positions.
+This experiment compares two strike-selection rules for a standalone ETH/USDC
+cash-secured-put fund with 48-hour expiry and physical WETH assignment:
+
+- fixed strikes 10% or 15% below spot, rounded down to the exchange increment;
+- target put delta 0.05, 0.10, or 0.15.
+
+It does not reuse the B1N-345 cash-settlement shortcut: an ITM put spends its
+USDC collateral, adds WETH inventory, marks that inventory in NAV, and reduces
+the cash available to future positions.
 
 ## Reproduce
 
@@ -25,7 +30,10 @@ The runner verifies the immutable source digest before producing results:
 - Candidate family is fixed in `config.json` before result generation.
 - Development uses `2023-08-15` through `2025-07-15`.
 - Validation uses the untouched final year through `2026-07-15`.
-- Validation covers rolling 30/90/180-day windows under base and stressed costs.
+- Validation covers rolling 30/90-day windows under base and stressed costs.
+- Both strike families use the same utilization, premium floors, costs, physical
+  assignment accounting, and risk gates.
+- No trend or volatility-risk-premium entry filters are used.
 - Covered calls and automatic WETH-to-USDC deallocation are disabled.
 - New entries stop when WETH reaches 25% of NAV.
 - The `options-scenarios` holdout boundary is not accessed.

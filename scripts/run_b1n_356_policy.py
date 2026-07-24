@@ -8,7 +8,6 @@ from pathlib import Path
 
 from src.backtest.config import load_settings
 from src.backtest.csp_fund_policy import (
-    EntryFilterSettings,
     FundRiskSettings,
     build_candidates,
     build_policy,
@@ -44,10 +43,6 @@ def _load(root: Path):
     )
 
 
-def _filters(config):
-    return EntryFilterSettings(**config["entry_filter"])
-
-
 def _risk(config):
     fund = config["fund_policy"]
     return FundRiskSettings(
@@ -58,6 +53,11 @@ def _risk(config):
             fund["minimum_deployable_collateral_usdc"]
         ),
     )
+
+
+def _strike_variant_id(summary):
+    candidate = summary["candidate"]
+    return f"{candidate['strike_rule']}:{candidate['strike_parameter']:.6g}"
 
 
 def _run_candidate(
@@ -85,7 +85,6 @@ def _run_candidate(
                     window_days=int(window_days),
                     end=window_end,
                     candidate=candidate,
-                    entry_filters=_filters(config),
                     fund_risk=_risk(config),
                 )
             )
@@ -127,39 +126,70 @@ def run(root: Path) -> None:
         )
     ranked = sorted(candidate_summaries, key=selection_sort_key)
     selected_development = ranked[0]
+    strike_variants = sorted(
+        {
+            (
+                summary["candidate"]["strike_rule"],
+                float(summary["candidate"]["strike_parameter"]),
+            )
+            for summary in candidate_summaries
+        }
+    )
+    selected_development_by_strike_variant = {
+        f"{strike_rule}:{strike_parameter:.6g}": sorted(
+            [
+                summary
+                for summary in candidate_summaries
+                if summary["candidate"]["strike_rule"] == strike_rule
+                and float(summary["candidate"]["strike_parameter"]) == strike_parameter
+            ],
+            key=selection_sort_key,
+        )[0]
+        for strike_rule, strike_parameter in strike_variants
+    }
 
     validation_step = {
         str(window): int(split["validation_step_days"])
         for window in config["decision_gates"]["window_days"]
     }
-    validation_results = {}
+    validation_comparison = {}
     validation_rows = []
-    for key, cost_name in (
-        ("validation_base", base_cost),
-        (
-            "validation_stressed",
-            config["candidate_family"]["stress_cost_scenario"],
-        ),
-    ):
-        candidate = candidate_from_summary(
-            summary=selected_development,
-            settings=settings,
-            cost_name=cost_name,
-        )
-        rows = _run_candidate(
-            series=series,
-            settings=settings,
-            config=config,
-            candidate=candidate,
-            start=validation_start,
-            end=validation_end,
-            step_by_window=validation_step,
-        )
-        validation_rows.extend(rows)
-        validation_results[key] = summarize_candidate(
-            rows=rows,
-            decision_gates=config["decision_gates"],
-        )
+    for (
+        strike_variant,
+        development_winner,
+    ) in selected_development_by_strike_variant.items():
+        validation_comparison[strike_variant] = {
+            "selected_development": development_winner
+        }
+        for key, cost_name in (
+            ("validation_base", base_cost),
+            (
+                "validation_stressed",
+                config["candidate_family"]["stress_cost_scenario"],
+            ),
+        ):
+            candidate = candidate_from_summary(
+                summary=development_winner,
+                settings=settings,
+                cost_name=cost_name,
+            )
+            rows = _run_candidate(
+                series=series,
+                settings=settings,
+                config=config,
+                candidate=candidate,
+                start=validation_start,
+                end=validation_end,
+                step_by_window=validation_step,
+            )
+            validation_rows.extend(rows)
+            validation_comparison[strike_variant][key] = summarize_candidate(
+                rows=rows,
+                decision_gates=config["decision_gates"],
+            )
+    selected_validation = validation_comparison[
+        _strike_variant_id(selected_development)
+    ]
 
     summary = {
         "schema_version": 1,
@@ -175,14 +205,19 @@ def run(root: Path) -> None:
             "end": validation_end.isoformat(),
         },
         "selected_development": selected_development,
+        "selected_development_by_strike_variant": (
+            selected_development_by_strike_variant
+        ),
         "development_ranking": ranked,
-        **validation_results,
+        "validation_comparison": validation_comparison,
+        "validation_base": selected_validation["validation_base"],
+        "validation_stressed": selected_validation["validation_stressed"],
     }
     policy = build_policy(
         config=config,
         development=selected_development,
-        validation_base=validation_results["validation_base"],
-        validation_stressed=validation_results["validation_stressed"],
+        validation_base=selected_validation["validation_base"],
+        validation_stressed=selected_validation["validation_stressed"],
         source_digest=digest,
     )
 

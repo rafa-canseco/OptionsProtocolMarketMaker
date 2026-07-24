@@ -27,24 +27,12 @@
     "validation_step_days": 7
   },
   "candidate_family": {
-    "target_deltas": [0.05, 0.1, 0.15],
+    "fixed_moneyness_below_spot": [0.1, 0.15],
+    "target_put_deltas": [0.05, 0.1, 0.15],
     "utilizations": [0.25, 0.5],
-    "minimum_net_premium_bps": [25, 50],
-    "entry_filters": ["none", "trend", "trend_vrp"],
+    "minimum_net_premium_bps": [0, 10, 25],
     "base_cost_scenario": "base",
-    "stress_cost_scenario": "stressed",
-    "primary": {
-      "target_delta": 0.1,
-      "utilization": 0.25,
-      "minimum_net_premium_bps": 50,
-      "entry_filter": "trend_vrp"
-    }
-  },
-  "entry_filter": {
-    "lookback_days": 30,
-    "minimum_observations": 168,
-    "minimum_trend_return": 0.0,
-    "minimum_iv_minus_realized_volatility": 0.05
+    "stress_cost_scenario": "stressed"
   },
   "fund_policy": {
     "maximum_weth_nav_fraction_for_new_entry": 0.25,
@@ -53,7 +41,7 @@
     "covered_calls_enabled": false
   },
   "decision_gates": {
-    "window_days": [30, 90, 180],
+    "window_days": [30, 90],
     "benchmark_usdc_apy": 0.032,
     "minimum_risk_premium_apy": 0.05,
     "maximum_loss_probability": 0.25,
@@ -63,14 +51,14 @@
   },
   "selection_order": [
     "all_economic_gates_pass",
+    "all_activity_gates_pass",
     "economic_gate_count_desc",
     "worst_loss_probability_asc",
     "worst_drawdown_desc",
     "minimum_median_excess_return_desc",
     "utilization_asc",
-    "target_delta_asc",
     "minimum_net_premium_bps_desc",
-    "entry_filter_strength_desc"
+    "candidate_id_asc"
   ],
   "evidence_gates": {
     "observed_executable_quote_liquidity": false,
