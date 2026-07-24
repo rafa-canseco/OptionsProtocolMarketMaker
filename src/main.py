@@ -15,7 +15,14 @@ from web3 import Web3
 
 from solders.pubkey import Pubkey  # type: ignore[import-untyped]
 
-from src import api_client, config, fill_listener, hedge_executor, trade_logger
+from src import (
+    api_client,
+    config,
+    fill_listener,
+    fund_allocator,
+    hedge_executor,
+    trade_logger,
+)
 from src.capacity import calculate_capacity_internal, solana_call_capacity_raw
 from src.position_tracker import PositionTracker
 from src.pricer import check_iv_divergence, validate_iv
@@ -693,6 +700,7 @@ def main() -> None:
 
     fill_listener.set_on_fill(_handle_fill)
     fill_listener.start()
+    fund_allocator.start()
 
     cycle = 0
     while True:
