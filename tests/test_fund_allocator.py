@@ -3,12 +3,17 @@ from pathlib import Path
 
 import pytest
 
+from eth_account import Account
+from eth_account.messages import encode_typed_data
+
 from src.fund_allocator import (
+    _FUND_QUOTE_TYPES,
     load_testnet_policy,
     option_amount_for_collateral,
     policy_strike,
     required_collateral,
     select_policy_quote,
+    sign_fund_quote,
 )
 
 
@@ -66,3 +71,48 @@ def test_collateral_round_trip_never_exceeds_target():
     assert amount == 50_793_650
     assert collateral == 799_999_988
     assert collateral <= target
+
+
+def test_fund_quote_signature_is_bound_to_adapter_owner():
+    private_key = "0x" + "11" * 32
+    owner = "0x68e5C9f55201a4fa87040830b1A53A4B6E26b0e3"
+    settler = "0xb94D6270B336dca566C2077d50c2C50F06398cB8"
+    quote = {
+        "otoken_address": "0xdb2f3e6a5e69f6ac0d9f6b1e9d51cb9be9063c0d",
+        "bid_price": "135",
+        "deadline": 1_785_000_000,
+        "quote_id": "42",
+        "max_amount": "500000000",
+        "maker_nonce": 0,
+    }
+
+    signature = sign_fund_quote(
+        quote,
+        owner=owner,
+        chain_id=84532,
+        settler=settler,
+        private_key=private_key,
+    )
+    signable = encode_typed_data(
+        domain_data={
+            "name": "b1nary",
+            "version": "1",
+            "chainId": 84532,
+            "verifyingContract": settler,
+        },
+        message_types=_FUND_QUOTE_TYPES,
+        message_data={
+            "owner": owner,
+            "oToken": quote["otoken_address"],
+            "bidPrice": 135,
+            "deadline": 1_785_000_000,
+            "quoteId": 42,
+            "maxAmount": 500000000,
+            "makerNonce": 0,
+        },
+    )
+
+    assert (
+        Account.recover_message(signable, signature=signature)
+        == Account.from_key(private_key).address
+    )

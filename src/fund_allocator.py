@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from eth_account import Account
+from eth_account.messages import encode_typed_data
 from web3 import Web3
 
 from src import api_client, config
@@ -37,6 +38,18 @@ _POLICY_EXPECTED = {
     "minimum_net_premium_bps": 0,
     "settlement_maximum_loss_bps": 10000,
     "assigned_inventory_action": "hold_weth_and_pause",
+}
+
+_FUND_QUOTE_TYPES = {
+    "Quote": [
+        {"name": "owner", "type": "address"},
+        {"name": "oToken", "type": "address"},
+        {"name": "bidPrice", "type": "uint256"},
+        {"name": "deadline", "type": "uint256"},
+        {"name": "quoteId", "type": "uint256"},
+        {"name": "maxAmount", "type": "uint256"},
+        {"name": "makerNonce", "type": "uint256"},
+    ],
 }
 
 _VAULT_ABI = [
@@ -354,6 +367,36 @@ def select_policy_quote(
     return max(candidates, key=lambda quote: int(quote["deadline"]))
 
 
+def sign_fund_quote(
+    quote: dict[str, Any],
+    *,
+    owner: str,
+    chain_id: int,
+    settler: str,
+    private_key: str,
+) -> bytes:
+    """Sign the owner-bound quote required by the deployed CSP settler."""
+    signable = encode_typed_data(
+        domain_data={
+            "name": "b1nary",
+            "version": "1",
+            "chainId": chain_id,
+            "verifyingContract": Web3.to_checksum_address(settler),
+        },
+        message_types=_FUND_QUOTE_TYPES,
+        message_data={
+            "owner": Web3.to_checksum_address(owner),
+            "oToken": Web3.to_checksum_address(quote["otoken_address"]),
+            "bidPrice": int(quote["bid_price"]),
+            "deadline": int(quote["deadline"]),
+            "quoteId": int(quote["quote_id"]),
+            "maxAmount": int(quote["max_amount"]),
+            "makerNonce": int(quote["maker_nonce"]),
+        },
+    )
+    return bytes(Account.sign_message(signable, private_key=private_key).signature)
+
+
 class CspFundAllocator:
     def __init__(self) -> None:
         self.policy = load_testnet_policy(config.FUND_ALLOCATOR_POLICY_PATH)
@@ -592,7 +635,13 @@ class CspFundAllocator:
             raise RuntimeError(
                 "Matching quote cannot fill the bounded collateral target"
             )
-        signature = bytes.fromhex(str(quote["signature"]).removeprefix("0x"))
+        signature = sign_fund_quote(
+            quote,
+            owner=self.adapter_address,
+            chain_id=84532,
+            settler=config.BATCH_SETTLER,
+            private_key=config.MM_PRIVATE_KEY,
+        )
         open_data = self.w3.codec.encode(
             [
                 "((address,uint256,uint256,uint256,uint256,uint256),bytes,uint256,uint256)"
