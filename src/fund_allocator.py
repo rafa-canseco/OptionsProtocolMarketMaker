@@ -31,13 +31,14 @@ _POLICY_EXPECTED = {
     "target_duration_hours": 48,
     "reopen_cadence_hours": 48,
     "target_utilization_bps": 8000,
-    "minimum_idle_bps": 2000,
+    "liquid_usdc_reserve_bps": 2000,
+    "onchain_minimum_idle_bps": 0,
     "maximum_open_positions": 1,
     "maximum_vault_aum_usdc": 1000,
     "maximum_collateral_per_position_usdc": 800,
     "minimum_net_premium_bps": 0,
     "settlement_maximum_loss_bps": 10000,
-    "assigned_inventory_action": "hold_weth_and_pause",
+    "assigned_inventory_action": "hold_weth_and_continue_on_liquid_usdc",
 }
 
 _FUND_QUOTE_TYPES = {
@@ -273,7 +274,8 @@ class FundPolicy:
     strike_otm_bps: int
     strike_tick_usd: int
     target_utilization_bps: int
-    minimum_idle_bps: int
+    liquid_usdc_reserve_bps: int
+    onchain_minimum_idle_bps: int
     maximum_vault_aum: int
     maximum_collateral: int
     maximum_open_positions: int
@@ -314,7 +316,8 @@ def load_testnet_policy(path: str | Path) -> FundPolicy:
         strike_otm_bps=selection["strike_otm_bps"],
         strike_tick_usd=selection["strike_tick_usd"],
         target_utilization_bps=selection["target_utilization_bps"],
-        minimum_idle_bps=selection["minimum_idle_bps"],
+        liquid_usdc_reserve_bps=selection["liquid_usdc_reserve_bps"],
+        onchain_minimum_idle_bps=selection["onchain_minimum_idle_bps"],
         maximum_vault_aum=selection["maximum_vault_aum_usdc"] * USDC_SCALE,
         maximum_collateral=selection["maximum_collateral_per_position_usdc"]
         * USDC_SCALE,
@@ -337,6 +340,15 @@ def policy_strike(spot: float, policy: FundPolicy) -> int:
 def required_collateral(option_amount: int, strike_raw: int) -> int:
     numerator = option_amount * strike_raw
     return (numerator + COLLATERAL_DENOMINATOR - 1) // COLLATERAL_DENOMINATOR
+
+
+def liquid_collateral_target(idle_assets: int, policy: FundPolicy) -> int:
+    """Apply utilization to the current liquid USDC, independently of assigned WETH."""
+    return min(
+        idle_assets * policy.target_utilization_bps // BPS,
+        idle_assets * (BPS - policy.liquid_usdc_reserve_bps) // BPS,
+        policy.maximum_collateral,
+    )
 
 
 def option_amount_for_collateral(collateral: int, strike_raw: int) -> int:
@@ -502,7 +514,6 @@ class CspFundAllocator:
         nav = state["nav"]
         strategy_config = state["strategy_config"]
         risk = state["adapter_config"][0]
-        adapter_state = state["adapter_state"]
         block = state["block"]
         if not (nav[6] <= block <= nav[7]) or nav[10] != state["strategy_hash"]:
             raise RuntimeError("No coherent active NAV window at the safe block")
@@ -540,10 +551,8 @@ class CspFundAllocator:
         )
         if tuple(risk) != expected_risk:
             raise RuntimeError("On-chain CSP adapter config differs from policy")
-        if state["minimum_idle_bps"] != self.policy.minimum_idle_bps:
+        if state["minimum_idle_bps"] != self.policy.onchain_minimum_idle_bps:
             raise RuntimeError("On-chain minimum idle requirement differs from policy")
-        if adapter_state[5] != 0:
-            raise RuntimeError("Assigned WETH is held; CSP reopening is paused")
 
     def _send(self, function: Any) -> str:
         nonce = self.w3.eth.get_transaction_count(self.account.address, "pending")
@@ -605,17 +614,11 @@ class CspFundAllocator:
         adapter_state = state["adapter_state"]
         if adapter_state[3] != 0 or state["allocated"] != 0:
             return
-        total_assets = state["total_assets"]
         idle_assets = state["idle_assets"]
-        required_idle = total_assets * self.policy.minimum_idle_bps // BPS
-        available_idle = max(idle_assets - required_idle, 0)
-        target = min(
-            total_assets * self.policy.target_utilization_bps // BPS,
-            self.policy.maximum_collateral,
-            available_idle,
-        )
+        target = liquid_collateral_target(idle_assets, self.policy)
         if target <= 0:
-            raise RuntimeError("No collateral is available inside the policy bounds")
+            log.info("CSP allocator decision=skip reason=no_liquid_usdc")
+            return
         market = api_client.get_market_data(asset="eth", chain="base")
         quote = select_policy_quote(
             api_client.get_quotes(),

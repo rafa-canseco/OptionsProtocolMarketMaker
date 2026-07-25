@@ -12,12 +12,13 @@
     "underlying": "ETH"
   },
   "selection": {
-    "assigned_inventory_action": "hold_weth_and_pause",
+    "assigned_inventory_action": "hold_weth_and_continue_on_liquid_usdc",
+    "liquid_usdc_reserve_bps": 2000,
     "maximum_collateral_per_position_usdc": 800,
     "maximum_open_positions": 1,
     "maximum_vault_aum_usdc": 1000,
-    "minimum_idle_bps": 2000,
     "minimum_net_premium_bps": 0,
+    "onchain_minimum_idle_bps": 0,
     "reopen_cadence_hours": 48,
     "settlement_maximum_loss_bps": 10000,
     "strike_otm_bps": 1500,

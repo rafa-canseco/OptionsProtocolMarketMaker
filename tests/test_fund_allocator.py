@@ -8,6 +8,7 @@ from eth_account.messages import encode_typed_data
 
 from src.fund_allocator import (
     _FUND_QUOTE_TYPES,
+    liquid_collateral_target,
     load_testnet_policy,
     option_amount_for_collateral,
     policy_strike,
@@ -29,6 +30,8 @@ def test_approved_policy_is_testnet_only_and_bounded():
     assert policy.maximum_vault_aum == 1_000_000_000
     assert policy.maximum_collateral == 800_000_000
     assert policy.maximum_open_positions == 1
+    assert policy.liquid_usdc_reserve_bps == 2_000
+    assert policy.onchain_minimum_idle_bps == 0
 
 
 def test_policy_rejects_parameter_drift(tmp_path):
@@ -71,6 +74,14 @@ def test_collateral_round_trip_never_exceeds_target():
     assert amount == 50_793_650
     assert collateral == 799_999_988
     assert collateral <= target
+
+
+def test_assignment_rebases_utilization_on_remaining_liquid_usdc():
+    policy = load_testnet_policy(POLICY_PATH)
+
+    assert liquid_collateral_target(250 * 10**6, policy) == 200 * 10**6
+    assert liquid_collateral_target(25 * 10**6, policy) == 20 * 10**6
+    assert liquid_collateral_target(0, policy) == 0
 
 
 def test_fund_quote_signature_is_bound_to_adapter_owner():
