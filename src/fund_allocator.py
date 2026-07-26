@@ -24,6 +24,11 @@ OTOKEN_SCALE = 10**8
 COLLATERAL_DENOMINATOR = 10**10
 WETH_SCALE = 10**18
 BPS = 10_000
+FAIR_NAV_INTERFACE_VERSION = 1
+FAIR_NAV_POLICY_VERSION = 2
+FAIR_NAV_MODEL_VERSION = 1
+FAIR_NAV_MAX_DIVERGENCE_BPS = 500
+FAIR_NAV_OBSERVATION_QUORUM = 2
 
 _POLICY_EXPECTED = {
     "strike_otm_bps": 1500,
@@ -268,6 +273,51 @@ _OTOKEN_ABI = [
     }
 ]
 
+_VALUATOR_ABI = [
+    {
+        "name": "interfaceVersion",
+        "type": "function",
+        "stateMutability": "pure",
+        "inputs": [],
+        "outputs": [{"type": "uint64"}],
+    },
+    {
+        "name": "valuationPolicyVersion",
+        "type": "function",
+        "stateMutability": "pure",
+        "inputs": [],
+        "outputs": [{"type": "uint64"}],
+    },
+    {
+        "name": "requiredModelVersion",
+        "type": "function",
+        "stateMutability": "pure",
+        "inputs": [],
+        "outputs": [{"type": "uint64"}],
+    },
+    {
+        "name": "liabilityBufferBps",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "uint16"}],
+    },
+    {
+        "name": "maxObservationDivergenceBps",
+        "type": "function",
+        "stateMutability": "pure",
+        "inputs": [],
+        "outputs": [{"type": "uint16"}],
+    },
+    {
+        "name": "observationQuorum",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "uint8"}],
+    },
+]
+
 
 @dataclass(frozen=True)
 class FundPolicy:
@@ -355,6 +405,23 @@ def option_amount_for_collateral(collateral: int, strike_raw: int) -> int:
     return collateral * COLLATERAL_DENOMINATOR // strike_raw
 
 
+def validate_fair_nav_policy(
+    policy_state: tuple[int, int, int, int, int, int],
+) -> None:
+    expected = (
+        FAIR_NAV_INTERFACE_VERSION,
+        FAIR_NAV_POLICY_VERSION,
+        FAIR_NAV_MODEL_VERSION,
+        0,
+        FAIR_NAV_MAX_DIVERGENCE_BPS,
+        FAIR_NAV_OBSERVATION_QUORUM,
+    )
+    if policy_state != expected:
+        raise RuntimeError(
+            "Configured CSP valuator is not the approved fair-NAV policy"
+        )
+
+
 def select_policy_quote(
     quotes: list[dict[str, Any]],
     *,
@@ -435,14 +502,20 @@ class CspFundAllocator:
             abi=_ADAPTER_ABI,
         )
         self.usdc = Web3.to_checksum_address(config.USDC_ADDRESS)
-        self.valuator = Web3.to_checksum_address(config.FUND_CSP_VALUATOR_ADDRESS)
+        self.valuator_address = Web3.to_checksum_address(
+            config.FUND_CSP_VALUATOR_ADDRESS
+        )
+        self.valuator = self.w3.eth.contract(
+            address=self.valuator_address,
+            abi=_VALUATOR_ABI,
+        )
         for address in (
             self.vault.address,
             self.flow.address,
             self.strategy.address,
             self.adapter.address,
             self.usdc,
-            self.valuator,
+            self.valuator.address,
         ):
             if not self.w3.eth.get_code(address):
                 raise RuntimeError(f"Configured fund address has no code: {address}")
@@ -486,6 +559,18 @@ class CspFundAllocator:
         adapter_state = self.adapter.functions.adapterState().call(
             block_identifier=block
         )
+        valuation_policy = (
+            self.valuator.functions.interfaceVersion().call(block_identifier=block),
+            self.valuator.functions.valuationPolicyVersion().call(
+                block_identifier=block
+            ),
+            self.valuator.functions.requiredModelVersion().call(block_identifier=block),
+            self.valuator.functions.liabilityBufferBps().call(block_identifier=block),
+            self.valuator.functions.maxObservationDivergenceBps().call(
+                block_identifier=block
+            ),
+            self.valuator.functions.observationQuorum().call(block_identifier=block),
+        )
         return {
             "block": block,
             "nav": nav,
@@ -493,6 +578,7 @@ class CspFundAllocator:
             "strategy_config": strategy_config,
             "adapter_config": adapter_config,
             "adapter_state": adapter_state,
+            "valuation_policy": valuation_policy,
             "total_assets": self.vault.functions.totalAssets().call(
                 block_identifier=block
             ),
@@ -519,6 +605,7 @@ class CspFundAllocator:
             raise RuntimeError("No coherent active NAV window at the safe block")
         if state["processing"]:
             raise RuntimeError("Fund flow processing is active")
+        validate_fair_nav_policy(state["valuation_policy"])
         if state["total_assets"] > self.policy.maximum_vault_aum:
             raise RuntimeError("Fund AUM exceeds the Base Sepolia test policy")
         expected_strategy = (
@@ -527,7 +614,7 @@ class CspFundAllocator:
             self.policy.settlement_maximum_loss_bps,
             0,
             1,
-            self.valuator,
+            self.valuator_address,
             self.policy.maximum_collateral,
         )
         normalized_strategy = (

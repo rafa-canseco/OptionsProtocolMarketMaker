@@ -15,6 +15,7 @@ from src.fund_allocator import (
     required_collateral,
     select_policy_quote,
     sign_fund_quote,
+    validate_fair_nav_policy,
 )
 
 
@@ -82,6 +83,26 @@ def test_assignment_rebases_utilization_on_remaining_liquid_usdc():
     assert liquid_collateral_target(250 * 10**6, policy) == 200 * 10**6
     assert liquid_collateral_target(25 * 10**6, policy) == 20 * 10**6
     assert liquid_collateral_target(0, policy) == 0
+
+
+def test_accepts_only_approved_fair_nav_valuator_policy():
+    validate_fair_nav_policy((1, 2, 1, 0, 500, 2))
+
+
+@pytest.mark.parametrize(
+    "policy_state",
+    [
+        (0, 2, 1, 0, 500, 2),
+        (1, 1, 1, 0, 500, 2),
+        (1, 2, 2, 0, 500, 2),
+        (1, 2, 1, 1_000, 500, 2),
+        (1, 2, 1, 0, 501, 2),
+        (1, 2, 1, 0, 500, 1),
+    ],
+)
+def test_rejects_legacy_synthetic_or_drifted_valuator_policy(policy_state):
+    with pytest.raises(RuntimeError, match="fair-NAV policy"):
+        validate_fair_nav_policy(policy_state)
 
 
 def test_fund_quote_signature_is_bound_to_adapter_owner():
