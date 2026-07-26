@@ -401,6 +401,12 @@ def liquid_collateral_target(idle_assets: int, policy: FundPolicy) -> int:
     )
 
 
+def validate_allocated_exposure(allocated: int, policy: FundPolicy) -> None:
+    """Keep allocation live as NAV/deposits grow, while enforcing the hard risk cap."""
+    if allocated > policy.maximum_collateral:
+        raise RuntimeError("Fund allocation exceeds the Base Sepolia test policy")
+
+
 def option_amount_for_collateral(collateral: int, strike_raw: int) -> int:
     return collateral * COLLATERAL_DENOMINATOR // strike_raw
 
@@ -606,8 +612,10 @@ class CspFundAllocator:
         if state["processing"]:
             raise RuntimeError("Fund flow processing is active")
         validate_fair_nav_policy(state["valuation_policy"])
-        if state["total_assets"] > self.policy.maximum_vault_aum:
-            raise RuntimeError("Fund AUM exceeds the Base Sepolia test policy")
+        # Synchronous deposits and strategy P&L can increase fund NAV above the
+        # initial test size. They must not strand the existing CSP lifecycle.
+        # Per-position exposure remains bounded by the approved absolute cap.
+        validate_allocated_exposure(state["allocated"], self.policy)
         expected_strategy = (
             True,
             self.policy.target_utilization_bps,

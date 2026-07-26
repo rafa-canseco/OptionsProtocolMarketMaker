@@ -15,6 +15,7 @@ from src.fund_allocator import (
     required_collateral,
     select_policy_quote,
     sign_fund_quote,
+    validate_allocated_exposure,
     validate_fair_nav_policy,
 )
 
@@ -83,6 +84,14 @@ def test_assignment_rebases_utilization_on_remaining_liquid_usdc():
     assert liquid_collateral_target(250 * 10**6, policy) == 200 * 10**6
     assert liquid_collateral_target(25 * 10**6, policy) == 20 * 10**6
     assert liquid_collateral_target(0, policy) == 0
+
+
+def test_nav_growth_does_not_disable_allocator_but_exposure_stays_capped():
+    policy = load_testnet_policy(POLICY_PATH)
+
+    validate_allocated_exposure(800 * 10**6, policy)
+    with pytest.raises(RuntimeError, match="allocation exceeds"):
+        validate_allocated_exposure(800 * 10**6 + 1, policy)
 
 
 def test_accepts_only_approved_fair_nav_valuator_policy():
