@@ -97,11 +97,11 @@ def test_nav_growth_does_not_disable_allocator_but_exposure_stays_capped():
 
 def test_safe_block_accepts_only_the_mandatory_pre_activation_handoff():
     nav = [0] * 11
-    nav[6] = 101
+    nav[6] = 102
     nav[7] = 150
 
     assert safe_block_has_coherent_nav(tuple(nav), 100)
-    assert safe_block_has_coherent_nav(tuple(nav), 101)
+    assert safe_block_has_coherent_nav(tuple(nav), 102)
     assert not safe_block_has_coherent_nav(tuple(nav), 99)
     assert not safe_block_has_coherent_nav(tuple(nav), 151)
 

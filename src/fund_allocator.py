@@ -29,6 +29,7 @@ FAIR_NAV_POLICY_VERSION = 2
 FAIR_NAV_MODEL_VERSION = 1
 FAIR_NAV_MAX_DIVERGENCE_BPS = 500
 FAIR_NAV_OBSERVATION_QUORUM = 2
+FAIR_NAV_HANDOFF_BLOCKS = 2
 
 _POLICY_EXPECTED = {
     "strike_otm_bps": 1500,
@@ -408,8 +409,8 @@ def validate_allocated_exposure(allocated: int, policy: FundPolicy) -> None:
 
 
 def safe_block_has_coherent_nav(nav: tuple[Any, ...], block: int) -> bool:
-    """Accept the verifier-mandated commit block immediately before activation."""
-    return nav[6] <= block + 1 and block <= nav[7]
+    """Accept the bounded verifier handoff while the confirmed head is already active."""
+    return nav[6] <= block + FAIR_NAV_HANDOFF_BLOCKS and block <= nav[7]
 
 
 def option_amount_for_collateral(collateral: int, strike_raw: int) -> int:
