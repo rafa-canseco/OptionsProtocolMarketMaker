@@ -13,6 +13,7 @@ from src.fund_allocator import (
     option_amount_for_collateral,
     policy_strike,
     required_collateral,
+    safe_block_has_coherent_nav,
     select_policy_quote,
     sign_fund_quote,
     validate_allocated_exposure,
@@ -92,6 +93,17 @@ def test_nav_growth_does_not_disable_allocator_but_exposure_stays_capped():
     validate_allocated_exposure(800 * 10**6, policy)
     with pytest.raises(RuntimeError, match="allocation exceeds"):
         validate_allocated_exposure(800 * 10**6 + 1, policy)
+
+
+def test_safe_block_accepts_only_the_mandatory_pre_activation_handoff():
+    nav = [0] * 11
+    nav[6] = 101
+    nav[7] = 150
+
+    assert safe_block_has_coherent_nav(tuple(nav), 100)
+    assert safe_block_has_coherent_nav(tuple(nav), 101)
+    assert not safe_block_has_coherent_nav(tuple(nav), 99)
+    assert not safe_block_has_coherent_nav(tuple(nav), 151)
 
 
 def test_accepts_only_approved_fair_nav_valuator_policy():

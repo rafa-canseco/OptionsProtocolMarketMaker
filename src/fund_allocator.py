@@ -407,6 +407,11 @@ def validate_allocated_exposure(allocated: int, policy: FundPolicy) -> None:
         raise RuntimeError("Fund allocation exceeds the Base Sepolia test policy")
 
 
+def safe_block_has_coherent_nav(nav: tuple[Any, ...], block: int) -> bool:
+    """Accept the verifier-mandated commit block immediately before activation."""
+    return nav[6] <= block + 1 and block <= nav[7]
+
+
 def option_amount_for_collateral(collateral: int, strike_raw: int) -> int:
     return collateral * COLLATERAL_DENOMINATOR // strike_raw
 
@@ -607,7 +612,7 @@ class CspFundAllocator:
         strategy_config = state["strategy_config"]
         risk = state["adapter_config"][0]
         block = state["block"]
-        if not (nav[6] <= block <= nav[7]) or nav[10] != state["strategy_hash"]:
+        if not safe_block_has_coherent_nav(nav, block) or nav[10] != state["strategy_hash"]:
             raise RuntimeError("No coherent active NAV window at the safe block")
         if state["processing"]:
             raise RuntimeError("Fund flow processing is active")
