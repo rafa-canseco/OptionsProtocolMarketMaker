@@ -176,7 +176,7 @@ def test_keeper_propagates_rpc_failure_to_supervising_fail_closed_loop():
 
 def test_runtime_requires_separate_allocator_and_processor_keys(monkeypatch):
     key = "0x" + "22" * 32
-    monkeypatch.setattr(config, "FUND_OPERATIONS_KEEPER_PRIVATE_KEY", key)
+    monkeypatch.setattr(config, "FUND_PROCESSOR_PRIVATE_KEY", key)
     monkeypatch.setattr(config, "FUND_ALLOCATOR_PRIVATE_KEY", key)
     monkeypatch.setattr(config, "FUND_ALLOCATOR_ENABLED", True)
     monkeypatch.setattr(config, "FUND_VAULT_ADDRESS", "0x" + "11" * 20)

@@ -231,7 +231,7 @@ class CspFundOperationsKeeper:
         self.w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
         if self.w3.eth.chain_id != 84532:
             raise RuntimeError("Fund operations keeper is locked to Base Sepolia")
-        self.account = Account.from_key(config.FUND_OPERATIONS_KEEPER_PRIVATE_KEY)
+        self.account = Account.from_key(config.FUND_PROCESSOR_PRIVATE_KEY)
         self.vault = self.w3.eth.contract(
             address=Web3.to_checksum_address(config.FUND_VAULT_ADDRESS),
             abi=_VAULT_ABI,
@@ -247,9 +247,7 @@ class CspFundOperationsKeeper:
     @staticmethod
     def _validate_runtime_config() -> None:
         required = {
-            "FUND_OPERATIONS_KEEPER_PRIVATE_KEY": (
-                config.FUND_OPERATIONS_KEEPER_PRIVATE_KEY
-            ),
+            "FUND_PROCESSOR_PRIVATE_KEY": config.FUND_PROCESSOR_PRIVATE_KEY,
             "FUND_VAULT_ADDRESS": config.FUND_VAULT_ADDRESS,
             "FUND_FLOW_MANAGER_ADDRESS": config.FUND_FLOW_MANAGER_ADDRESS,
         }
@@ -267,7 +265,7 @@ class CspFundOperationsKeeper:
             config.FUND_ALLOCATOR_ENABLED
             and config.FUND_ALLOCATOR_PRIVATE_KEY
             and Account.from_key(config.FUND_ALLOCATOR_PRIVATE_KEY).address
-            == Account.from_key(config.FUND_OPERATIONS_KEEPER_PRIVATE_KEY).address
+            == Account.from_key(config.FUND_PROCESSOR_PRIVATE_KEY).address
         ):
             raise RuntimeError(
                 "Allocator and fund operations keeper require separate configured keys"

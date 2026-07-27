@@ -157,7 +157,10 @@ FUND_OPERATIONS_KEEPER_ENABLED: bool = _env_flag(
     "FUND_OPERATIONS_KEEPER_ENABLED",
     default=False,
 )
-FUND_OPERATIONS_KEEPER_PRIVATE_KEY: str | None = _optional_env(
+FUND_PROCESSOR_PRIVATE_KEY: str | None = _optional_env(
+    "FUND_PROCESSOR_PRIVATE_KEY"
+) or _optional_env(
+    # Backward-compatible alias for any pre-release local configuration.
     "FUND_OPERATIONS_KEEPER_PRIVATE_KEY"
 )
 FUND_OPERATIONS_KEEPER_INTERVAL_SECONDS: int = max(
