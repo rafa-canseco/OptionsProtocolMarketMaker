@@ -62,6 +62,17 @@ def test_solana_quotes_default_to_legacy_enabled_outside_production():
     assert [chain.name for chain in config.CHAINS] == ["base", "solana"]
 
 
+def test_covered_call_workers_are_disabled_by_default():
+    config = _reload_config(_base_env())
+
+    assert config.COVERED_CALL_ALLOCATOR_ENABLED is False
+    assert config.COVERED_CALL_OPERATIONS_KEEPER_ENABLED is False
+    assert config.COVERED_CALL_ALLOCATOR_CONFIRMATIONS == 2
+    assert config.COVERED_CALL_ALLOCATOR_POLICY_PATH.endswith(
+        "covered_call_fund_policy.v1.base-sepolia.json"
+    )
+
+
 def test_solana_quotes_enable_only_with_explicit_flag():
     env = _base_env() | {
         "SOLANA_QUOTE_PUBLISHING_ENABLED": "true",

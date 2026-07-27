@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "issue": "B1N-358",
+  "scope": {
+    "asset": "ETH",
+    "accounting_asset": "WETH",
+    "transient_asset": "USDC",
+    "strategy": "standalone_physical_covered_call",
+    "chain": "base",
+    "cadence_hours": 48,
+    "strike_tick_usd": 25
+  },
+  "source": {
+    "settings": "backtests/b1n_345/config.json",
+    "market": "backtests/b1n_345/production_data/ETH/market.json",
+    "market_sha256": "2313ba17f1466fb92f7863e74476e18b6e9c62bd443094487dcf5116812814c1"
+  },
+  "splits": {
+    "development_start": "2023-08-15T08:00:00+00:00",
+    "development_end": "2025-07-15T08:00:00+00:00",
+    "validation_start": "2025-07-15T08:00:00+00:00",
+    "validation_end": "2026-07-15T08:00:00+00:00",
+    "development_step_by_window_days": {
+      "30": 30,
+      "90": 90
+    },
+    "validation_step_days": 7
+  },
+  "candidate_family": {
+    "fixed_moneyness_above_spot": [0.1, 0.15],
+    "target_call_deltas": [0.05, 0.1, 0.15],
+    "maximum_delta_deviation_bps": 150,
+    "utilizations": [0.25, 0.5, 0.75, 0.8],
+    "minimum_net_premium_bps": [0, 10, 25],
+    "normalization_slippage_bps": {
+      "base": 50,
+      "stressed": 200
+    },
+    "base_cost_scenario": "base",
+    "stress_cost_scenario": "stressed"
+  },
+  "decision_gates": {
+    "window_days": [30, 90],
+    "maximum_loss_probability": 0.25,
+    "maximum_worst_drawdown": -0.3,
+    "minimum_open_rate": 0.1,
+    "maximum_missing_market_fraction": 0.05
+  },
+  "evidence_gates": {
+    "observed_executable_quote_liquidity": false,
+    "observed_onchain_physical_call_away": false,
+    "observed_fund_flow_reconciliation": false,
+    "observed_nav_liability_reconciliation": false,
+    "observed_usdc_weth_normalization": false
+  },
+  "valuation": {
+    "interface_version": 1,
+    "liability_buffer_bps": 1000,
+    "observation_quorum": 2
+  },
+  "base_sepolia_validation_bounds": {
+    "chain_id": 84532,
+    "mock_assets_only": true,
+    "maximum_vault_aum_weth": 0.01,
+    "maximum_collateral_per_position_weth": 0.0025,
+    "maximum_positions": 1,
+    "maximum_opened_positions_before_review": 10,
+    "maximum_call_aways_before_review": 1,
+    "maximum_normalizations_before_review": 10,
+    "minimum_expiry_delay_seconds": 129600,
+    "maximum_expiry_delay_seconds": 216000,
+    "settlement_default_delay_seconds": 3600,
+    "maximum_swap_slippage_bps": 500,
+    "maximum_usdc_per_swap": 32,
+    "minimum_strike_usd": 1000,
+    "maximum_strike_usd": 10000,
+    "strategy_maximum_loss_bps": 10000,
+    "onchain_minimum_idle_bps": 0,
+    "swap_fee_tier": 3000,
+    "mainnet_authorized": false
+  }
+}

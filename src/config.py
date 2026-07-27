@@ -179,6 +179,54 @@ FUND_STRATEGY_MANAGER_ADDRESS: str | None = _optional_env(
 FUND_CSP_ADAPTER_ADDRESS: str | None = _optional_env("FUND_CSP_ADAPTER_ADDRESS")
 FUND_CSP_VALUATOR_ADDRESS: str | None = _optional_env("FUND_CSP_VALUATOR_ADDRESS")
 
+# --- Base Sepolia tokenized Covered Call fund (explicit opt-in) ---
+COVERED_CALL_ALLOCATOR_ENABLED: bool = _env_flag(
+    "COVERED_CALL_ALLOCATOR_ENABLED",
+    default=False,
+)
+COVERED_CALL_ALLOCATOR_PRIVATE_KEY: str | None = _optional_env(
+    "COVERED_CALL_ALLOCATOR_PRIVATE_KEY"
+)
+COVERED_CALL_ALLOCATOR_POLICY_PATH: str = os.getenv(
+    "COVERED_CALL_ALLOCATOR_POLICY_PATH",
+    "policies/covered_call_fund_policy.v1.base-sepolia.json",
+)
+COVERED_CALL_ALLOCATOR_INTERVAL_SECONDS: int = max(
+    int(os.getenv("COVERED_CALL_ALLOCATOR_INTERVAL_SECONDS", "30")),
+    10,
+)
+COVERED_CALL_ALLOCATOR_CONFIRMATIONS: int = max(
+    int(os.getenv("COVERED_CALL_ALLOCATOR_CONFIRMATIONS", "2")),
+    1,
+)
+COVERED_CALL_OPERATIONS_KEEPER_ENABLED: bool = _env_flag(
+    "COVERED_CALL_OPERATIONS_KEEPER_ENABLED",
+    default=False,
+)
+COVERED_CALL_PROCESSOR_PRIVATE_KEY: str | None = _optional_env(
+    "COVERED_CALL_PROCESSOR_PRIVATE_KEY"
+)
+COVERED_CALL_OPERATIONS_KEEPER_INTERVAL_SECONDS: int = max(
+    int(os.getenv("COVERED_CALL_OPERATIONS_KEEPER_INTERVAL_SECONDS", "30")),
+    10,
+)
+COVERED_CALL_OPERATIONS_KEEPER_PAGE_SIZE: int = min(
+    max(int(os.getenv("COVERED_CALL_OPERATIONS_KEEPER_PAGE_SIZE", "16")), 1),
+    16,
+)
+COVERED_CALL_VAULT_ADDRESS: str | None = _optional_env("COVERED_CALL_VAULT_ADDRESS")
+COVERED_CALL_FLOW_MANAGER_ADDRESS: str | None = _optional_env(
+    "COVERED_CALL_FLOW_MANAGER_ADDRESS"
+)
+COVERED_CALL_STRATEGY_MANAGER_ADDRESS: str | None = _optional_env(
+    "COVERED_CALL_STRATEGY_MANAGER_ADDRESS"
+)
+COVERED_CALL_ADAPTER_ADDRESS: str | None = _optional_env("COVERED_CALL_ADAPTER_ADDRESS")
+COVERED_CALL_VALUATOR_ADDRESS: str | None = _optional_env(
+    "COVERED_CALL_VALUATOR_ADDRESS"
+)
+COVERED_CALL_WETH_ADDRESS: str | None = _optional_env("COVERED_CALL_WETH_ADDRESS")
+
 
 # --- Multi-asset configuration ---
 def _parse_assets() -> list[AssetConfig]:
