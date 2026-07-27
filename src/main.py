@@ -20,6 +20,7 @@ from src import (
     config,
     fill_listener,
     fund_allocator,
+    fund_operations_keeper,
     hedge_executor,
     trade_logger,
 )
@@ -701,6 +702,7 @@ def main() -> None:
     fill_listener.set_on_fill(_handle_fill)
     fill_listener.start()
     fund_allocator.start()
+    fund_operations_keeper.start()
 
     cycle = 0
     while True:

@@ -111,7 +111,14 @@ _FLOW_ABI = [
         "stateMutability": "view",
         "inputs": [],
         "outputs": [{"type": "bool"}],
-    }
+    },
+    {
+        "name": "totalPendingShares",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "uint256"}],
+    },
 ]
 
 _STRATEGY_ABI = [
@@ -606,6 +613,9 @@ class CspFundAllocator:
             "processing": self.flow.functions.hasActiveProcessing().call(
                 block_identifier=block
             ),
+            "pending_shares": self.flow.functions.totalPendingShares().call(
+                block_identifier=block
+            ),
         }
 
     def _validate_policy_gates(self, state: dict[str, Any]) -> None:
@@ -613,7 +623,10 @@ class CspFundAllocator:
         strategy_config = state["strategy_config"]
         risk = state["adapter_config"][0]
         block = state["block"]
-        if not safe_block_has_coherent_nav(nav, block) or nav[10] != state["strategy_hash"]:
+        if (
+            not safe_block_has_coherent_nav(nav, block)
+            or nav[10] != state["strategy_hash"]
+        ):
             raise RuntimeError("No coherent active NAV window at the safe block")
         if state["processing"]:
             raise RuntimeError("Fund flow processing is active")
@@ -714,6 +727,20 @@ class CspFundAllocator:
     def _open(self, state: dict[str, Any]) -> None:
         adapter_state = state["adapter_state"]
         if adapter_state[3] != 0 or state["allocated"] != 0:
+            return
+        if state["pending_shares"] != 0:
+            log.info(
+                "CSP allocator decision=skip reason=pending_redemptions shares=%d",
+                state["pending_shares"],
+            )
+            return
+        latest_pending_shares = self.flow.functions.totalPendingShares().call()
+        if latest_pending_shares != 0:
+            log.info(
+                "CSP allocator decision=skip reason=pending_redemptions_latest "
+                "shares=%d",
+                latest_pending_shares,
+            )
             return
         idle_assets = state["idle_assets"]
         target = liquid_collateral_target(idle_assets, self.policy)

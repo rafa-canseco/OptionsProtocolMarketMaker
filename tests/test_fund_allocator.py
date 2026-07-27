@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -7,6 +8,7 @@ from eth_account import Account
 from eth_account.messages import encode_typed_data
 
 from src.fund_allocator import (
+    CspFundAllocator,
     _FUND_QUOTE_TYPES,
     liquid_collateral_target,
     load_testnet_policy,
@@ -19,6 +21,7 @@ from src.fund_allocator import (
     validate_allocated_exposure,
     validate_fair_nav_policy,
 )
+from src import api_client
 
 
 POLICY_PATH = (
@@ -85,6 +88,42 @@ def test_assignment_rebases_utilization_on_remaining_liquid_usdc():
     assert liquid_collateral_target(250 * 10**6, policy) == 200 * 10**6
     assert liquid_collateral_target(25 * 10**6, policy) == 20 * 10**6
     assert liquid_collateral_target(0, policy) == 0
+
+
+def test_pending_redemptions_take_priority_over_opening_another_csp(monkeypatch):
+    allocator = CspFundAllocator.__new__(CspFundAllocator)
+    monkeypatch.setattr(
+        api_client,
+        "get_market_data",
+        lambda **_: pytest.fail("must not fetch a quote while redemptions are pending"),
+    )
+
+    allocator._open(
+        {
+            "adapter_state": (0, b"", 0, 0, 0, 0),
+            "allocated": 0,
+            "pending_shares": 1,
+        }
+    )
+
+
+def test_latest_redemption_request_closes_safe_block_handoff_race(monkeypatch):
+    allocator = CspFundAllocator.__new__(CspFundAllocator)
+    allocator.flow = MagicMock()
+    allocator.flow.functions.totalPendingShares.return_value.call.return_value = 1
+    monkeypatch.setattr(
+        api_client,
+        "get_market_data",
+        lambda **_: pytest.fail("must not fetch a quote after a new redeem request"),
+    )
+
+    allocator._open(
+        {
+            "adapter_state": (0, b"", 0, 0, 0, 0),
+            "allocated": 0,
+            "pending_shares": 0,
+        }
+    )
 
 
 def test_nav_growth_does_not_disable_allocator_but_exposure_stays_capped():
