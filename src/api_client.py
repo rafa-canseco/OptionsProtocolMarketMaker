@@ -50,6 +50,13 @@ def submit_quotes(quotes: list[dict[str, Any]]) -> dict[str, Any]:
     return resp.json()
 
 
+def get_quotes() -> list[dict[str, Any]]:
+    """GET /mm/quotes — active signed quotes for this market maker."""
+    resp = _SESSION.get(_url("/mm/quotes"), timeout=_TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
+
 def delete_quotes(chain: str | None = None) -> dict[str, Any]:
     """DELETE /mm/quotes — cancel all active quotes."""
     params: dict[str, str] = {}

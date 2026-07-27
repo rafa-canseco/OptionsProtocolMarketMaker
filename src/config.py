@@ -138,6 +138,47 @@ TRADE_LOG_PATH: str = os.getenv("TRADE_LOG_PATH", "data/trade_history.jsonl")
 SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
 
+# --- Base Sepolia tokenized CSP fund allocator (explicit opt-in) ---
+FUND_ALLOCATOR_ENABLED: bool = _env_flag("FUND_ALLOCATOR_ENABLED", default=False)
+FUND_ALLOCATOR_PRIVATE_KEY: str | None = _optional_env("FUND_ALLOCATOR_PRIVATE_KEY")
+FUND_ALLOCATOR_POLICY_PATH: str = os.getenv(
+    "FUND_ALLOCATOR_POLICY_PATH",
+    "policies/csp_fund_policy.v2.base-sepolia.json",
+)
+FUND_ALLOCATOR_INTERVAL_SECONDS: int = max(
+    int(os.getenv("FUND_ALLOCATOR_INTERVAL_SECONDS", "30")),
+    10,
+)
+FUND_ALLOCATOR_CONFIRMATIONS: int = max(
+    int(os.getenv("FUND_ALLOCATOR_CONFIRMATIONS", "2")),
+    1,
+)
+FUND_OPERATIONS_KEEPER_ENABLED: bool = _env_flag(
+    "FUND_OPERATIONS_KEEPER_ENABLED",
+    default=False,
+)
+FUND_PROCESSOR_PRIVATE_KEY: str | None = _optional_env(
+    "FUND_PROCESSOR_PRIVATE_KEY"
+) or _optional_env(
+    # Backward-compatible alias for any pre-release local configuration.
+    "FUND_OPERATIONS_KEEPER_PRIVATE_KEY"
+)
+FUND_OPERATIONS_KEEPER_INTERVAL_SECONDS: int = max(
+    int(os.getenv("FUND_OPERATIONS_KEEPER_INTERVAL_SECONDS", "30")),
+    10,
+)
+FUND_OPERATIONS_KEEPER_PAGE_SIZE: int = min(
+    max(int(os.getenv("FUND_OPERATIONS_KEEPER_PAGE_SIZE", "16")), 1),
+    16,
+)
+FUND_VAULT_ADDRESS: str | None = _optional_env("FUND_VAULT_ADDRESS")
+FUND_FLOW_MANAGER_ADDRESS: str | None = _optional_env("FUND_FLOW_MANAGER_ADDRESS")
+FUND_STRATEGY_MANAGER_ADDRESS: str | None = _optional_env(
+    "FUND_STRATEGY_MANAGER_ADDRESS"
+)
+FUND_CSP_ADAPTER_ADDRESS: str | None = _optional_env("FUND_CSP_ADAPTER_ADDRESS")
+FUND_CSP_VALUATOR_ADDRESS: str | None = _optional_env("FUND_CSP_VALUATOR_ADDRESS")
+
 
 # --- Multi-asset configuration ---
 def _parse_assets() -> list[AssetConfig]:

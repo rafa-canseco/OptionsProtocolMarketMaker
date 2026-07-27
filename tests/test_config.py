@@ -183,3 +183,23 @@ def test_solana_quotes_flag_rejects_garbage_value():
 
     with pytest.raises(SystemExit):
         _reload_config(env)
+
+
+def test_fund_processor_uses_existing_canonical_secret_name():
+    config = _reload_config(
+        _base_env()
+        | {
+            "FUND_PROCESSOR_PRIVATE_KEY": "0x" + "22" * 32,
+            "FUND_OPERATIONS_KEEPER_PRIVATE_KEY": "0x" + "33" * 32,
+        }
+    )
+
+    assert config.FUND_PROCESSOR_PRIVATE_KEY == "0x" + "22" * 32
+
+
+def test_fund_processor_accepts_pre_release_keeper_secret_alias():
+    config = _reload_config(
+        _base_env() | {"FUND_OPERATIONS_KEEPER_PRIVATE_KEY": "0x" + "33" * 32}
+    )
+
+    assert config.FUND_PROCESSOR_PRIVATE_KEY == "0x" + "33" * 32
