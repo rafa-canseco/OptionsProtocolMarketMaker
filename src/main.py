@@ -18,6 +18,8 @@ from solders.pubkey import Pubkey  # type: ignore[import-untyped]
 from src import (
     api_client,
     config,
+    covered_call_allocator,
+    covered_call_operations_keeper,
     fill_listener,
     fund_allocator,
     fund_operations_keeper,
@@ -703,6 +705,8 @@ def main() -> None:
     fill_listener.start()
     fund_allocator.start()
     fund_operations_keeper.start()
+    covered_call_allocator.start()
+    covered_call_operations_keeper.start()
 
     cycle = 0
     while True:
