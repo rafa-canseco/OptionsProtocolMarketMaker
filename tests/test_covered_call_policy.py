@@ -64,8 +64,46 @@ def test_policy_never_grants_mainnet_without_observed_evidence():
         "evidence_gates": {"quotes": False},
         "valuation": {
             "interface_version": 1,
-            "liability_buffer_bps": 1000,
+            "valuation_policy_version": 2,
+            "model_name": "b1nary-european-bs-call-v1",
+            "model_version": 1,
+            "methodology": "european_black_scholes",
+            "exercise_style": "european",
+            "accounting_asset": "WETH",
+            "liability_formula": (
+                "ceil(call_price_usd8 * option_amount_8 * 1e10 / "
+                "spot_price_8), capped_at_collateral_weth"
+            ),
+            "stress_liability": "full_collateral_weth_api_telemetry_only",
+            "liability_buffer_bps": 0,
+            "max_observation_divergence_bps": 500,
             "observation_quorum": 2,
+            "approved_observers": [
+                "0x3b7f3e42eaCB2E0361aE41e426ea65C6f7896D1e",
+                "0x62A7e8c11E4eFc8ed696b2A08D9ccfC339424754",
+            ],
+            "maximum_observation_window_blocks": 120,
+            "source_quality": "single_model_multi_signer",
+            "nonce": {
+                "model_version_bits": 64,
+                "sequence_bits": 192,
+                "sequence_must_be_nonzero": True,
+            },
+            "spot": {
+                "asset_pair": "ETH/USD",
+                "feed_type": "valuator_configured_chainlink",
+                "feed_address": "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1",
+                "feed_address_source": "manifest",
+                "feed_decimals": 8,
+                "maximum_staleness_seconds": 3600,
+            },
+            "implied_volatility": {
+                "bps": 4200,
+                "source": "approved",
+                "scope": "covered_call_testnet_fair_nav",
+            },
+            "risk_free_rate_bps": 500,
+            "settlement_cost_bps": 0,
         },
         "base_sepolia_validation_bounds": {"mainnet_authorized": False},
     }

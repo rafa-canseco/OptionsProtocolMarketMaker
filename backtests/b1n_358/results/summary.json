@@ -6063,7 +6063,7 @@
     }
   ],
   "issue": "B1N-358",
-  "schema_version": 1,
+  "schema_version": 2,
   "selected_development": {
     "all_economic_gates_pass": true,
     "candidate": {

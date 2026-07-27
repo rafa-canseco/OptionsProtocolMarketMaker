@@ -51,6 +51,53 @@ _POLICY_EXPECTED = {
     "continuous_operation": "reopen_while_free_weth_and_no_pending_redemptions",
 }
 
+_VALUATION_EXPECTED = {
+    "interface_version": 1,
+    "valuation_policy_version": 2,
+    "model_name": "b1nary-european-bs-call-v1",
+    "model_version": 1,
+    "methodology": "european_black_scholes",
+    "exercise_style": "european",
+    "accounting_asset": "WETH",
+    "liability_formula": (
+        "ceil(call_price_usd8 * option_amount_8 * 1e10 / spot_price_8), "
+        "capped_at_collateral_weth"
+    ),
+    "stress_liability": "full_collateral_weth_api_telemetry_only",
+    "liability_buffer_bps": 0,
+    "max_observation_divergence_bps": 500,
+    "observation_quorum": 2,
+    "approved_observers": [
+        "0x3b7f3e42eaCB2E0361aE41e426ea65C6f7896D1e",
+        "0x62A7e8c11E4eFc8ed696b2A08D9ccfC339424754",
+    ],
+    "maximum_observation_window_blocks": 120,
+    "source_quality": "single_model_multi_signer",
+    "nonce": {
+        "model_version_bits": 64,
+        "sequence_bits": 192,
+        "sequence_must_be_nonzero": True,
+    },
+    "spot": {
+        "asset_pair": "ETH/USD",
+        "feed_type": "valuator_configured_chainlink",
+        "feed_address": "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1",
+        "feed_address_source": "B1N-360-versioned-deployment-manifest",
+        "feed_decimals": 8,
+        "maximum_staleness_seconds": 3600,
+    },
+    "implied_volatility": {
+        "bps": 4200,
+        "source": (
+            "deribit-eth-atm-snapshot-2026-07-26T18:30:49Z-"
+            "b1n358-covered-call-v2-approved"
+        ),
+        "scope": "covered_call_testnet_fair_nav",
+    },
+    "risk_free_rate_bps": 500,
+    "settlement_cost_bps": 0,
+}
+
 _ADAPTER_ABI = [
     {
         "name": "addressBook",
@@ -150,7 +197,28 @@ _VALUATOR_ABI = [
         "outputs": [{"type": "uint64"}],
     },
     {
+        "name": "valuationPolicyVersion",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "uint64"}],
+    },
+    {
+        "name": "requiredModelVersion",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "uint64"}],
+    },
+    {
         "name": "liabilityBufferBps",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "uint16"}],
+    },
+    {
+        "name": "maxObservationDivergenceBps",
         "type": "function",
         "stateMutability": "view",
         "inputs": [],
@@ -162,6 +230,41 @@ _VALUATOR_ABI = [
         "stateMutability": "view",
         "inputs": [],
         "outputs": [{"type": "uint8"}],
+    },
+    {
+        "name": "maxObservationWindow",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "uint64"}],
+    },
+    {
+        "name": "spotFeed",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "address"}],
+    },
+    {
+        "name": "spotFeedDecimals",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "uint8"}],
+    },
+    {
+        "name": "maxSpotStaleness",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "uint64"}],
+    },
+    {
+        "name": "isApprovedObserver",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [{"name": "observer", "type": "address"}],
+        "outputs": [{"name": "approved", "type": "bool"}],
     },
 ]
 
@@ -209,8 +312,17 @@ class CoveredCallPolicy:
     strategy_maximum_loss_bps: int
     onchain_minimum_idle_bps: int
     swap_fee_tier: int
+    interface_version: int
+    valuation_policy_version: int
+    model_version: int
     liability_buffer_bps: int
+    max_observation_divergence_bps: int
     observation_quorum: int
+    approved_observers: tuple[str, ...]
+    maximum_observation_window_blocks: int
+    spot_feed: str
+    spot_feed_decimals: int
+    maximum_spot_staleness_seconds: int
 
 
 def load_covered_call_policy(path: str | Path) -> CoveredCallPolicy:
@@ -233,13 +345,14 @@ def load_covered_call_policy(path: str | Path) -> CoveredCallPolicy:
         "strike_parameter": Decimal(str(selection.get("strike_parameter"))),
     }
     if (
-        raw.get("schema_version") != 1
+        raw.get("schema_version") != 2
         or raw.get("authority_issue") != "B1N-362"
         or raw.get("decision") != "go_testnet_only"
         or raw.get("activation_allowed") is not True
         or raw.get("mainnet_authorized") is not False
         or raw.get("scope") != expected_scope
         or normalized_selection != _POLICY_EXPECTED
+        or raw.get("valuation") != _VALUATION_EXPECTED
     ):
         raise ValueError("Covered-call allocator policy is not approved for B1N-362")
     bounds = raw["base_sepolia_bounds"]
@@ -278,8 +391,21 @@ def load_covered_call_policy(path: str | Path) -> CoveredCallPolicy:
         strategy_maximum_loss_bps=int(bounds["strategy_maximum_loss_bps"]),
         onchain_minimum_idle_bps=int(bounds["onchain_minimum_idle_bps"]),
         swap_fee_tier=int(bounds["swap_fee_tier"]),
+        interface_version=int(valuation["interface_version"]),
+        valuation_policy_version=int(valuation["valuation_policy_version"]),
+        model_version=int(valuation["model_version"]),
         liability_buffer_bps=int(valuation["liability_buffer_bps"]),
+        max_observation_divergence_bps=int(valuation["max_observation_divergence_bps"]),
         observation_quorum=int(valuation["observation_quorum"]),
+        approved_observers=tuple(valuation["approved_observers"]),
+        maximum_observation_window_blocks=int(
+            valuation["maximum_observation_window_blocks"]
+        ),
+        spot_feed=str(valuation["spot"]["feed_address"]),
+        spot_feed_decimals=int(valuation["spot"]["feed_decimals"]),
+        maximum_spot_staleness_seconds=int(
+            valuation["spot"]["maximum_staleness_seconds"]
+        ),
     )
 
 
@@ -296,6 +422,23 @@ def option_amount_for_call_collateral(collateral: int) -> int:
 
 def call_collateral_for_option_amount(option_amount: int) -> int:
     return option_amount * CALL_COLLATERAL_DENOMINATOR
+
+
+def fair_call_liability_weth(
+    *,
+    call_price_usd8: int,
+    option_amount_8: int,
+    spot_price_8: int,
+    collateral_weth: int,
+) -> int:
+    """Convert a USD8 European-call mark to WETH wei, rounding liability up."""
+    if min(call_price_usd8, option_amount_8, collateral_weth) < 0:
+        raise ValueError("Fair-call mark inputs cannot be negative")
+    if spot_price_8 <= 0:
+        raise ValueError("Fair-call spot must be positive")
+    numerator = call_price_usd8 * option_amount_8 * 10**10
+    liability = (numerator + spot_price_8 - 1) // spot_price_8
+    return min(liability, collateral_weth)
 
 
 def select_covered_call_quote(
@@ -476,12 +619,33 @@ class CoveredCallFundAllocator:
             "positions": positions,
             "valuation_policy": (
                 self.valuator.functions.interfaceVersion().call(block_identifier=block),
+                self.valuator.functions.valuationPolicyVersion().call(
+                    block_identifier=block
+                ),
+                self.valuator.functions.requiredModelVersion().call(
+                    block_identifier=block
+                ),
                 self.valuator.functions.liabilityBufferBps().call(
+                    block_identifier=block
+                ),
+                self.valuator.functions.maxObservationDivergenceBps().call(
                     block_identifier=block
                 ),
                 self.valuator.functions.observationQuorum().call(
                     block_identifier=block
                 ),
+                self.valuator.functions.maxObservationWindow().call(
+                    block_identifier=block
+                ),
+                self.valuator.functions.spotFeed().call(block_identifier=block),
+                self.valuator.functions.spotFeedDecimals().call(block_identifier=block),
+                self.valuator.functions.maxSpotStaleness().call(block_identifier=block),
+            ),
+            "valuation_observers": tuple(
+                self.valuator.functions.isApprovedObserver(observer).call(
+                    block_identifier=block
+                )
+                for observer in self.policy.approved_observers
             ),
             "total_assets": self.vault.functions.totalAssets().call(
                 block_identifier=block
@@ -518,11 +682,22 @@ class CoveredCallFundAllocator:
         if state["processing"]:
             raise RuntimeError("Fund flow processing is active")
         if tuple(state["valuation_policy"]) != (
-            1,
+            policy.interface_version,
+            policy.valuation_policy_version,
+            policy.model_version,
             policy.liability_buffer_bps,
+            policy.max_observation_divergence_bps,
             policy.observation_quorum,
+            policy.maximum_observation_window_blocks,
+            policy.spot_feed,
+            policy.spot_feed_decimals,
+            policy.maximum_spot_staleness_seconds,
         ):
             raise RuntimeError("Covered-call valuator differs from policy")
+        if tuple(state["valuation_observers"]) != (True,) * len(
+            policy.approved_observers
+        ):
+            raise RuntimeError("Covered-call observer set differs from policy")
         expected_strategy = (
             True,
             policy.target_utilization_bps,

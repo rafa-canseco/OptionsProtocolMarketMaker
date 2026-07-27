@@ -110,7 +110,7 @@ def run(root: Path) -> None:
         validation[label] = summarize_candidate(rows, config["decision_gates"])
 
     summary = {
-        "schema_version": 1,
+        "schema_version": 2,
         "issue": "B1N-358",
         "source_market_sha256": digest,
         "candidate_count": len(ranking),
@@ -133,8 +133,10 @@ def run(root: Path) -> None:
         json.dumps(summary, indent=2, sort_keys=True) + "\n"
     )
     write_report(output / "REPORT.md", summary, policy)
-    (root / "policies" / "covered_call_fund_policy.v1.base-sepolia.json").write_text(
-        json.dumps(policy, indent=2, sort_keys=True) + "\n"
+    policy_path = root / "policies" / "covered_call_fund_policy.v2.base-sepolia.json"
+    policy_path.write_text(json.dumps(policy, indent=2, sort_keys=True) + "\n")
+    policy_path.with_suffix(".sha256").write_text(
+        f"{hashlib.sha256(policy_path.read_bytes()).hexdigest()}  {policy_path.name}\n"
     )
     write_checksums(
         output,

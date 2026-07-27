@@ -12,6 +12,7 @@ from src.covered_call_allocator import (
     call_collateral_for_option_amount,
     call_collateral_target,
     count_called_away,
+    fair_call_liability_weth,
     load_covered_call_policy,
     normalization_minimum_weth_out,
     option_amount_for_call_collateral,
@@ -23,8 +24,10 @@ from src.fund_tx import ConfirmedTransaction
 POLICY_PATH = (
     Path(__file__).parents[1]
     / "policies"
-    / "covered_call_fund_policy.v1.base-sepolia.json"
+    / "covered_call_fund_policy.v2.base-sepolia.json"
 )
+SPOT_FEED = "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1"
+VALUATION_POLICY = (1, 2, 1, 0, 500, 2, 120, SPOT_FEED, 8, 3600)
 
 
 def _policy() -> CoveredCallPolicy:
@@ -56,11 +59,43 @@ def test_policy_is_exactly_bounded_and_weth_only():
     assert policy.maximum_collateral == 2_500_000_000_000_000
     assert policy.minimum_net_premium_bps == 10
     assert policy.maximum_open_positions == 1
+    assert policy.valuation_policy_version == 2
+    assert policy.model_version == 1
+    assert policy.liability_buffer_bps == 0
+    assert policy.max_observation_divergence_bps == 500
+    assert policy.maximum_observation_window_blocks == 120
+    assert policy.spot_feed == SPOT_FEED
+    assert policy.maximum_spot_staleness_seconds == 3600
 
 
 def test_policy_loader_rejects_parameter_drift(tmp_path):
     raw = json.loads(POLICY_PATH.read_text())
     raw["selection"]["target_utilization_bps"] = 8000
+    changed = tmp_path / "changed.json"
+    changed.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match="not approved"):
+        load_covered_call_policy(changed)
+
+
+@pytest.mark.parametrize(
+    ("path", "value"),
+    [
+        (("model_name",), "b1nary-european-bs-put-v1"),
+        (("model_version",), 2),
+        (("liability_buffer_bps",), 1000),
+        (("max_observation_divergence_bps",), 1000),
+        (("maximum_observation_window_blocks",), 25),
+        (("implied_volatility", "bps"), 0),
+        (("implied_volatility", "source"), ""),
+        (("spot", "maximum_staleness_seconds"), 7200),
+    ],
+)
+def test_policy_loader_rejects_fair_value_policy_drift(tmp_path, path, value):
+    raw = json.loads(POLICY_PATH.read_text())
+    target = raw["valuation"]
+    for key in path[:-1]:
+        target = target[key]
+    target[path[-1]] = value
     changed = tmp_path / "changed.json"
     changed.write_text(json.dumps(raw))
     with pytest.raises(ValueError, match="not approved"):
@@ -74,6 +109,18 @@ def test_collateral_is_one_to_one_with_otoken_amount():
     amount = option_amount_for_call_collateral(target)
     assert amount == 250_000
     assert call_collateral_for_option_amount(amount) == target
+
+
+def test_fair_call_liability_weth_golden_conversion():
+    assert (
+        fair_call_liability_weth(
+            call_price_usd8=10 * 10**8,
+            option_amount_8=250_000,
+            spot_price_8=2000 * 10**8,
+            collateral_weth=2_500_000_000_000_000,
+        )
+        == 12_500_000_000_000
+    )
 
 
 def test_quote_selection_requires_48h_otm_call_near_target_delta():
@@ -152,7 +199,8 @@ def test_stale_nav_prevents_any_lifecycle_action():
         "block": 20,
         "strategy_hash": b"a" * 32,
         "processing": False,
-        "valuation_policy": (1, 1000, 2),
+        "valuation_policy": VALUATION_POLICY,
+        "valuation_observers": (True, True),
         "strategy_config": (
             True,
             2500,
@@ -210,7 +258,8 @@ def test_pending_physical_delivery_can_progress_without_impossible_nav():
         "block": 20,
         "strategy_hash": b"b" * 32,
         "processing": False,
-        "valuation_policy": (1, 1000, 2),
+        "valuation_policy": VALUATION_POLICY,
+        "valuation_observers": (True, True),
         "strategy_config": (
             True,
             2500,
@@ -240,6 +289,124 @@ def test_pending_physical_delivery_can_progress_without_impossible_nav():
         "minimum_idle_bps": 0,
     }
     allocator._validate_policy_gates(state, require_active_nav=False)
+
+
+def test_onchain_valuator_policy_drift_fails_closed():
+    allocator = object.__new__(CoveredCallFundAllocator)
+    allocator.policy = _policy()
+    allocator.valuator_address = "0x" + "34" * 20
+    state = {
+        "nav": (
+            0,
+            0,
+            1,
+            1,
+            0,
+            10,
+            11,
+            12,
+            1,
+            1,
+            b"a" * 32,
+            b"",
+            b"",
+            0,
+            b"",
+        ),
+        "block": 10,
+        "strategy_hash": b"a" * 32,
+        "processing": False,
+        "valuation_policy": (*VALUATION_POLICY[:4], 501, *VALUATION_POLICY[5:]),
+        "valuation_observers": (True, True),
+        "strategy_config": (
+            True,
+            2500,
+            10000,
+            0,
+            1,
+            allocator.valuator_address,
+            2_500_000_000_000_000,
+        ),
+        "adapter_config": (
+            (
+                129600,
+                216000,
+                3600,
+                10,
+                500,
+                1,
+                2500,
+                1000 * 10**8,
+                10000 * 10**8,
+                2_500_000_000_000_000,
+                32 * 10**6,
+            ),
+            "0x" + "56" * 20,
+            3000,
+        ),
+        "minimum_idle_bps": 0,
+    }
+    with pytest.raises(RuntimeError, match="valuator differs from policy"):
+        allocator._validate_policy_gates(state)
+
+
+def test_unapproved_fair_value_observer_fails_closed():
+    allocator = object.__new__(CoveredCallFundAllocator)
+    allocator.policy = _policy()
+    allocator.valuator_address = "0x" + "34" * 20
+    state = {
+        "nav": (
+            0,
+            0,
+            1,
+            1,
+            0,
+            10,
+            11,
+            12,
+            1,
+            1,
+            b"a" * 32,
+            b"",
+            b"",
+            0,
+            b"",
+        ),
+        "block": 10,
+        "strategy_hash": b"a" * 32,
+        "processing": False,
+        "valuation_policy": VALUATION_POLICY,
+        "valuation_observers": (True, False),
+        "strategy_config": (
+            True,
+            2500,
+            10000,
+            0,
+            1,
+            allocator.valuator_address,
+            2_500_000_000_000_000,
+        ),
+        "adapter_config": (
+            (
+                129600,
+                216000,
+                3600,
+                10,
+                500,
+                1,
+                2500,
+                1000 * 10**8,
+                10000 * 10**8,
+                2_500_000_000_000_000,
+                32 * 10**6,
+            ),
+            "0x" + "56" * 20,
+            3000,
+        ),
+        "minimum_idle_bps": 0,
+    }
+    with pytest.raises(RuntimeError, match="observer set differs from policy"):
+        allocator._validate_policy_gates(state)
 
 
 def test_terminal_usdc_is_normalized_before_any_reopen():

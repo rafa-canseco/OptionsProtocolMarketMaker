@@ -1,7 +1,7 @@
-# Covered Call Fund policy v1
+# Covered Call Fund policy v2
 
 This is a Base Sepolia functional-validation profile only. The authoritative
-machine-readable policy is `covered_call_fund_policy.v1.base-sepolia.json`.
+machine-readable policy is `covered_call_fund_policy.v2.base-sepolia.json`.
 
 ## Strategy
 
@@ -16,6 +16,35 @@ machine-readable policy is `covered_call_fund_policy.v1.base-sepolia.json`.
   oracle/slippage cap, return all residual WETH to the vault, then reopen if
   WETH remains and no redemption is pending.
 - Stop after 10 opened positions or the first physical call-away for review.
+
+## Fair NAV
+
+Transactional NAV uses the explicitly approved
+`b1nary-european-bs-call-v1` European Black-Scholes call mark. It is not
+inherited from, aliased to, or configured through the CSP put policy.
+
+- Model/policy versions: `1` / `2`; the nonce stores model version 1 in its
+  high 64 bits and a non-zero sequence in its low 192 bits.
+- IV: 4,200 bps from
+  `deribit-eth-atm-snapshot-2026-07-26T18:30:49Z-b1n358-covered-call-v2-approved`;
+  risk-free rate: 500 bps; settlement cost: 0 bps.
+- Spot: ETH/USD feed
+  `0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1`, 8 decimals, maximum age 3,600
+  seconds.
+- Two approved signers must publish model-v1 observations within a 120-block
+  window; maximum observation divergence is 500 bps.
+- The dedicated public observer identities are
+  `0x3b7f3e42eaCB2E0361aE41e426ea65C6f7896D1e` and
+  `0x62A7e8c11E4eFc8ed696b2A08D9ccfC339424754`.
+- The on-chain liability buffer is zero. The signed fair liability is already
+  denominated in WETH as
+  `ceil(call_price_usd8 × option_amount_8 × 1e10 / spot_price_8)`, rounded up,
+  and capped by locked WETH collateral.
+- Full collateral is stress telemetry only and must never be signed or used as
+  transactional NAV.
+
+The two signers provide transport/identity quorum around one approved model;
+they are not independent price models. This remains testnet-only.
 
 ## Runtime
 
@@ -46,7 +75,8 @@ COVERED_CALL_FLOW_MANAGER_ADDRESS
 ```
 
 The workers refuse production, non-84532 chains, stale or mismatched NAV,
-policy/config drift, unresolved inventory before opening, and cap breaches.
+fair-value model/policy/feed/freshness drift, unresolved inventory before
+opening, and cap breaches.
 `AwaitingPhysicalDelivery` is the sole no-NAV transition: the approved valuator
 cannot publish during that transient state, so the allocator completes the
 adapter-ledger transition from confirmed on-chain state and then requires a new

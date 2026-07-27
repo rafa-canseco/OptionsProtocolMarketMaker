@@ -5,6 +5,7 @@
 - Selected on development only: `target_call_delta_0p05__u_0p25__p_10__base`
 - Accounting asset: WETH; USDC is transient and normalized only after settlement.
 - Premium source: modeled Binary bid, not observed executable liquidity.
+- Fair NAV: explicit `b1nary-european-bs-call-v1`; full collateral is stress telemetry only.
 
 ## 30/90-day validation
 
@@ -18,5 +19,7 @@
 ## Interpretation
 
 A call-away is represented physically: locked WETH leaves the strategy, strike proceeds arrive as USDC, and the full transient USDC balance is converted back to WETH before another call can open. NAV subtracts the current fair value of the live short call; locked WETH remains an asset.
+
+The versioned call mark uses IV 4,200 bps from the B1N-358-approved Deribit ETH ATM snapshot, risk-free rate 500 bps, settlement cost zero, the configured 8-decimal ETH/USD feed with a 3,600-second maximum age, two model-v1 observations, a 500-bps divergence cap and a 120-block maximum observation window. It is explicit covered-call policy and does not reuse CSP configuration.
 
 The Base Sepolia authorization is functional only. It does not waive the missing executable-liquidity, live physical-settlement, fund-flow, NAV, or normalization evidence needed for an economic/mainnet go.
