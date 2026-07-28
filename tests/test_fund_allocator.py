@@ -94,6 +94,59 @@ def test_selects_compatible_put_when_duplicate_economics_use_wrong_assets():
     assert selected is compatible
 
 
+@pytest.mark.parametrize("deployment_status", ["virtual", "creating", "failed"])
+def test_lazy_put_series_never_reaches_onchain_validator(deployment_status):
+    policy = load_testnet_policy(POLICY_PATH)
+    now = 1_000_000
+    validator = MagicMock(
+        side_effect=AssertionError("non-ready series must not be read on-chain")
+    )
+    quote = {
+        "asset": "eth",
+        "is_put": True,
+        "deadline": now + 300,
+        "expiry": now + 48 * 3600,
+        "strike_price": 1575.0,
+        "deployment_status": deployment_status,
+    }
+
+    selected = select_policy_quote(
+        [quote],
+        spot=1859.32,
+        now=now,
+        policy=policy,
+        series_validator=validator,
+    )
+
+    assert selected is None
+    validator.assert_not_called()
+
+
+def test_ready_put_series_reaches_onchain_validator():
+    policy = load_testnet_policy(POLICY_PATH)
+    now = 1_000_000
+    validator = MagicMock(return_value=True)
+    quote = {
+        "asset": "eth",
+        "is_put": True,
+        "deadline": now + 300,
+        "expiry": now + 48 * 3600,
+        "strike_price": 1575.0,
+        "deployment_status": "ready",
+    }
+
+    selected = select_policy_quote(
+        [quote],
+        spot=1859.32,
+        now=now,
+        policy=policy,
+        series_validator=validator,
+    )
+
+    assert selected is quote
+    validator.assert_called_once_with(quote)
+
+
 def test_collateral_round_trip_never_exceeds_target():
     strike_raw = 1575 * 10**8
     target = 800 * 10**6

@@ -164,6 +164,47 @@ def test_quote_selection_skips_duplicate_series_with_wrong_assets():
     assert selected is compatible
 
 
+@pytest.mark.parametrize("deployment_status", ["virtual", "creating", "failed"])
+def test_lazy_call_series_never_reaches_onchain_validator(deployment_status):
+    now = int(time.time())
+    validator = MagicMock(
+        side_effect=AssertionError("non-ready series must not be read on-chain")
+    )
+    quote = _quote(now, deployment_status=deployment_status)
+
+    selected = select_covered_call_quote(
+        [quote],
+        spot=2000,
+        iv=0.6,
+        now=now,
+        risk_free_rate=0.05,
+        policy=_policy(),
+        series_validator=validator,
+    )
+
+    assert selected is None
+    validator.assert_not_called()
+
+
+def test_ready_call_series_reaches_onchain_validator():
+    now = int(time.time())
+    validator = MagicMock(return_value=True)
+    quote = _quote(now, deployment_status="ready")
+
+    selected = select_covered_call_quote(
+        [quote],
+        spot=2000,
+        iv=0.6,
+        now=now,
+        risk_free_rate=0.05,
+        policy=_policy(),
+        series_validator=validator,
+    )
+
+    assert selected is quote
+    validator.assert_called_once_with(quote)
+
+
 def test_missing_approved_quote_fails_closed():
     now = int(time.time())
     assert (
