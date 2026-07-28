@@ -45,13 +45,17 @@ _POLICY_EXPECTED = {
     "strike_tick_usd": 25,
     "target_duration_hours": 48,
     "reopen_cadence_hours": 48,
-    "target_utilization_bps": 2500,
+    "target_utilization_bps": 8000,
     "minimum_net_premium_bps": 10,
     "maximum_open_positions": 1,
     "called_away_action": "normalize_all_usdc_to_weth_then_reopen",
     "premium_action": "normalize_all_usdc_to_weth_after_settlement",
     "position_sizing_basis": "current_idle_assets",
     "continuous_operation": "reopen_while_free_weth_and_no_pending_redemptions",
+}
+_LEGACY_POLICY_EXPECTED = {
+    **_POLICY_EXPECTED,
+    "target_utilization_bps": 2500,
 }
 
 _VALUATION_EXPECTED = {
@@ -354,14 +358,18 @@ def load_covered_call_policy(path: str | Path) -> CoveredCallPolicy:
         **selection,
         "strike_parameter": Decimal(str(selection.get("strike_parameter"))),
     }
+    expected_selection = {
+        3: _LEGACY_POLICY_EXPECTED,
+        4: _POLICY_EXPECTED,
+    }.get(raw.get("schema_version"))
     if (
-        raw.get("schema_version") != 3
+        expected_selection is None
         or raw.get("authority_issue") != "B1N-374"
         or raw.get("decision") != "go_testnet_only"
         or raw.get("activation_allowed") is not True
         or raw.get("mainnet_authorized") is not False
         or raw.get("scope") != expected_scope
-        or normalized_selection != _POLICY_EXPECTED
+        or normalized_selection != expected_selection
         or raw.get("valuation") != _VALUATION_EXPECTED
         or raw.get("base_sepolia_bounds", {}).get("maximum_vault_aum_weth") is not None
         or raw.get("base_sepolia_bounds", {}).get(
