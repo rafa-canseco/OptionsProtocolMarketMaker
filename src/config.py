@@ -103,6 +103,21 @@ FAST_REFRESH_HOURS: int = max(int(os.getenv("FAST_REFRESH_HOURS", "6")), 1)
 SPREAD_BPS: int = int(os.getenv("SPREAD_BPS", "200"))
 MAX_AMOUNT: int = int(os.getenv("MAX_AMOUNT", "500000000"))
 DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "300"))
+MIN_LAZY_QUOTE_TTL_SECONDS: int = int(os.getenv("MIN_LAZY_QUOTE_TTL_SECONDS", "120"))
+if MIN_LAZY_QUOTE_TTL_SECONDS < 1:
+    print(
+        "FATAL: MIN_LAZY_QUOTE_TTL_SECONDS must be >= 1, "
+        f"got {MIN_LAZY_QUOTE_TTL_SECONDS}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+if DEADLINE_SECONDS < MIN_LAZY_QUOTE_TTL_SECONDS:
+    print(
+        "FATAL: DEADLINE_SECONDS must be >= MIN_LAZY_QUOTE_TTL_SECONDS "
+        f"({DEADLINE_SECONDS} < {MIN_LAZY_QUOTE_TTL_SECONDS})",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 CHAIN_ID: int = int(os.getenv("CHAIN_ID", "84532"))
 BATCH_SETTLER: str = os.getenv(
     "BATCH_SETTLER",

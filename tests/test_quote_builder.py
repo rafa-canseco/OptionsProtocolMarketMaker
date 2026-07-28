@@ -13,6 +13,69 @@ from src.pricer import (
 from src.quote_builder import build_quotes
 
 
+PREDICTED_OTOKEN = "0x8eC5D3F2a4B6c7D8E9F0123456789aBCdEf01234"
+
+
+@patch("src.quote_builder.time.time", return_value=1_800_000_000)
+@patch("src.quote_builder.config")
+def test_virtual_create2_series_uses_existing_quote_and_capacity_path(
+    mock_config, mock_time
+):
+    """An undeployed address is quoted without bypassing risk or capacity gates."""
+    mock_config.RISK_FREE_RATE = 0.05
+    mock_config.SPREAD_BPS = 200
+    mock_config.DEADLINE_SECONDS = 300
+    mock_config.MIN_LAZY_QUOTE_TTL_SECONDS = 120
+    mock_config.MAX_AMOUNT = 500_000_000
+    mock_config.ASSETS = [SimpleNamespace(name="eth")]
+
+    market = {
+        "spot": 2000.0,
+        "iv": 0.6,
+        "available_otokens": [
+            {
+                "address": PREDICTED_OTOKEN,
+                "strike_price": 1900.0,
+                "expiry": 1_800_000_000 + 7 * 86400,
+                "is_put": True,
+                "deployment_status": "virtual",
+            },
+            {
+                "address": "0x0000000000000000000000000000000000000002",
+                "strike_price": 2500.0,
+                "expiry": 1_800_000_000 + 7 * 86400,
+                "is_put": True,
+                "deployment_status": "virtual",
+            },
+            {
+                "address": "0x0000000000000000000000000000000000000003",
+                "strike_price": 1900.0,
+                "expiry": 1_800_000_000 + 30 * 60,
+                "is_put": True,
+                "deployment_status": "virtual",
+            },
+        ],
+    }
+
+    quotes = build_quotes(
+        market,
+        maker_nonce=7,
+        max_amount_raw=125_000_000,
+        asset="eth",
+        chain="base",
+    )
+
+    assert len(quotes) == 1
+    assert quotes[0]["oToken"] == PREDICTED_OTOKEN
+    assert quotes[0]["maxAmount"] == 125_000_000
+    assert quotes[0]["makerNonce"] == 7
+    assert quotes[0]["deadline"] - int(mock_time.return_value) == 300
+    assert (
+        quotes[0]["deadline"] - int(mock_time.return_value)
+        >= mock_config.MIN_LAZY_QUOTE_TTL_SECONDS
+    )
+
+
 @patch("src.quote_builder.config")
 def test_build_quotes_uses_max_amount_raw_param(mock_config):
     """When max_amount_raw is passed, quotes use it instead of config."""
