@@ -6,6 +6,7 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_FLOOR
 from pathlib import Path
@@ -193,6 +194,20 @@ _STRATEGY_ABI = [
 
 _ADAPTER_ABI = [
     {
+        "name": "accountingAsset",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "address"}],
+    },
+    {
+        "name": "weth",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "address"}],
+    },
+    {
         "name": "adapterState",
         "type": "function",
         "stateMutability": "view",
@@ -280,7 +295,42 @@ _OTOKEN_ABI = [
         "stateMutability": "view",
         "inputs": [],
         "outputs": [{"type": "uint256"}],
-    }
+    },
+    {
+        "name": "isPut",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "bool"}],
+    },
+    {
+        "name": "underlying",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "address"}],
+    },
+    {
+        "name": "strikeAsset",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "address"}],
+    },
+    {
+        "name": "collateralAsset",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "address"}],
+    },
+    {
+        "name": "strikePrice",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "uint256"}],
+    },
 ]
 
 _VALUATOR_ABI = [
@@ -447,6 +497,7 @@ def select_policy_quote(
     spot: float,
     now: int,
     policy: FundPolicy,
+    series_validator: Callable[[dict[str, Any]], bool] | None = None,
 ) -> dict[str, Any] | None:
     target_strike = policy_strike(spot, policy)
     candidates = [
@@ -459,6 +510,7 @@ def select_policy_quote(
         <= int(quote.get("expiry") or 0) - now
         <= policy.max_expiry_delay
         and Decimal(str(quote.get("strike_price"))) == Decimal(target_strike)
+        and (series_validator is None or series_validator(quote))
     ]
     if not candidates:
         return None
@@ -520,7 +572,14 @@ class CspFundAllocator:
             address=self.adapter_address,
             abi=_ADAPTER_ABI,
         )
-        self.usdc = Web3.to_checksum_address(config.USDC_ADDRESS)
+        self.usdc = Web3.to_checksum_address(
+            self.adapter.functions.accountingAsset().call()
+        )
+        self.weth = Web3.to_checksum_address(self.adapter.functions.weth().call())
+        if self.usdc != Web3.to_checksum_address(config.USDC_ADDRESS):
+            raise RuntimeError(
+                "Configured CSP USDC differs from adapter accounting asset"
+            )
         self.valuator_address = Web3.to_checksum_address(
             config.FUND_CSP_VALUATOR_ADDRESS
         )
@@ -534,6 +593,7 @@ class CspFundAllocator:
             self.strategy.address,
             self.adapter.address,
             self.usdc,
+            self.weth,
             self.valuator.address,
         ):
             if not self.w3.eth.get_code(address):
@@ -563,6 +623,24 @@ class CspFundAllocator:
     def _safe_block(self) -> int:
         latest = self.w3.eth.block_number
         return max(latest - config.FUND_ALLOCATOR_CONFIRMATIONS, 0)
+
+    def _is_compatible_put_series(self, quote: dict[str, Any]) -> bool:
+        o_token = self.w3.eth.contract(
+            address=Web3.to_checksum_address(quote["otoken_address"]),
+            abi=_OTOKEN_ABI,
+        )
+        return (
+            o_token.functions.isPut().call() is True
+            and Web3.to_checksum_address(o_token.functions.underlying().call())
+            == self.weth
+            and Web3.to_checksum_address(o_token.functions.strikeAsset().call())
+            == self.usdc
+            and Web3.to_checksum_address(o_token.functions.collateralAsset().call())
+            == self.usdc
+            and int(o_token.functions.expiry().call()) == int(quote["expiry"])
+            and int(o_token.functions.strikePrice().call())
+            == int(Decimal(str(quote["strike_price"])) * OTOKEN_SCALE)
+        )
 
     def _read_gate_state(self, block: int) -> dict[str, Any]:
         nav = self.vault.functions.activeNavWindow().call(block_identifier=block)
@@ -752,6 +830,7 @@ class CspFundAllocator:
             spot=float(market["spot"]),
             now=int(time.time()),
             policy=self.policy,
+            series_validator=self._is_compatible_put_series,
         )
         if quote is None:
             raise RuntimeError("No live signed quote matches the 15%-OTM 48h policy")
