@@ -25,6 +25,11 @@ from src.fund_allocator import UINT256_MAX
 POLICY_PATH = (
     Path(__file__).parents[1]
     / "policies"
+    / "covered_call_fund_policy.v4.base-sepolia.json"
+)
+LEGACY_POLICY_PATH = (
+    Path(__file__).parents[1]
+    / "policies"
     / "covered_call_fund_policy.v3.base-sepolia.json"
 )
 SPOT_FEED = "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1"
@@ -55,7 +60,7 @@ def _quote(now: int, **overrides):
 def test_policy_uses_dynamic_idle_sizing_and_is_weth_only():
     policy = _policy()
     assert float(policy.target_delta) == pytest.approx(0.05)
-    assert policy.target_utilization_bps == 2500
+    assert policy.target_utilization_bps == 8000
     assert policy.maximum_vault_aum == UINT256_MAX
     assert policy.maximum_collateral == UINT256_MAX
     assert policy.minimum_net_premium_bps == 10
@@ -70,9 +75,13 @@ def test_policy_uses_dynamic_idle_sizing_and_is_weth_only():
     assert policy.maximum_spot_staleness_seconds == 3600
 
 
+def test_legacy_policy_remains_loadable_during_staged_rollout():
+    assert load_covered_call_policy(LEGACY_POLICY_PATH).target_utilization_bps == 2500
+
+
 def test_policy_loader_rejects_parameter_drift(tmp_path):
     raw = json.loads(POLICY_PATH.read_text())
-    raw["selection"]["target_utilization_bps"] = 8000
+    raw["selection"]["target_utilization_bps"] = 2500
     changed = tmp_path / "changed.json"
     changed.write_text(json.dumps(raw))
     with pytest.raises(ValueError, match="not approved"):
@@ -107,10 +116,22 @@ def test_policy_loader_rejects_fair_value_policy_drift(tmp_path, path, value):
 def test_collateral_is_one_to_one_with_otoken_amount():
     policy = _policy()
     target = call_collateral_target(5 * 10**18, policy)
-    assert target == 1_250_000_000_000_000_000
+    assert target == 4_000_000_000_000_000_000
     amount = option_amount_for_call_collateral(target)
-    assert amount == 125_000_000
+    assert amount == 400_000_000
     assert call_collateral_for_option_amount(amount) == target
+
+
+@pytest.mark.parametrize(
+    ("idle_weth", "expected_target"),
+    [
+        (1 * 10**18, 8 * 10**17),
+        (5 * 10**18, 4 * 10**18),
+        (10 * 10**18, 8 * 10**18),
+    ],
+)
+def test_collateral_target_recalculates_at_80_percent(idle_weth, expected_target):
+    assert call_collateral_target(idle_weth, _policy()) == expected_target
 
 
 def test_fair_call_liability_weth_golden_conversion():
@@ -223,7 +244,7 @@ def test_stale_nav_prevents_any_lifecycle_action():
         "valuation_observers": (True, True),
         "strategy_config": (
             True,
-            2500,
+            8000,
             10000,
             0,
             1,
@@ -238,7 +259,7 @@ def test_stale_nav_prevents_any_lifecycle_action():
                 10,
                 500,
                 1,
-                2500,
+                8000,
                 1000 * 10**8,
                 10000 * 10**8,
                 UINT256_MAX,
@@ -282,7 +303,7 @@ def test_pending_physical_delivery_can_progress_without_impossible_nav():
         "valuation_observers": (True, True),
         "strategy_config": (
             True,
-            2500,
+            8000,
             10000,
             0,
             1,
@@ -297,7 +318,7 @@ def test_pending_physical_delivery_can_progress_without_impossible_nav():
                 10,
                 500,
                 1,
-                2500,
+                8000,
                 1000 * 10**8,
                 10000 * 10**8,
                 UINT256_MAX,
@@ -340,7 +361,7 @@ def test_onchain_valuator_policy_drift_fails_closed():
         "valuation_observers": (True, True),
         "strategy_config": (
             True,
-            2500,
+            8000,
             10000,
             0,
             1,
@@ -355,7 +376,7 @@ def test_onchain_valuator_policy_drift_fails_closed():
                 10,
                 500,
                 1,
-                2500,
+                8000,
                 1000 * 10**8,
                 10000 * 10**8,
                 UINT256_MAX,
@@ -399,7 +420,7 @@ def test_unapproved_fair_value_observer_fails_closed():
         "valuation_observers": (True, False),
         "strategy_config": (
             True,
-            2500,
+            8000,
             10000,
             0,
             1,
@@ -414,7 +435,7 @@ def test_unapproved_fair_value_observer_fails_closed():
                 10,
                 500,
                 1,
-                2500,
+                8000,
                 1000 * 10**8,
                 10000 * 10**8,
                 UINT256_MAX,

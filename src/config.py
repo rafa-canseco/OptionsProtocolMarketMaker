@@ -189,7 +189,7 @@ COVERED_CALL_ALLOCATOR_PRIVATE_KEY: str | None = _optional_env(
 )
 COVERED_CALL_ALLOCATOR_POLICY_PATH: str = os.getenv(
     "COVERED_CALL_ALLOCATOR_POLICY_PATH",
-    "policies/covered_call_fund_policy.v3.base-sepolia.json",
+    "policies/covered_call_fund_policy.v4.base-sepolia.json",
 )
 COVERED_CALL_ALLOCATOR_INTERVAL_SECONDS: int = max(
     int(os.getenv("COVERED_CALL_ALLOCATOR_INTERVAL_SECONDS", "30")),
