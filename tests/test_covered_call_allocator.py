@@ -19,12 +19,13 @@ from src.covered_call_allocator import (
     select_covered_call_quote,
 )
 from src.fund_tx import ConfirmedTransaction
+from src.fund_allocator import UINT256_MAX
 
 
 POLICY_PATH = (
     Path(__file__).parents[1]
     / "policies"
-    / "covered_call_fund_policy.v2.base-sepolia.json"
+    / "covered_call_fund_policy.v3.base-sepolia.json"
 )
 SPOT_FEED = "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1"
 VALUATION_POLICY = (1, 2, 1, 0, 500, 2, 120, SPOT_FEED, 8, 3600)
@@ -51,12 +52,12 @@ def _quote(now: int, **overrides):
     return value | overrides
 
 
-def test_policy_is_exactly_bounded_and_weth_only():
+def test_policy_uses_dynamic_idle_sizing_and_is_weth_only():
     policy = _policy()
     assert float(policy.target_delta) == pytest.approx(0.05)
     assert policy.target_utilization_bps == 2500
-    assert policy.maximum_vault_aum == 10**16
-    assert policy.maximum_collateral == 2_500_000_000_000_000
+    assert policy.maximum_vault_aum == UINT256_MAX
+    assert policy.maximum_collateral == UINT256_MAX
     assert policy.minimum_net_premium_bps == 10
     assert policy.maximum_open_positions == 1
     assert policy.valuation_policy_version == 2
@@ -104,10 +105,10 @@ def test_policy_loader_rejects_fair_value_policy_drift(tmp_path, path, value):
 
 def test_collateral_is_one_to_one_with_otoken_amount():
     policy = _policy()
-    target = call_collateral_target(10**16, policy)
-    assert target == policy.maximum_collateral
+    target = call_collateral_target(5 * 10**18, policy)
+    assert target == 1_250_000_000_000_000_000
     amount = option_amount_for_call_collateral(target)
-    assert amount == 250_000
+    assert amount == 125_000_000
     assert call_collateral_for_option_amount(amount) == target
 
 
@@ -208,7 +209,7 @@ def test_stale_nav_prevents_any_lifecycle_action():
             0,
             1,
             allocator.valuator_address,
-            2_500_000_000_000_000,
+            UINT256_MAX,
         ),
         "adapter_config": (
             (
@@ -221,7 +222,7 @@ def test_stale_nav_prevents_any_lifecycle_action():
                 2500,
                 1000 * 10**8,
                 10000 * 10**8,
-                2_500_000_000_000_000,
+                UINT256_MAX,
                 32 * 10**6,
             ),
             "0x" + "56" * 20,
@@ -267,7 +268,7 @@ def test_pending_physical_delivery_can_progress_without_impossible_nav():
             0,
             1,
             allocator.valuator_address,
-            2_500_000_000_000_000,
+            UINT256_MAX,
         ),
         "adapter_config": (
             (
@@ -280,7 +281,7 @@ def test_pending_physical_delivery_can_progress_without_impossible_nav():
                 2500,
                 1000 * 10**8,
                 10000 * 10**8,
-                2_500_000_000_000_000,
+                UINT256_MAX,
                 32 * 10**6,
             ),
             "0x" + "56" * 20,
@@ -325,7 +326,7 @@ def test_onchain_valuator_policy_drift_fails_closed():
             0,
             1,
             allocator.valuator_address,
-            2_500_000_000_000_000,
+            UINT256_MAX,
         ),
         "adapter_config": (
             (
@@ -338,7 +339,7 @@ def test_onchain_valuator_policy_drift_fails_closed():
                 2500,
                 1000 * 10**8,
                 10000 * 10**8,
-                2_500_000_000_000_000,
+                UINT256_MAX,
                 32 * 10**6,
             ),
             "0x" + "56" * 20,
@@ -384,7 +385,7 @@ def test_unapproved_fair_value_observer_fails_closed():
             0,
             1,
             allocator.valuator_address,
-            2_500_000_000_000_000,
+            UINT256_MAX,
         ),
         "adapter_config": (
             (
@@ -397,7 +398,7 @@ def test_unapproved_fair_value_observer_fails_closed():
                 2500,
                 1000 * 10**8,
                 10000 * 10**8,
-                2_500_000_000_000_000,
+                UINT256_MAX,
                 32 * 10**6,
             ),
             "0x" + "56" * 20,

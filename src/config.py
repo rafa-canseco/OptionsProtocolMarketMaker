@@ -143,7 +143,7 @@ FUND_ALLOCATOR_ENABLED: bool = _env_flag("FUND_ALLOCATOR_ENABLED", default=False
 FUND_ALLOCATOR_PRIVATE_KEY: str | None = _optional_env("FUND_ALLOCATOR_PRIVATE_KEY")
 FUND_ALLOCATOR_POLICY_PATH: str = os.getenv(
     "FUND_ALLOCATOR_POLICY_PATH",
-    "policies/csp_fund_policy.v2.base-sepolia.json",
+    "policies/csp_fund_policy.v3.base-sepolia.json",
 )
 FUND_ALLOCATOR_INTERVAL_SECONDS: int = max(
     int(os.getenv("FUND_ALLOCATOR_INTERVAL_SECONDS", "30")),
@@ -189,7 +189,7 @@ COVERED_CALL_ALLOCATOR_PRIVATE_KEY: str | None = _optional_env(
 )
 COVERED_CALL_ALLOCATOR_POLICY_PATH: str = os.getenv(
     "COVERED_CALL_ALLOCATOR_POLICY_PATH",
-    "policies/covered_call_fund_policy.v2.base-sepolia.json",
+    "policies/covered_call_fund_policy.v3.base-sepolia.json",
 )
 COVERED_CALL_ALLOCATOR_INTERVAL_SECONDS: int = max(
     int(os.getenv("COVERED_CALL_ALLOCATOR_INTERVAL_SECONDS", "30")),

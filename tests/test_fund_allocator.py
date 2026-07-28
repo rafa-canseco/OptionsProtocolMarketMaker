@@ -18,6 +18,7 @@ from src.fund_allocator import (
     safe_block_has_coherent_nav,
     select_policy_quote,
     sign_fund_quote,
+    UINT256_MAX,
     validate_allocated_exposure,
     validate_fair_nav_policy,
 )
@@ -25,16 +26,16 @@ from src import api_client
 
 
 POLICY_PATH = (
-    Path(__file__).parents[1] / "policies" / "csp_fund_policy.v2.base-sepolia.json"
+    Path(__file__).parents[1] / "policies" / "csp_fund_policy.v3.base-sepolia.json"
 )
 
 
-def test_approved_policy_is_testnet_only_and_bounded():
+def test_approved_policy_is_testnet_only_and_uses_dynamic_idle_sizing():
     policy = load_testnet_policy(POLICY_PATH)
 
     assert policy_strike(1859.32, policy) == 1575
-    assert policy.maximum_vault_aum == 1_000_000_000
-    assert policy.maximum_collateral == 800_000_000
+    assert policy.maximum_vault_aum == UINT256_MAX
+    assert policy.maximum_collateral == UINT256_MAX
     assert policy.maximum_open_positions == 1
     assert policy.liquid_usdc_reserve_bps == 2_000
     assert policy.onchain_minimum_idle_bps == 0
@@ -46,7 +47,7 @@ def test_policy_rejects_parameter_drift(tmp_path):
     drifted = tmp_path / "policy.json"
     drifted.write_text(json.dumps(raw))
 
-    with pytest.raises(ValueError, match="approved B1N-341"):
+    with pytest.raises(ValueError, match="approved B1N-374"):
         load_testnet_policy(drifted)
 
 
@@ -90,6 +91,13 @@ def test_assignment_rebases_utilization_on_remaining_liquid_usdc():
     assert liquid_collateral_target(0, policy) == 0
 
 
+def test_new_round_recalculates_from_all_current_idle_without_static_cap():
+    policy = load_testnet_policy(POLICY_PATH)
+
+    assert liquid_collateral_target(1_250 * 10**6, policy) == 1_000 * 10**6
+    assert liquid_collateral_target(3_671 * 10**6, policy) == 2_936_800_000
+
+
 def test_pending_redemptions_take_priority_over_opening_another_csp(monkeypatch):
     allocator = CspFundAllocator.__new__(CspFundAllocator)
     monkeypatch.setattr(
@@ -126,12 +134,12 @@ def test_latest_redemption_request_closes_safe_block_handoff_race(monkeypatch):
     )
 
 
-def test_nav_growth_does_not_disable_allocator_but_exposure_stays_capped():
+def test_allocated_exposure_has_no_static_economic_cap():
     policy = load_testnet_policy(POLICY_PATH)
 
-    validate_allocated_exposure(800 * 10**6, policy)
-    with pytest.raises(RuntimeError, match="allocation exceeds"):
-        validate_allocated_exposure(800 * 10**6 + 1, policy)
+    validate_allocated_exposure(10_000_000 * 10**6, policy)
+    with pytest.raises(RuntimeError, match="outside uint256"):
+        validate_allocated_exposure(UINT256_MAX + 1, policy)
 
 
 def test_safe_block_accepts_only_the_mandatory_pre_activation_handoff():

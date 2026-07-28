@@ -21,6 +21,7 @@ from src.fund_allocator import (
     _OTOKEN_ABI,
     _STRATEGY_ABI,
     _VAULT_ABI,
+    UINT256_MAX,
     safe_block_has_coherent_nav,
     sign_fund_quote,
 )
@@ -48,6 +49,7 @@ _POLICY_EXPECTED = {
     "maximum_open_positions": 1,
     "called_away_action": "normalize_all_usdc_to_weth_then_reopen",
     "premium_action": "normalize_all_usdc_to_weth_after_settlement",
+    "position_sizing_basis": "current_idle_assets",
     "continuous_operation": "reopen_while_free_weth_and_no_pending_redemptions",
 }
 
@@ -345,16 +347,21 @@ def load_covered_call_policy(path: str | Path) -> CoveredCallPolicy:
         "strike_parameter": Decimal(str(selection.get("strike_parameter"))),
     }
     if (
-        raw.get("schema_version") != 2
-        or raw.get("authority_issue") != "B1N-362"
+        raw.get("schema_version") != 3
+        or raw.get("authority_issue") != "B1N-374"
         or raw.get("decision") != "go_testnet_only"
         or raw.get("activation_allowed") is not True
         or raw.get("mainnet_authorized") is not False
         or raw.get("scope") != expected_scope
         or normalized_selection != _POLICY_EXPECTED
         or raw.get("valuation") != _VALUATION_EXPECTED
+        or raw.get("base_sepolia_bounds", {}).get("maximum_vault_aum_weth") is not None
+        or raw.get("base_sepolia_bounds", {}).get(
+            "maximum_collateral_per_position_weth"
+        )
+        is not None
     ):
-        raise ValueError("Covered-call allocator policy is not approved for B1N-362")
+        raise ValueError("Covered-call allocator policy is not approved for B1N-374")
     bounds = raw["base_sepolia_bounds"]
     valuation = raw["valuation"]
     if bounds.get("mock_assets_only") is not True or bounds.get("chain_id") != 84532:
@@ -367,12 +374,8 @@ def load_covered_call_policy(path: str | Path) -> CoveredCallPolicy:
         target_utilization_bps=int(selection["target_utilization_bps"]),
         minimum_net_premium_bps=int(selection["minimum_net_premium_bps"]),
         maximum_open_positions=int(selection["maximum_open_positions"]),
-        maximum_vault_aum=int(
-            Decimal(str(bounds["maximum_vault_aum_weth"])) * WETH_SCALE
-        ),
-        maximum_collateral=int(
-            Decimal(str(bounds["maximum_collateral_per_position_weth"])) * WETH_SCALE
-        ),
+        maximum_vault_aum=UINT256_MAX,
+        maximum_collateral=UINT256_MAX,
         maximum_usdc_per_swap=int(
             Decimal(str(bounds["maximum_usdc_per_swap"])) * USDC_SCALE
         ),
@@ -410,10 +413,7 @@ def load_covered_call_policy(path: str | Path) -> CoveredCallPolicy:
 
 
 def call_collateral_target(idle_weth: int, policy: CoveredCallPolicy) -> int:
-    return min(
-        idle_weth * policy.target_utilization_bps // BPS,
-        policy.maximum_collateral,
-    )
+    return idle_weth * policy.target_utilization_bps // BPS
 
 
 def option_amount_for_call_collateral(collateral: int) -> int:
@@ -865,8 +865,6 @@ class CoveredCallFundAllocator:
         if self.flow.functions.totalPendingShares().call() != 0:
             log.info("Covered call decision=skip reason=pending_redemptions_latest")
             return
-        if state["total_assets"] > self.policy.maximum_vault_aum:
-            raise RuntimeError("Covered-call vault exceeds validation AUM cap")
         if int(adapter_state[2]) >= self.policy.maximum_opened_positions_before_review:
             log.info("Covered call decision=skip reason=cycle_review_cap")
             return

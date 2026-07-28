@@ -1,0 +1,437 @@
+{
+  "activation_allowed": true,
+  "authority_issue": "B1N-374",
+  "base_sepolia_bounds": {
+    "allocator_enabled": true,
+    "chain_id": 84532,
+    "mainnet_authorized": false,
+    "maximum_call_aways_before_review": 1,
+    "maximum_collateral_per_position_weth": null,
+    "maximum_expiry_delay_seconds": 216000,
+    "maximum_normalizations_before_review": 10,
+    "maximum_opened_positions_before_review": 10,
+    "maximum_positions": 1,
+    "maximum_strike_usd": 10000,
+    "maximum_swap_slippage_bps": 500,
+    "maximum_usdc_per_swap": 32,
+    "maximum_vault_aum_weth": null,
+    "minimum_expiry_delay_seconds": 129600,
+    "minimum_strike_usd": 1000,
+    "mock_assets_only": true,
+    "onchain_minimum_idle_bps": 0,
+    "settlement_default_delay_seconds": 3600,
+    "strategy_maximum_loss_bps": 10000,
+    "swap_fee_tier": 3000
+  },
+  "decision": "go_testnet_only",
+  "economic_gate_results": {
+    "development": {
+      "all_economic_gates_pass": true,
+      "candidate": {
+        "costs": {
+          "base_spread_bps": 200,
+          "execution_slippage_bps": 0,
+          "fee_bps_notional": 0,
+          "gas_usdc": 0.0,
+          "mm_hedge_cost_bps": 5.0,
+          "name": "base",
+          "operational_delay_minutes": 5
+        },
+        "minimum_net_premium_bps": 10,
+        "normalization_slippage_bps": 50,
+        "strike_parameter": 0.05,
+        "strike_rule": "target_call_delta",
+        "utilization": 0.25
+      },
+      "candidate_id": "target_call_delta_0p05__u_0p25__p_10__base",
+      "economic_gate_count": 10,
+      "economic_gate_total": 10,
+      "minimum_median_weth_return": 0.0013418090897068247,
+      "windows": [
+        {
+          "aggregate_call_away_frequency": 0.012658227848101266,
+          "checks": {
+            "loss_probability_within_limit": true,
+            "market_coverage_within_limit": true,
+            "median_weth_return_nonnegative": true,
+            "minimum_open_rate_met": true,
+            "worst_drawdown_within_limit": true
+          },
+          "loss_probability": 0.08695652173913043,
+          "maximum_missing_market_fraction": 0.0,
+          "median_open_rate": 0.4,
+          "passed": true,
+          "relative_to_hold_distribution": {
+            "max": 0.005005760953191274,
+            "mean": 0.0013997439576871847,
+            "min": -0.004622383957677778,
+            "p05": -0.0007467817666551023,
+            "p25": 0.0,
+            "p50": 0.0016763252589950817,
+            "p75": 0.0026114705632336865,
+            "p95": 0.0039086684416204
+          },
+          "sample_count": 23,
+          "weth_return_distribution": {
+            "max": 0.004413687937789623,
+            "mean": 0.0013905217772163826,
+            "min": -0.004774114771646687,
+            "p05": -0.0006249436503015903,
+            "p25": 0.0,
+            "p50": 0.0013418090897068247,
+            "p75": 0.003054092772377559,
+            "p95": 0.004047989896802638
+          },
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.012144166074385176
+        },
+        {
+          "aggregate_call_away_frequency": 0.007575757575757576,
+          "checks": {
+            "loss_probability_within_limit": true,
+            "market_coverage_within_limit": true,
+            "median_weth_return_nonnegative": true,
+            "minimum_open_rate_met": true,
+            "worst_drawdown_within_limit": true
+          },
+          "loss_probability": 0.14285714285714285,
+          "maximum_missing_market_fraction": 0.0,
+          "median_open_rate": 0.28888888888888886,
+          "passed": true,
+          "relative_to_hold_distribution": {
+            "max": 0.009941494268571383,
+            "mean": 0.004437372053440826,
+            "min": -0.0008568542093452258,
+            "p05": -0.000599797946541658,
+            "p25": 0.0011967500852277935,
+            "p50": 0.00355980056071048,
+            "p75": 0.00801183179184678,
+            "p95": 0.009937126410153296
+          },
+          "sample_count": 7,
+          "weth_return_distribution": {
+            "max": 0.010167515088974177,
+            "mean": 0.004768216639412959,
+            "min": -0.0006943818336684338,
+            "p05": -0.0004860672835679036,
+            "p25": 0.0013094442010385121,
+            "p50": 0.0033660973702169805,
+            "p75": 0.008959698724145482,
+            "p95": 0.00991365049890438
+          },
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.012144166074385176
+        }
+      ],
+      "worst_drawdown": -0.012144166074385176,
+      "worst_loss_probability": 0.14285714285714285
+    },
+    "validation_base": {
+      "all_economic_gates_pass": false,
+      "candidate": {
+        "costs": {
+          "base_spread_bps": 200,
+          "execution_slippage_bps": 0,
+          "fee_bps_notional": 0,
+          "gas_usdc": 0.0,
+          "mm_hedge_cost_bps": 5.0,
+          "name": "base",
+          "operational_delay_minutes": 5
+        },
+        "minimum_net_premium_bps": 10,
+        "normalization_slippage_bps": 50,
+        "strike_parameter": 0.05,
+        "strike_rule": "target_call_delta",
+        "utilization": 0.25
+      },
+      "candidate_id": "target_call_delta_0p05__u_0p25__p_10__base",
+      "economic_gate_count": 9,
+      "economic_gate_total": 10,
+      "minimum_median_weth_return": 0.000766137157093949,
+      "windows": [
+        {
+          "aggregate_call_away_frequency": 0.04534005037783375,
+          "checks": {
+            "loss_probability_within_limit": true,
+            "market_coverage_within_limit": true,
+            "median_weth_return_nonnegative": true,
+            "minimum_open_rate_met": true,
+            "worst_drawdown_within_limit": true
+          },
+          "loss_probability": 0.22916666666666666,
+          "maximum_missing_market_fraction": 0.0,
+          "median_open_rate": 0.6333333333333333,
+          "passed": true,
+          "relative_to_hold_distribution": {
+            "max": 0.004378779815965572,
+            "mean": -0.00030283238077610336,
+            "min": -0.02887985566114737,
+            "p05": -0.006203335354628798,
+            "p25": 0.0,
+            "p50": 0.0006287352135757596,
+            "p75": 0.0020278370119356237,
+            "p95": 0.0037763998346201644
+          },
+          "sample_count": 48,
+          "weth_return_distribution": {
+            "max": 0.004207569338811501,
+            "mean": -4.781688522517471e-05,
+            "min": -0.018098310337711254,
+            "p05": -0.006675443419902854,
+            "p25": 0.0,
+            "p50": 0.000766137157093949,
+            "p75": 0.0019523344708479162,
+            "p95": 0.004135568731541528
+          },
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.018634765199288306
+        },
+        {
+          "aggregate_call_away_frequency": 0.03554274735830932,
+          "checks": {
+            "loss_probability_within_limit": false,
+            "market_coverage_within_limit": true,
+            "median_weth_return_nonnegative": true,
+            "minimum_open_rate_met": true,
+            "worst_drawdown_within_limit": true
+          },
+          "loss_probability": 0.3,
+          "maximum_missing_market_fraction": 0.0,
+          "median_open_rate": 0.6111111111111112,
+          "passed": false,
+          "relative_to_hold_distribution": {
+            "max": 0.0075561480735863995,
+            "mean": 0.000750013289200105,
+            "min": -0.032785201576956746,
+            "p05": -0.0069545954276635175,
+            "p25": -0.0009251037084116731,
+            "p50": 0.002108057557875853,
+            "p75": 0.004668821064664097,
+            "p95": 0.00651993264024082
+          },
+          "sample_count": 40,
+          "weth_return_distribution": {
+            "max": 0.009861997515790755,
+            "mean": 0.0013833453539468022,
+            "min": -0.023350275490732098,
+            "p05": -0.008796778605674604,
+            "p25": -0.001165306793077886,
+            "p50": 0.0026976608720524764,
+            "p75": 0.0060422684622832845,
+            "p95": 0.009312569020383375
+          },
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.025154441239484737
+        }
+      ],
+      "worst_drawdown": -0.025154441239484737,
+      "worst_loss_probability": 0.3
+    },
+    "validation_stressed": {
+      "all_economic_gates_pass": false,
+      "candidate": {
+        "costs": {
+          "base_spread_bps": 300,
+          "execution_slippage_bps": 0,
+          "fee_bps_notional": 0,
+          "gas_usdc": 0.0,
+          "mm_hedge_cost_bps": 10.0,
+          "name": "stressed",
+          "operational_delay_minutes": 15
+        },
+        "minimum_net_premium_bps": 10,
+        "normalization_slippage_bps": 200,
+        "strike_parameter": 0.05,
+        "strike_rule": "target_call_delta",
+        "utilization": 0.25
+      },
+      "candidate_id": "target_call_delta_0p05__u_0p25__p_10__stressed",
+      "economic_gate_count": 8,
+      "economic_gate_total": 10,
+      "minimum_median_weth_return": 0.00025310033704617485,
+      "windows": [
+        {
+          "aggregate_call_away_frequency": 0.047872340425531915,
+          "checks": {
+            "loss_probability_within_limit": false,
+            "market_coverage_within_limit": true,
+            "median_weth_return_nonnegative": true,
+            "minimum_open_rate_met": true,
+            "worst_drawdown_within_limit": true
+          },
+          "loss_probability": 0.3125,
+          "maximum_missing_market_fraction": 0.0,
+          "median_open_rate": 0.6,
+          "passed": false,
+          "relative_to_hold_distribution": {
+            "max": 0.00401658876939659,
+            "mean": -0.0019576199852807605,
+            "min": -0.04077704634130952,
+            "p05": -0.012121736285718087,
+            "p25": -0.002893674868550411,
+            "p50": 0.00023305737539697224,
+            "p75": 0.0015146122315261024,
+            "p95": 0.0036345028870428953
+          },
+          "sample_count": 48,
+          "weth_return_distribution": {
+            "max": 0.004101432244103975,
+            "mean": -0.0015883860018516157,
+            "min": -0.02555399334398678,
+            "p05": -0.011344088317140228,
+            "p25": -0.002669923734941737,
+            "p50": 0.00025310033704617485,
+            "p75": 0.0017049089531045447,
+            "p95": 0.0040196662781274315
+          },
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.025627756511524602
+        },
+        {
+          "aggregate_call_away_frequency": 0.037601626016260166,
+          "checks": {
+            "loss_probability_within_limit": false,
+            "market_coverage_within_limit": true,
+            "median_weth_return_nonnegative": true,
+            "minimum_open_rate_met": true,
+            "worst_drawdown_within_limit": true
+          },
+          "loss_probability": 0.475,
+          "maximum_missing_market_fraction": 0.0,
+          "median_open_rate": 0.5777777777777777,
+          "passed": false,
+          "relative_to_hold_distribution": {
+            "max": 0.007365043385881065,
+            "mean": -0.0027245940049804157,
+            "min": -0.053420223890094265,
+            "p05": -0.014064517851332402,
+            "p25": -0.005124308232145408,
+            "p50": 0.0002692231379988752,
+            "p75": 0.0023607755274502595,
+            "p95": 0.005994374873553879
+          },
+          "sample_count": 40,
+          "weth_return_distribution": {
+            "max": 0.009612544068638096,
+            "mean": -0.002537006309215184,
+            "min": -0.03804695059392327,
+            "p05": -0.01765582967949547,
+            "p25": -0.005092271181525693,
+            "p50": 0.00032723075827523207,
+            "p75": 0.003005551693380515,
+            "p95": 0.008614025566988735
+          },
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.038119768075304594
+        }
+      ],
+      "worst_drawdown": -0.038119768075304594,
+      "worst_loss_probability": 0.475
+    }
+  },
+  "evidence": {
+    "config_path": "backtests/b1n_358/config.json",
+    "issue": "B1N-358",
+    "report_path": "backtests/b1n_358/results/REPORT.md",
+    "source_market_sha256": "2313ba17f1466fb92f7863e74476e18b6e9c62bd443094487dcf5116812814c1",
+    "summary_path": "backtests/b1n_358/results/summary.json"
+  },
+  "evidence_gates": {
+    "observed_executable_quote_liquidity": false,
+    "observed_fund_flow_reconciliation": false,
+    "observed_nav_liability_reconciliation": false,
+    "observed_onchain_physical_call_away": false,
+    "observed_usdc_weth_normalization": false
+  },
+  "mainnet_authorized": false,
+  "notes": "Base Sepolia only. New positions size from current idle WETH at 25% utilization without static AUM or collateral caps. Premiums and normalization remain modeled. Economic/mainnet readiness remains no-go unless every evidence gate is satisfied.",
+  "policy_id": "eth_weth_covered_call_dynamic_idle_v3",
+  "research_decision": "base_sepolia_validation_go",
+  "runtime_fail_closed_reasons": [
+    "NETWORK_SCOPE_MISMATCH",
+    "STALE_NAV",
+    "PENDING_REDEMPTIONS",
+    "ACTIVE_FUND_FLOW_PROCESSING",
+    "MISSING_OR_UNAPPROVED_QUOTE",
+    "CONFIG_MISMATCH",
+    "CAP_BREACH",
+    "MAXIMUM_POSITIONS_REACHED",
+    "VALIDATION_CYCLE_LIMIT_REACHED",
+    "VALIDATION_CALL_AWAY_LIMIT_REACHED",
+    "UNRESOLVED_USDC",
+    "NORMALIZATION_SLIPPAGE",
+    "PENDING_PHYSICAL_DELIVERY",
+    "UNTRUSTED_REPORT"
+  ],
+  "schema_version": 3,
+  "scope": {
+    "accounting_asset": "WETH",
+    "chain_id": 84532,
+    "environment": "base_sepolia",
+    "strategy": "covered_call",
+    "transient_asset": "USDC",
+    "underlying": "ETH"
+  },
+  "selection": {
+    "called_away_action": "normalize_all_usdc_to_weth_then_reopen",
+    "continuous_operation": "reopen_while_free_weth_and_no_pending_redemptions",
+    "maximum_delta_deviation_bps": 150,
+    "maximum_open_positions": 1,
+    "minimum_net_premium_bps": 10,
+    "premium_action": "normalize_all_usdc_to_weth_after_settlement",
+    "position_sizing_basis": "current_idle_assets",
+    "reopen_cadence_hours": 48,
+    "strike_parameter": 0.05,
+    "strike_rule": "target_call_delta",
+    "strike_tick_usd": 25,
+    "target_duration_hours": 48,
+    "target_utilization_bps": 2500
+  },
+  "unresolved_evidence": [
+    "observed_executable_quote_liquidity",
+    "observed_onchain_physical_call_away",
+    "observed_fund_flow_reconciliation",
+    "observed_nav_liability_reconciliation",
+    "observed_usdc_weth_normalization"
+  ],
+  "valuation": {
+    "accounting_asset": "WETH",
+    "approved_observers": [
+      "0x3b7f3e42eaCB2E0361aE41e426ea65C6f7896D1e",
+      "0x62A7e8c11E4eFc8ed696b2A08D9ccfC339424754"
+    ],
+    "exercise_style": "european",
+    "implied_volatility": {
+      "bps": 4200,
+      "scope": "covered_call_testnet_fair_nav",
+      "source": "deribit-eth-atm-snapshot-2026-07-26T18:30:49Z-b1n358-covered-call-v2-approved"
+    },
+    "interface_version": 1,
+    "liability_buffer_bps": 0,
+    "liability_formula": "ceil(call_price_usd8 * option_amount_8 * 1e10 / spot_price_8), capped_at_collateral_weth",
+    "max_observation_divergence_bps": 500,
+    "maximum_observation_window_blocks": 120,
+    "methodology": "european_black_scholes",
+    "model_name": "b1nary-european-bs-call-v1",
+    "model_version": 1,
+    "nonce": {
+      "model_version_bits": 64,
+      "sequence_bits": 192,
+      "sequence_must_be_nonzero": true
+    },
+    "observation_quorum": 2,
+    "risk_free_rate_bps": 500,
+    "settlement_cost_bps": 0,
+    "source_quality": "single_model_multi_signer",
+    "spot": {
+      "asset_pair": "ETH/USD",
+      "feed_address": "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1",
+      "feed_address_source": "B1N-360-versioned-deployment-manifest",
+      "feed_decimals": 8,
+      "feed_type": "valuator_configured_chainlink",
+      "maximum_staleness_seconds": 3600
+    },
+    "stress_liability": "full_collateral_weth_api_telemetry_only",
+    "valuation_policy_version": 2
+  }
+}
