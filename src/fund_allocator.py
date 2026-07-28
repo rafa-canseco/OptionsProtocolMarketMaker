@@ -24,6 +24,7 @@ OTOKEN_SCALE = 10**8
 COLLATERAL_DENOMINATOR = 10**10
 WETH_SCALE = 10**18
 BPS = 10_000
+UINT256_MAX = 2**256 - 1
 FAIR_NAV_INTERFACE_VERSION = 1
 FAIR_NAV_POLICY_VERSION = 2
 FAIR_NAV_MODEL_VERSION = 1
@@ -40,9 +41,10 @@ _POLICY_EXPECTED = {
     "liquid_usdc_reserve_bps": 2000,
     "onchain_minimum_idle_bps": 0,
     "maximum_open_positions": 1,
-    "maximum_vault_aum_usdc": 1000,
-    "maximum_collateral_per_position_usdc": 800,
+    "maximum_vault_aum_usdc": None,
+    "maximum_collateral_per_position_usdc": None,
     "minimum_net_premium_bps": 0,
+    "position_sizing_basis": "current_idle_assets",
     "settlement_maximum_loss_bps": 10000,
     "assigned_inventory_action": "hold_weth_and_continue_on_liquid_usdc",
 }
@@ -359,15 +361,15 @@ def load_testnet_policy(path: str | Path) -> FundPolicy:
         "underlying": "ETH",
     }
     if (
-        raw.get("schema_version") != 2
+        raw.get("schema_version") != 3
         or raw.get("decision") != "go_testnet_only"
         or raw.get("activation_allowed") is not True
-        or raw.get("authority_issue") != "B1N-341"
+        or raw.get("authority_issue") != "B1N-374"
         or raw.get("scope") != expected_scope
         or raw.get("selection") != _POLICY_EXPECTED
     ):
         raise ValueError(
-            f"Allocator policy {policy_path} is not the approved B1N-341 test policy"
+            f"Allocator policy {policy_path} is not the approved B1N-374 test policy"
         )
     selection = raw["selection"]
     return FundPolicy(
@@ -376,9 +378,8 @@ def load_testnet_policy(path: str | Path) -> FundPolicy:
         target_utilization_bps=selection["target_utilization_bps"],
         liquid_usdc_reserve_bps=selection["liquid_usdc_reserve_bps"],
         onchain_minimum_idle_bps=selection["onchain_minimum_idle_bps"],
-        maximum_vault_aum=selection["maximum_vault_aum_usdc"] * USDC_SCALE,
-        maximum_collateral=selection["maximum_collateral_per_position_usdc"]
-        * USDC_SCALE,
+        maximum_vault_aum=UINT256_MAX,
+        maximum_collateral=UINT256_MAX,
         maximum_open_positions=selection["maximum_open_positions"],
         minimum_net_premium_bps=selection["minimum_net_premium_bps"],
         settlement_maximum_loss_bps=selection["settlement_maximum_loss_bps"],
@@ -405,14 +406,13 @@ def liquid_collateral_target(idle_assets: int, policy: FundPolicy) -> int:
     return min(
         idle_assets * policy.target_utilization_bps // BPS,
         idle_assets * (BPS - policy.liquid_usdc_reserve_bps) // BPS,
-        policy.maximum_collateral,
     )
 
 
 def validate_allocated_exposure(allocated: int, policy: FundPolicy) -> None:
-    """Keep allocation live as NAV/deposits grow, while enforcing the hard risk cap."""
-    if allocated > policy.maximum_collateral:
-        raise RuntimeError("Fund allocation exceeds the Base Sepolia test policy")
+    """Reject impossible uint256 state without imposing a static economic cap."""
+    if allocated < 0 or allocated > UINT256_MAX:
+        raise RuntimeError("Fund allocation is outside uint256 bounds")
 
 
 def safe_block_has_coherent_nav(nav: tuple[Any, ...], block: int) -> bool:
@@ -631,9 +631,8 @@ class CspFundAllocator:
         if state["processing"]:
             raise RuntimeError("Fund flow processing is active")
         validate_fair_nav_policy(state["valuation_policy"])
-        # Synchronous deposits and strategy P&L can increase fund NAV above the
-        # initial test size. They must not strand the existing CSP lifecycle.
-        # Per-position exposure remains bounded by the approved absolute cap.
+        # Synchronous deposits and strategy P&L can change fund NAV. New rounds
+        # size from current idle USDC; there is no static economic cap.
         validate_allocated_exposure(state["allocated"], self.policy)
         expected_strategy = (
             True,

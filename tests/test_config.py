@@ -69,7 +69,7 @@ def test_covered_call_workers_are_disabled_by_default():
     assert config.COVERED_CALL_OPERATIONS_KEEPER_ENABLED is False
     assert config.COVERED_CALL_ALLOCATOR_CONFIRMATIONS == 2
     assert config.COVERED_CALL_ALLOCATOR_POLICY_PATH.endswith(
-        "covered_call_fund_policy.v2.base-sepolia.json"
+        "covered_call_fund_policy.v3.base-sepolia.json"
     )
 
 
