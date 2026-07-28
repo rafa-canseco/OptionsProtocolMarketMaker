@@ -146,6 +146,24 @@ def test_quote_selection_requires_48h_otm_call_near_target_delta():
     assert selected["expiry"] == now + 48 * 3600
 
 
+def test_quote_selection_skips_duplicate_series_with_wrong_assets():
+    now = int(time.time())
+    wrong_assets = _quote(now)
+    compatible = _quote(now, quote_id=2)
+
+    selected = select_covered_call_quote(
+        [wrong_assets, compatible],
+        spot=2000,
+        iv=0.6,
+        now=now,
+        risk_free_rate=0.05,
+        policy=_policy(),
+        series_validator=lambda quote: quote is compatible,
+    )
+
+    assert selected is compatible
+
+
 def test_missing_approved_quote_fails_closed():
     now = int(time.time())
     assert (

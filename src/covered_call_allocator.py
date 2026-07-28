@@ -7,6 +7,7 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -127,6 +128,13 @@ _ADAPTER_ABI = [
                 ],
             }
         ],
+    },
+    {
+        "name": "usdc",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "address"}],
     },
     {
         "name": "adapterConfig",
@@ -449,6 +457,7 @@ def select_covered_call_quote(
     now: int,
     risk_free_rate: float,
     policy: CoveredCallPolicy,
+    series_validator: Callable[[dict[str, Any]], bool] | None = None,
 ) -> dict[str, Any] | None:
     candidates: list[tuple[int, float, int, dict[str, Any]]] = []
     for quote in quotes:
@@ -466,6 +475,8 @@ def select_covered_call_quote(
             or strike <= Decimal(str(spot))
             or int(quote.get("bid_price") or 0) <= 0
         ):
+            continue
+        if series_validator is not None and not series_validator(quote):
             continue
         time_years = delay / (365 * 86_400)
         actual_delta = bs_delta(
@@ -541,6 +552,7 @@ class CoveredCallFundAllocator:
             address=self.valuator_address, abi=_VALUATOR_ABI
         )
         self.weth = Web3.to_checksum_address(config.COVERED_CALL_WETH_ADDRESS)
+        self.usdc = Web3.to_checksum_address(self.adapter.functions.usdc().call())
         address_book = self.adapter.functions.addressBook().call()
         self.address_book = self.w3.eth.contract(
             address=address_book, abi=_ADDRESS_BOOK_ABI
@@ -555,6 +567,7 @@ class CoveredCallFundAllocator:
             self.adapter.address,
             self.valuator.address,
             self.weth,
+            self.usdc,
             self.oracle.address,
         ):
             if not self.w3.eth.get_code(address):
@@ -592,6 +605,24 @@ class CoveredCallFundAllocator:
         return max(
             self.w3.eth.block_number - config.COVERED_CALL_ALLOCATOR_CONFIRMATIONS,
             0,
+        )
+
+    def _is_compatible_call_series(self, quote: dict[str, Any]) -> bool:
+        o_token = self.w3.eth.contract(
+            address=Web3.to_checksum_address(quote["otoken_address"]),
+            abi=_OTOKEN_ABI,
+        )
+        return (
+            o_token.functions.isPut().call() is False
+            and Web3.to_checksum_address(o_token.functions.underlying().call())
+            == self.weth
+            and Web3.to_checksum_address(o_token.functions.strikeAsset().call())
+            == self.usdc
+            and Web3.to_checksum_address(o_token.functions.collateralAsset().call())
+            == self.weth
+            and int(o_token.functions.expiry().call()) == int(quote["expiry"])
+            and int(o_token.functions.strikePrice().call())
+            == int(Decimal(str(quote["strike_price"])) * OTOKEN_SCALE)
         )
 
     def _read_state(self, block: int) -> dict[str, Any]:
@@ -890,6 +921,7 @@ class CoveredCallFundAllocator:
             now=now,
             risk_free_rate=config.RISK_FREE_RATE,
             policy=self.policy,
+            series_validator=self._is_compatible_call_series,
         )
         if quote is None:
             raise RuntimeError("No live signed quote matches covered-call policy")

@@ -71,6 +71,29 @@ def test_selects_only_exact_strike_put_in_expiry_window():
     assert select_policy_quote(quotes, spot=1859.32, now=now, policy=policy) is expected
 
 
+def test_selects_compatible_put_when_duplicate_economics_use_wrong_assets():
+    policy = load_testnet_policy(POLICY_PATH)
+    now = 1_000_000
+    wrong_assets = {
+        "asset": "eth",
+        "is_put": True,
+        "deadline": now + 300,
+        "expiry": now + 48 * 3600,
+        "strike_price": 1575.0,
+    }
+    compatible = wrong_assets | {"deadline": now + 299}
+
+    selected = select_policy_quote(
+        [wrong_assets, compatible],
+        spot=1859.32,
+        now=now,
+        policy=policy,
+        series_validator=lambda quote: quote is compatible,
+    )
+
+    assert selected is compatible
+
+
 def test_collateral_round_trip_never_exceeds_target():
     strike_raw = 1575 * 10**8
     target = 800 * 10**6
