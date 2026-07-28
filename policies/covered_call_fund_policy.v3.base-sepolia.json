@@ -7,7 +7,7 @@
     "mainnet_authorized": false,
     "maximum_call_aways_before_review": 1,
     "maximum_collateral_per_position_weth": null,
-    "maximum_expiry_delay_seconds": 216000,
+    "maximum_expiry_delay_seconds": 219600,
     "maximum_normalizations_before_review": 10,
     "maximum_opened_positions_before_review": 10,
     "maximum_positions": 1,
