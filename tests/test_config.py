@@ -77,15 +77,15 @@ def test_lazy_quote_ttl_defaults_leave_creation_budget_without_extending_deadlin
     config = _reload_config(_base_env())
 
     assert config.DEADLINE_SECONDS == 300
-    assert config.MIN_LAZY_QUOTE_TTL_SECONDS == 120
+    assert config.MIN_LAZY_QUOTE_TTL_SECONDS == 180
 
 
 def test_lazy_quote_ttl_accepts_deadline_at_backend_minimum():
     config = _reload_config(
         _base_env()
         | {
-            "DEADLINE_SECONDS": "120",
-            "MIN_LAZY_QUOTE_TTL_SECONDS": "120",
+            "DEADLINE_SECONDS": "180",
+            "MIN_LAZY_QUOTE_TTL_SECONDS": "180",
         }
     )
 
@@ -94,8 +94,8 @@ def test_lazy_quote_ttl_accepts_deadline_at_backend_minimum():
 
 def test_lazy_quote_ttl_rejects_deadline_below_backend_minimum():
     env = _base_env() | {
-        "DEADLINE_SECONDS": "119",
-        "MIN_LAZY_QUOTE_TTL_SECONDS": "120",
+        "DEADLINE_SECONDS": "179",
+        "MIN_LAZY_QUOTE_TTL_SECONDS": "180",
     }
 
     with pytest.raises(SystemExit):

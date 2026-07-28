@@ -103,7 +103,9 @@ FAST_REFRESH_HOURS: int = max(int(os.getenv("FAST_REFRESH_HOURS", "6")), 1)
 SPREAD_BPS: int = int(os.getenv("SPREAD_BPS", "200"))
 MAX_AMOUNT: int = int(os.getenv("MAX_AMOUNT", "500000000"))
 DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "300"))
-MIN_LAZY_QUOTE_TTL_SECONDS: int = int(os.getenv("MIN_LAZY_QUOTE_TTL_SECONDS", "120"))
+# Keep enough quote lifetime for the backend's 120s creation timeout plus
+# its 30s execution reserve, with an additional handoff margin.
+MIN_LAZY_QUOTE_TTL_SECONDS: int = int(os.getenv("MIN_LAZY_QUOTE_TTL_SECONDS", "180"))
 if MIN_LAZY_QUOTE_TTL_SECONDS < 1:
     print(
         "FATAL: MIN_LAZY_QUOTE_TTL_SECONDS must be >= 1, "

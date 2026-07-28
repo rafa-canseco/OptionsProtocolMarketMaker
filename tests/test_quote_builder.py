@@ -25,7 +25,7 @@ def test_virtual_create2_series_uses_existing_quote_and_capacity_path(
     mock_config.RISK_FREE_RATE = 0.05
     mock_config.SPREAD_BPS = 200
     mock_config.DEADLINE_SECONDS = 300
-    mock_config.MIN_LAZY_QUOTE_TTL_SECONDS = 120
+    mock_config.MIN_LAZY_QUOTE_TTL_SECONDS = 180
     mock_config.MAX_AMOUNT = 500_000_000
     mock_config.ASSETS = [SimpleNamespace(name="eth")]
 
