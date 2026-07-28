@@ -60,6 +60,7 @@ def test_policy_uses_dynamic_idle_sizing_and_is_weth_only():
     assert policy.maximum_collateral == UINT256_MAX
     assert policy.minimum_net_premium_bps == 10
     assert policy.maximum_open_positions == 1
+    assert policy.max_expiry_delay == 61 * 3600
     assert policy.valuation_policy_version == 2
     assert policy.model_version == 1
     assert policy.liability_buffer_bps == 0
@@ -214,7 +215,7 @@ def test_stale_nav_prevents_any_lifecycle_action():
         "adapter_config": (
             (
                 129600,
-                216000,
+                219600,
                 3600,
                 10,
                 500,
@@ -273,7 +274,7 @@ def test_pending_physical_delivery_can_progress_without_impossible_nav():
         "adapter_config": (
             (
                 129600,
-                216000,
+                219600,
                 3600,
                 10,
                 500,
@@ -331,7 +332,7 @@ def test_onchain_valuator_policy_drift_fails_closed():
         "adapter_config": (
             (
                 129600,
-                216000,
+                219600,
                 3600,
                 10,
                 500,
@@ -390,7 +391,7 @@ def test_unapproved_fair_value_observer_fails_closed():
         "adapter_config": (
             (
                 129600,
-                216000,
+                219600,
                 3600,
                 10,
                 500,
