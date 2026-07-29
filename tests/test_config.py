@@ -40,6 +40,7 @@ def _reload_config(env: dict[str, str]):
     try:
         os.environ.clear()
         os.environ.update(env)
+        os.environ.setdefault("PYTHON_DOTENV_DISABLED", "1")
         return importlib.reload(config_module)
     finally:
         os.environ.clear()
@@ -250,3 +251,54 @@ def test_fund_processor_accepts_pre_release_keeper_secret_alias():
     )
 
     assert config.FUND_PROCESSOR_PRIVATE_KEY == "0x" + "33" * 32
+
+
+def test_base_sepolia_circle_usdc_defaults():
+    config = _reload_config(_base_env())
+
+    assert config.BATCH_SETTLER == "0x494E4F5b56Ed30bddB8D2d20300f3977623EB7bF"
+    assert config.USDC_ADDRESS == "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+    assert config.MARGIN_POOL_ADDRESS == "0xF3E58e6fed228179dD86fdd3a1A9Fe23A4980DA3"
+    assert (
+        config.BASE_SEPOLIA_VAULT_ADAPTER
+        == "0x28B953496815AF6404320522E2CB7b9A2b0a5F90"
+    )
+    assert (
+        config.BASE_SEPOLIA_OTOKEN_FACTORY
+        == "0x9aD4a3824Ac9Dfb0983EC58a044b1D833B930144"
+    )
+
+
+def test_base_sepolia_alias_env_vars_are_supported():
+    env = _base_env() | {
+        "BASE_SEPOLIA_BATCH_SETTLER": "0x0000000000000000000000000000000000000001",
+        "BASE_SEPOLIA_USDC": "0x0000000000000000000000000000000000000002",
+        "BASE_SEPOLIA_MARGIN_POOL": "0x0000000000000000000000000000000000000003",
+        "BASE_SEPOLIA_VAULT_ADAPTER": "0x0000000000000000000000000000000000000004",
+        "BASE_SEPOLIA_OTOKEN_FACTORY": "0x0000000000000000000000000000000000000005",
+    }
+
+    config = _reload_config(env)
+
+    assert config.BATCH_SETTLER == env["BASE_SEPOLIA_BATCH_SETTLER"]
+    assert config.USDC_ADDRESS == env["BASE_SEPOLIA_USDC"]
+    assert config.MARGIN_POOL_ADDRESS == env["BASE_SEPOLIA_MARGIN_POOL"]
+    assert config.BASE_SEPOLIA_VAULT_ADAPTER == env["BASE_SEPOLIA_VAULT_ADAPTER"]
+    assert config.BASE_SEPOLIA_OTOKEN_FACTORY == env["BASE_SEPOLIA_OTOKEN_FACTORY"]
+
+
+def test_generic_contract_env_vars_take_precedence_over_base_sepolia_aliases():
+    env = _base_env() | {
+        "BATCH_SETTLER": "0x0000000000000000000000000000000000000011",
+        "BASE_SEPOLIA_BATCH_SETTLER": "0x0000000000000000000000000000000000000021",
+        "USDC_ADDRESS": "0x0000000000000000000000000000000000000012",
+        "BASE_SEPOLIA_USDC": "0x0000000000000000000000000000000000000022",
+        "MARGIN_POOL_ADDRESS": "0x0000000000000000000000000000000000000013",
+        "BASE_SEPOLIA_MARGIN_POOL": "0x0000000000000000000000000000000000000023",
+    }
+
+    config = _reload_config(env)
+
+    assert config.BATCH_SETTLER == env["BATCH_SETTLER"]
+    assert config.USDC_ADDRESS == env["USDC_ADDRESS"]
+    assert config.MARGIN_POOL_ADDRESS == env["MARGIN_POOL_ADDRESS"]
