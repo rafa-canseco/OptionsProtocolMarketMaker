@@ -476,6 +476,10 @@ def select_covered_call_quote(
             quote.get("asset") != "eth"
             or quote.get("chain", "base") != "base"
             or quote.get("is_put") is not False
+            or (
+                quote.get("deployment_status") is not None
+                and quote.get("deployment_status") != "ready"
+            )
             or int(quote.get("deadline") or 0) <= now + 15
             or not policy.min_expiry_delay <= delay <= policy.max_expiry_delay
             or strike * OTOKEN_SCALE < policy.min_strike

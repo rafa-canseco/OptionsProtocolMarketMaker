@@ -505,6 +505,10 @@ def select_policy_quote(
         for quote in quotes
         if quote.get("asset") == "eth"
         and quote.get("is_put") is True
+        and (
+            quote.get("deployment_status") is None
+            or quote.get("deployment_status") == "ready"
+        )
         and int(quote.get("deadline") or 0) > now + 15
         and policy.min_expiry_delay
         <= int(quote.get("expiry") or 0) - now

@@ -73,6 +73,42 @@ def test_covered_call_workers_are_disabled_by_default():
     )
 
 
+def test_lazy_quote_ttl_defaults_leave_creation_budget_without_extending_deadline():
+    config = _reload_config(_base_env())
+
+    assert config.DEADLINE_SECONDS == 300
+    assert config.MIN_LAZY_QUOTE_TTL_SECONDS == 180
+
+
+def test_lazy_quote_ttl_accepts_deadline_at_backend_minimum():
+    config = _reload_config(
+        _base_env()
+        | {
+            "DEADLINE_SECONDS": "180",
+            "MIN_LAZY_QUOTE_TTL_SECONDS": "180",
+        }
+    )
+
+    assert config.DEADLINE_SECONDS == config.MIN_LAZY_QUOTE_TTL_SECONDS
+
+
+def test_lazy_quote_ttl_rejects_deadline_below_backend_minimum():
+    env = _base_env() | {
+        "DEADLINE_SECONDS": "179",
+        "MIN_LAZY_QUOTE_TTL_SECONDS": "180",
+    }
+
+    with pytest.raises(SystemExit):
+        _reload_config(env)
+
+
+def test_lazy_quote_ttl_rejects_non_positive_minimum():
+    env = _base_env() | {"MIN_LAZY_QUOTE_TTL_SECONDS": "0"}
+
+    with pytest.raises(SystemExit):
+        _reload_config(env)
+
+
 def test_solana_quotes_enable_only_with_explicit_flag():
     env = _base_env() | {
         "SOLANA_QUOTE_PUBLISHING_ENABLED": "true",
