@@ -176,8 +176,7 @@ def _recover_missing_order_events(tracker: PositionTracker) -> int:
 
     tracked_tx_hashes = {p.tx_hash for p in tracker.open_positions() if p.tx_hash}
     tracked_otokens = {
-        (p.otoken_address.lower(), p.user_address)
-        for p in tracker.open_positions()
+        (p.otoken_address.lower(), p.user_address) for p in tracker.open_positions()
     }
     rows = trade_logger.read_open_order_events_from_supabase(_mm_addresses_by_chain())
     if not rows:

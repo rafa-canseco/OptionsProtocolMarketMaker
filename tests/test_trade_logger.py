@@ -355,8 +355,8 @@ class TestStartupRecovery:
                 "is_settled": False,
             }
         ]
-        mock_trade_logger.write_bootstrap_event.side_effect = (
-            lambda event: trade_logger.write_bootstrap_event(event)
+        mock_trade_logger.write_bootstrap_event.side_effect = lambda event: (
+            trade_logger.write_bootstrap_event(event)
         )
 
         def _market_data(asset, chain="base"):
@@ -377,28 +377,40 @@ class TestStartupRecovery:
 
         mock_api.get_market_data.side_effect = _market_data
 
-        with patch("src.startup_recovery.config.HEDGE_MODE", "live"), patch(
-            "src.startup_recovery.config.ASSETS", []
-        ), patch(
-            "src.startup_recovery.config.ASSET_MAP", {}
-        ), patch(
-            "src.startup_recovery.config.SOLANA_ASSETS",
-            [
-                type(
-                    "AssetCfg",
-                    (),
-                    {"name": "sol", "hedge_symbol": "SOL", "leverage": 3, "max_exposure": 1.0},
-                )()
-            ],
-        ), patch(
-            "src.startup_recovery.config.SOLANA_ASSET_MAP",
-            {
-                "sol": type(
-                    "AssetCfg",
-                    (),
-                    {"name": "sol", "hedge_symbol": "SOL", "leverage": 3, "max_exposure": 1.0},
-                )()
-            },
+        with (
+            patch("src.startup_recovery.config.HEDGE_MODE", "live"),
+            patch("src.startup_recovery.config.ASSETS", []),
+            patch("src.startup_recovery.config.ASSET_MAP", {}),
+            patch(
+                "src.startup_recovery.config.SOLANA_ASSETS",
+                [
+                    type(
+                        "AssetCfg",
+                        (),
+                        {
+                            "name": "sol",
+                            "hedge_symbol": "SOL",
+                            "leverage": 3,
+                            "max_exposure": 1.0,
+                        },
+                    )()
+                ],
+            ),
+            patch(
+                "src.startup_recovery.config.SOLANA_ASSET_MAP",
+                {
+                    "sol": type(
+                        "AssetCfg",
+                        (),
+                        {
+                            "name": "sol",
+                            "hedge_symbol": "SOL",
+                            "leverage": 3,
+                            "max_exposure": 1.0,
+                        },
+                    )()
+                },
+            ),
         ):
             tracker = PositionTracker()
             restored = recover_positions(tracker)

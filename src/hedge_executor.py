@@ -91,7 +91,10 @@ def _spot_clearinghouse_state() -> dict[str, Any]:
 
     now = time.time()
     cached = _spot_state_cache.get("state")
-    if cached is not None and now - float(_spot_state_cache.get("ts", 0.0)) < _SPOT_STATE_TTL_SECONDS:
+    if (
+        cached is not None
+        and now - float(_spot_state_cache.get("ts", 0.0)) < _SPOT_STATE_TTL_SECONDS
+    ):
         return cached
 
     try:

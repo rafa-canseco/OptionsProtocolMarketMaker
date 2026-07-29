@@ -278,9 +278,9 @@ def test_get_withdrawable_reads_builder_perp_dex():
     hedge_executor._initialized_dexs = ("", "xyz")
     xyz_info = MagicMock()
     xyz_info.user_state.return_value = {
-            "marginSummary": {"accountValue": "8000.0"},
-            "withdrawable": "3500.25",
-            "assetPositions": [],
+        "marginSummary": {"accountValue": "8000.0"},
+        "withdrawable": "3500.25",
+        "assetPositions": [],
     }
     hedge_executor._dex_infos = {"xyz": xyz_info}
 

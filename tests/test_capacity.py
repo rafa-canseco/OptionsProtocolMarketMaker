@@ -352,7 +352,9 @@ class TestLiveModeCapacity:
             max_exposure=1.0,
         )
 
-        with patch("src.capacity._read_pools_solana", return_value=(1_000.0, 300.0, 300.0)):
+        with patch(
+            "src.capacity._read_pools_solana", return_value=(1_000.0, 300.0, 300.0)
+        ):
             report = calculate_capacity_internal(
                 None,
                 388.0,
