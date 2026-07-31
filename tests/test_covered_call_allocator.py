@@ -25,12 +25,17 @@ from src.fund_allocator import UINT256_MAX
 POLICY_PATH = (
     Path(__file__).parents[1]
     / "policies"
-    / "covered_call_fund_policy.v4.base-sepolia.json"
+    / "covered_call_fund_policy.v5.base-sepolia.json"
 )
 LEGACY_POLICY_PATH = (
     Path(__file__).parents[1]
     / "policies"
     / "covered_call_fund_policy.v3.base-sepolia.json"
+)
+V4_POLICY_PATH = (
+    Path(__file__).parents[1]
+    / "policies"
+    / "covered_call_fund_policy.v4.base-sepolia.json"
 )
 SPOT_FEED = "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1"
 VALUATION_POLICY = (1, 2, 1, 0, 500, 2, 120, SPOT_FEED, 8, 3600)
@@ -60,6 +65,7 @@ def _quote(now: int, **overrides):
 def test_policy_uses_dynamic_idle_sizing_and_is_weth_only():
     policy = _policy()
     assert float(policy.target_delta) == pytest.approx(0.05)
+    assert policy.strike_tick_usd == 5
     assert policy.target_utilization_bps == 8000
     assert policy.maximum_vault_aum == UINT256_MAX
     assert policy.maximum_collateral == UINT256_MAX
@@ -77,6 +83,7 @@ def test_policy_uses_dynamic_idle_sizing_and_is_weth_only():
 
 def test_legacy_policy_remains_loadable_during_staged_rollout():
     assert load_covered_call_policy(LEGACY_POLICY_PATH).target_utilization_bps == 2500
+    assert load_covered_call_policy(V4_POLICY_PATH).strike_tick_usd == 25
 
 
 def test_policy_loader_rejects_parameter_drift(tmp_path):
