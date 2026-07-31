@@ -14,6 +14,7 @@ from src.covered_call_allocator import (
     count_called_away,
     fair_call_liability_weth,
     load_covered_call_policy,
+    minimum_bid_price_for_net_premium,
     normalization_minimum_weth_out,
     option_amount_for_call_collateral,
     select_covered_call_quote,
@@ -139,6 +140,62 @@ def test_collateral_is_one_to_one_with_otoken_amount():
 )
 def test_collateral_target_recalculates_at_80_percent(idle_weth, expected_target):
     assert call_collateral_target(idle_weth, _policy()) == expected_target
+
+
+def test_premium_floor_matches_adapter_and_protocol_fee_rounding():
+    amount = 480_112_863
+    collateral = call_collateral_for_option_amount(amount)
+    spot = 1862_74330099
+    bid = minimum_bid_price_for_net_premium(
+        option_amount=amount,
+        collateral_weth=collateral,
+        spot_price_8=spot,
+        minimum_net_premium_bps=10,
+        protocol_fee_bps=1000,
+    )
+
+    collateral_value = collateral * spot // 10**20
+    gross = amount * bid // 10**8
+    net = gross - gross * 1000 // 10_000
+    prior_gross = amount * (bid - 1) // 10**8
+    prior_net = prior_gross - prior_gross * 1000 // 10_000
+
+    assert net * 10_000 >= collateral_value * 10
+    assert prior_net * 10_000 < collateral_value * 10
+
+
+def test_premium_floor_never_reduces_a_better_market_bid():
+    floor = minimum_bid_price_for_net_premium(
+        option_amount=100_000_000,
+        collateral_weth=10**18,
+        spot_price_8=2000 * 10**8,
+        minimum_net_premium_bps=10,
+        protocol_fee_bps=1000,
+    )
+    quoted_bid = floor + 1
+    assert max(quoted_bid, floor) == quoted_bid
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"option_amount": 0},
+        {"collateral_weth": 0},
+        {"spot_price_8": 0},
+        {"minimum_net_premium_bps": 10_001},
+        {"protocol_fee_bps": 10_000},
+    ],
+)
+def test_premium_floor_rejects_unsafe_domains(overrides):
+    inputs = {
+        "option_amount": 100_000_000,
+        "collateral_weth": 10**18,
+        "spot_price_8": 2000 * 10**8,
+        "minimum_net_premium_bps": 10,
+        "protocol_fee_bps": 1000,
+    }
+    with pytest.raises(ValueError):
+        minimum_bid_price_for_net_premium(**(inputs | overrides))
 
 
 def test_fair_call_liability_weth_golden_conversion():
