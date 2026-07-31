@@ -54,10 +54,8 @@ _CADENCE_FIELDS = {
 }
 _TRANCHE_FIELDS = {
     "maximum_active_option_per_lane",
-    "maximum_assignment_lots_per_call",
     "maximum_cc_lanes",
     "maximum_csp_lanes",
-    "maximum_group_floor_spread_bps",
     "maximum_parent_aum_usdc",
     "maximum_weth_per_cc_lane",
     "maximum_usdc_per_csp_lane",
@@ -121,8 +119,6 @@ class MetaWheelPolicy:
     maximum_parent_aum: int
     maximum_usdc_per_csp_lane: int
     maximum_weth_per_cc_lane: int
-    maximum_assignment_lots_per_call: int
-    maximum_group_floor_spread_bps: int
     execution_cost_buffer: int
     strike_tick: int
     csp_strike_otm_bps: int
@@ -249,11 +245,6 @@ def load_meta_wheel_policy(
         raise ValueError("Meta Wheel lane count exceeds the reviewed bound")
     if tranches["maximum_active_option_per_lane"] != 1:
         raise ValueError("Initial Meta Wheel lanes must allow one active option")
-    if (
-        tranches["maximum_assignment_lots_per_call"] != 1
-        or tranches["maximum_group_floor_spread_bps"] != 0
-    ):
-        raise ValueError("Meta Wheel v1 requires one assignment lot per call lane")
 
     expected_assignment = {
         "below_floor_emergency_action": "none_pause_and_wait_for_safe_usdc",
@@ -334,15 +325,6 @@ def load_meta_wheel_policy(
         * 10**6,
         maximum_weth_per_cc_lane=_weth_amount(
             tranches["maximum_weth_per_cc_lane"]
-        ),
-        maximum_assignment_lots_per_call=_positive_int(
-            tranches["maximum_assignment_lots_per_call"],
-            label="maximum_assignment_lots_per_call",
-        ),
-        maximum_group_floor_spread_bps=_bounded_bps(
-            tranches["maximum_group_floor_spread_bps"],
-            label="maximum_group_floor_spread_bps",
-            allow_zero=True,
         ),
         execution_cost_buffer=_positive_int(
             assignment["execution_cost_buffer_usd"],

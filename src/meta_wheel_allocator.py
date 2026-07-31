@@ -151,7 +151,6 @@ class WheelSnapshot:
     onchain_floor_buffer8: int
     onchain_max_csp_lanes: int
     onchain_max_call_lanes: int
-    onchain_max_lots_per_call: int
     onchain_max_usdc_per_csp_lane: int
     onchain_max_weth_per_call_lane: int
     nav_coherent: bool
@@ -301,38 +300,12 @@ class SqliteActionJournal:
         self.connection.commit()
 
 
-def required_call_floor8(
-    lots: Sequence[AssignmentLot], policy: MetaWheelPolicy
-) -> int:
-    if not lots:
-        raise RuntimeError("A Covered Call requires at least one assignment lot")
-    if len(lots) > policy.maximum_assignment_lots_per_call:
-        raise RuntimeError("Meta Wheel v1 permits one assignment lot per call")
-    for lot in lots:
-        lot.validate()
-        if lot.status not in {LotStatus.AVAILABLE, LotStatus.COMMITTED}:
-            raise RuntimeError(f"Assignment lot {lot.lot_id} cannot fund a call")
-    literal_floor = max(lot.literal_assignment_strike8 for lot in lots)
-    buffered = literal_floor + policy.execution_cost_buffer
+def required_call_floor8(lot: AssignmentLot, policy: MetaWheelPolicy) -> int:
+    lot.validate()
+    if lot.status not in {LotStatus.AVAILABLE, LotStatus.COMMITTED}:
+        raise RuntimeError(f"Assignment lot {lot.lot_id} cannot fund a call")
+    buffered = lot.literal_assignment_strike8 + policy.execution_cost_buffer
     return ((buffered + policy.strike_tick - 1) // policy.strike_tick) * policy.strike_tick
-
-
-def lots_are_groupable(
-    lots: Sequence[AssignmentLot], policy: MetaWheelPolicy
-) -> bool:
-    if not lots or len(lots) > policy.maximum_assignment_lots_per_call:
-        return False
-    floors = [lot.literal_assignment_strike8 for lot in lots]
-    maximum = max(floors)
-    minimum = min(floors)
-    if maximum <= 0:
-        return False
-    spread_bps = (maximum - minimum) * BPS // maximum
-    return (
-        spread_bps <= policy.maximum_group_floor_spread_bps
-        and sum(lot.remaining_weth for lot in lots)
-        <= policy.maximum_weth_per_cc_lane
-    )
 
 
 def _quote_is_fresh(quote: WheelQuote, now: int, policy: MetaWheelPolicy) -> bool:
@@ -369,16 +342,16 @@ def select_call_quote(
     quotes: Sequence[WheelQuote],
     snapshot: WheelSnapshot,
     policy: MetaWheelPolicy,
-    lots: Sequence[AssignmentLot],
+    lot: AssignmentLot,
 ) -> tuple[WheelQuote, int] | None:
-    floor = required_call_floor8(lots, policy)
+    floor = required_call_floor8(lot, policy)
     candidates = [
         quote
         for quote in quotes
         if not quote.is_put
         and quote.strike8 >= floor
         and _quote_is_fresh(quote, snapshot.timestamp, policy)
-        and quote.maximum_collateral >= sum(lot.remaining_weth for lot in lots)
+        and quote.maximum_collateral >= lot.remaining_weth
     ]
     if not candidates:
         return None
@@ -423,8 +396,6 @@ class MetaWheelPlanner:
             snapshot.onchain_floor_buffer8 != policy.execution_cost_buffer
             or snapshot.onchain_max_csp_lanes != policy.maximum_csp_lanes
             or snapshot.onchain_max_call_lanes != policy.maximum_cc_lanes
-            or snapshot.onchain_max_lots_per_call
-            != policy.maximum_assignment_lots_per_call
             or snapshot.onchain_max_usdc_per_csp_lane
             != policy.maximum_usdc_per_csp_lane
             or snapshot.onchain_max_weth_per_call_lane
@@ -579,9 +550,7 @@ class MetaWheelPlanner:
         for assignment in available_lots:
             if not free_call_lanes:
                 break
-            selected = select_call_quote(
-                quotes, snapshot, self.policy, (assignment,)
-            )
+            selected = select_call_quote(quotes, snapshot, self.policy, assignment)
             if selected is None:
                 # Do not starve a lower-floor lot that may have an executable quote.
                 continue

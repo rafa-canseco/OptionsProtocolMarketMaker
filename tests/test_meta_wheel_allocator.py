@@ -18,7 +18,6 @@ from src.meta_wheel_allocator import (
     SqliteActionJournal,
     WheelQuote,
     WheelSnapshot,
-    lots_are_groupable,
     required_call_floor8,
 )
 from src.meta_wheel_policy import load_meta_wheel_policy, sha256_file
@@ -95,7 +94,6 @@ def snapshot(policy, **changes) -> WheelSnapshot:
         onchain_floor_buffer8=policy.execution_cost_buffer,
         onchain_max_csp_lanes=policy.maximum_csp_lanes,
         onchain_max_call_lanes=policy.maximum_cc_lanes,
-        onchain_max_lots_per_call=policy.maximum_assignment_lots_per_call,
         onchain_max_usdc_per_csp_lane=policy.maximum_usdc_per_csp_lane,
         onchain_max_weth_per_call_lane=policy.maximum_weth_per_cc_lane,
         nav_coherent=True,
@@ -240,13 +238,7 @@ def test_settling_tranches_handoff_once(policy):
 
 
 def test_call_floor_uses_literal_strike_plus_buffer_and_ceil(policy):
-    assert required_call_floor8((lot(1, 2001),), policy) == 2015 * 10**8
-
-
-def test_v1_rejects_multi_lot_call_packing(policy):
-    assignments = (lot(1, 1982), lot(2, 2001))
-
-    assert not lots_are_groupable(assignments, policy)
+    assert required_call_floor8(lot(1, 2001), policy) == 2015 * 10**8
 
 
 def test_assignment_lot_origin_and_strike_are_immutable():

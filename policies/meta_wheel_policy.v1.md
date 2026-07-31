@@ -17,12 +17,12 @@ policy hash before any action.
 - CSP targets 80% of eligible liquid USDC. The greater of pending USDC claims
   and a 20% liquid reserve is protected before any new CSP allocation.
 - Each Covered Call tranche consumes exactly one immutable assignment lot in
-  v1. Up to four lanes may progress concurrently; additional or incompatible
-  lots remain in the on-chain transition queue and are retried without changing
+  v1. Up to four lanes may progress concurrently; additional lots remain in
+  the on-chain transition queue and are retried individually without changing
   their literal floor.
-- The call floor is the maximum literal CSP assignment strike of every consumed
-  lot plus $10 per ETH, rounded up to the next $5 strike. Premiums never reduce
-  the floor. If no fresh executable quote meets it, WETH remains idle.
+- The call floor is that lot's literal CSP assignment strike plus $10 per ETH,
+  rounded up to the next $5 strike. Premiums never reduce the floor. If no fresh
+  executable quote meets it, WETH remains idle.
 - Quotes may be at most 60 seconds old and must retain 30 seconds of TTL.
   Settlement delay is bounded at six hours; seven days idle is an alert/review
   boundary, not permission to lower the protected floor.

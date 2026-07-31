@@ -29,9 +29,7 @@
     "maximum_active_option_per_lane": 1,
     "maximum_parent_aum_usdc": 20000,
     "maximum_usdc_per_csp_lane": 5000,
-    "maximum_weth_per_cc_lane": 2.0,
-    "maximum_assignment_lots_per_call": 1,
-    "maximum_group_floor_spread_bps": 0
+    "maximum_weth_per_cc_lane": 2.0
   },
   "assignment": {
     "below_floor_emergency_action": "none_pause_and_wait_for_safe_usdc",
