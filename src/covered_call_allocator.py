@@ -293,7 +293,14 @@ _ADDRESS_BOOK_ABI = [
         "stateMutability": "view",
         "inputs": [],
         "outputs": [{"type": "address"}],
-    }
+    },
+    {
+        "name": "batchSettler",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "address"}],
+    },
 ]
 
 _ORACLE_ABI = [
@@ -302,6 +309,16 @@ _ORACLE_ABI = [
         "type": "function",
         "stateMutability": "view",
         "inputs": [{"type": "address"}],
+        "outputs": [{"type": "uint256"}],
+    }
+]
+
+_SETTLER_ABI = [
+    {
+        "name": "protocolFeeBps",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
         "outputs": [{"type": "uint256"}],
     }
 ]
@@ -445,6 +462,48 @@ def call_collateral_for_option_amount(option_amount: int) -> int:
     return option_amount * CALL_COLLATERAL_DENOMINATOR
 
 
+def minimum_bid_price_for_net_premium(
+    *,
+    option_amount: int,
+    collateral_weth: int,
+    spot_price_8: int,
+    minimum_net_premium_bps: int,
+    protocol_fee_bps: int,
+) -> int:
+    """Return the smallest bid that satisfies the adapter's net-premium floor."""
+    if option_amount <= 0 or collateral_weth <= 0 or spot_price_8 <= 0:
+        raise ValueError("Premium-floor inputs must be positive")
+    if not 0 <= minimum_net_premium_bps <= BPS:
+        raise ValueError("Minimum net premium is outside the BPS domain")
+    if not 0 <= protocol_fee_bps < BPS:
+        raise ValueError("Protocol fee must leave a positive net premium")
+
+    collateral_value_usdc = (
+        collateral_weth * spot_price_8 // USDC_TO_WETH_ORACLE_SCALE
+    )
+    required_net_premium = max(
+        1,
+        (collateral_value_usdc * minimum_net_premium_bps + BPS - 1) // BPS,
+    )
+    gross_premium = (
+        required_net_premium * BPS + (BPS - protocol_fee_bps) - 1
+    ) // (BPS - protocol_fee_bps)
+
+    def net_premium(gross: int) -> int:
+        return gross - gross * protocol_fee_bps // BPS
+
+    while gross_premium > 1 and net_premium(gross_premium - 1) >= required_net_premium:
+        gross_premium -= 1
+
+    bid_price = (gross_premium * OTOKEN_SCALE + option_amount - 1) // option_amount
+    while bid_price > 1:
+        prior_gross = option_amount * (bid_price - 1) // OTOKEN_SCALE
+        if net_premium(prior_gross) < required_net_premium:
+            break
+        bid_price -= 1
+    return bid_price
+
+
 def fair_call_liability_weth(
     *,
     call_price_usd8: int,
@@ -580,6 +639,14 @@ class CoveredCallFundAllocator:
         self.oracle = self.w3.eth.contract(
             address=self.address_book.functions.oracle().call(), abi=_ORACLE_ABI
         )
+        settler_address = Web3.to_checksum_address(
+            self.address_book.functions.batchSettler().call()
+        )
+        if settler_address != Web3.to_checksum_address(config.BATCH_SETTLER):
+            raise RuntimeError("Covered-call BatchSettler differs from configuration")
+        self.settler = self.w3.eth.contract(
+            address=settler_address, abi=_SETTLER_ABI
+        )
         for address in (
             self.vault.address,
             self.flow.address,
@@ -589,6 +656,7 @@ class CoveredCallFundAllocator:
             self.weth,
             self.usdc,
             self.oracle.address,
+            self.settler.address,
         ):
             if not self.w3.eth.get_code(address):
                 raise RuntimeError(
@@ -974,8 +1042,31 @@ class CoveredCallFundAllocator:
                 result.get("deployment_tx_hash"),
             )
             return
+        spot_price = int(self.oracle.functions.getPrice(self.weth).call())
+        protocol_fee_bps = int(self.settler.functions.protocolFeeBps().call())
+        quoted_bid_price = int(quote["bid_price"])
+        execution_bid_price = max(
+            quoted_bid_price,
+            minimum_bid_price_for_net_premium(
+                option_amount=option_amount,
+                collateral_weth=collateral,
+                spot_price_8=spot_price,
+                minimum_net_premium_bps=self.policy.minimum_net_premium_bps,
+                protocol_fee_bps=protocol_fee_bps,
+            ),
+        )
+        execution_quote = quote | {"bid_price": execution_bid_price}
+        if execution_bid_price != quoted_bid_price:
+            log.info(
+                "Covered call decision=apply_premium_floor quoted_bid=%d "
+                "execution_bid=%d minimum_net_premium_bps=%d protocol_fee_bps=%d",
+                quoted_bid_price,
+                execution_bid_price,
+                self.policy.minimum_net_premium_bps,
+                protocol_fee_bps,
+            )
         signature = sign_fund_quote(
-            quote,
+            execution_quote,
             owner=self.adapter_address,
             chain_id=84532,
             settler=config.BATCH_SETTLER,
@@ -989,7 +1080,7 @@ class CoveredCallFundAllocator:
                 (
                     (
                         Web3.to_checksum_address(quote["otoken_address"]),
-                        int(quote["bid_price"]),
+                        execution_bid_price,
                         int(quote["deadline"]),
                         int(quote["quote_id"]),
                         int(quote["max_amount"]),
@@ -1004,7 +1095,7 @@ class CoveredCallFundAllocator:
         quote_hash = hashlib.sha256(
             json.dumps(
                 {
-                    key: quote[key]
+                    key: execution_quote[key]
                     for key in (
                         "otoken_address",
                         "bid_price",
@@ -1027,7 +1118,8 @@ class CoveredCallFundAllocator:
         log.info(
             "Covered call decision=open strike=%s collateral_weth=%.8f "
             "option_amount=%.8f policy_hash=%s report_nonce=%d report_hash=%s "
-            "quote_id=%s quote_hash=%s tx=%s tx_nonce=%d replaced=%s "
+            "quote_id=%s quote_hash=%s quoted_bid=%d execution_bid=%d "
+            "tx=%s tx_nonce=%d replaced=%s "
             "state_nonce=%d positions_hash=%s",
             quote["strike_price"],
             collateral / WETH_SCALE,
@@ -1037,6 +1129,8 @@ class CoveredCallFundAllocator:
             Web3.to_hex(state["nav"][11]),
             quote["quote_id"],
             quote_hash,
+            quoted_bid_price,
+            execution_bid_price,
             tx.tx_hash,
             tx.nonce,
             tx.replaced,
