@@ -24,6 +24,7 @@ from src import (
     fund_allocator,
     fund_operations_keeper,
     hedge_executor,
+    meta_wheel_allocator,
     trade_logger,
 )
 from src.capacity import calculate_capacity_internal, solana_call_capacity_raw
@@ -707,6 +708,7 @@ def main() -> None:
     fund_operations_keeper.start()
     covered_call_allocator.start()
     covered_call_operations_keeper.start()
+    meta_wheel_allocator.start()
 
     cycle = 0
     while True:
