@@ -18,6 +18,45 @@ class ConfirmedTransaction:
     replaced: bool
 
 
+def _normalized_hex(value: Any) -> str:
+    encoded = value.hex()
+    return encoded if encoded.startswith("0x") else f"0x{encoded}"
+
+
+def _same_receipt(left: Any, right: Any) -> bool:
+    return (
+        int(left.status) == int(right.status)
+        and int(left.blockNumber) == int(right.blockNumber)
+        and left.blockHash == right.blockHash
+    )
+
+
+def _wait_for_stable_receipt(
+    *, w3: Any, tx_hash: Any, receipt: Any, confirmations: int
+) -> Any:
+    """Follow a successfully re-included transaction to a stable receipt."""
+    candidate = receipt
+    deadline = time.monotonic() + 60
+    for _ in range(3):
+        target_block = int(candidate.blockNumber) + max(confirmations, 1)
+        while int(w3.eth.block_number) < target_block:
+            if time.monotonic() >= deadline:
+                raise TimeExhausted("Timed out waiting for transaction confirmations")
+            time.sleep(1)
+        try:
+            observed = w3.eth.get_transaction_receipt(tx_hash)
+        except TransactionNotFound as error:
+            raise RuntimeError(
+                "Fund worker receipt disappeared after confirmation"
+            ) from error
+        if int(observed.status) != 1:
+            raise RuntimeError("Fund worker transaction reverted after confirmation")
+        if _same_receipt(candidate, observed):
+            return observed
+        candidate = observed
+    raise RuntimeError("Fund worker transaction receipt kept changing")
+
+
 def send_confirmed_transaction(
     *,
     w3: Any,
@@ -67,28 +106,16 @@ def send_confirmed_transaction(
     if int(receipt.status) != 1:
         raise RuntimeError(f"Fund worker transaction reverted: {final_hash.hex()}")
 
-    target_block = int(receipt.blockNumber) + max(confirmations, 1)
-    deadline = time.monotonic() + 60
-    while int(w3.eth.block_number) < target_block:
-        if time.monotonic() >= deadline:
-            raise TimeExhausted("Timed out waiting for transaction confirmations")
-        time.sleep(1)
-    try:
-        confirmed = w3.eth.get_transaction_receipt(final_hash)
-    except TransactionNotFound as error:
-        raise RuntimeError(
-            "Fund worker receipt disappeared after confirmation"
-        ) from error
-    if (
-        int(confirmed.status) != 1
-        or int(confirmed.blockNumber) != int(receipt.blockNumber)
-        or confirmed.blockHash != receipt.blockHash
-    ):
-        raise RuntimeError("Fund worker transaction receipt changed after confirmation")
+    confirmed = _wait_for_stable_receipt(
+        w3=w3,
+        tx_hash=final_hash,
+        receipt=receipt,
+        confirmations=confirmations,
+    )
     return ConfirmedTransaction(
-        tx_hash=final_hash.hex(),
+        tx_hash=_normalized_hex(final_hash),
         nonce=nonce,
         block_number=int(confirmed.blockNumber),
-        block_hash=confirmed.blockHash.hex(),
+        block_hash=_normalized_hex(confirmed.blockHash),
         replaced=replaced,
     )
