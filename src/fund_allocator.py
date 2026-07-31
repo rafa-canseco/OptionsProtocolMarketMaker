@@ -124,6 +124,16 @@ _FLOW_ABI = [
     },
 ]
 
+_SETTLER_ABI = [
+    {
+        "name": "protocolFeeBps",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "uint256"}],
+    }
+]
+
 _STRATEGY_ABI = [
     {
         "name": "positionsHash",
@@ -580,6 +590,10 @@ class CspFundAllocator:
             address=self.adapter_address,
             abi=_ADAPTER_ABI,
         )
+        self.settler = self.w3.eth.contract(
+            address=Web3.to_checksum_address(config.BATCH_SETTLER),
+            abi=_SETTLER_ABI,
+        )
         self.usdc = Web3.to_checksum_address(
             self.adapter.functions.accountingAsset().call()
         )
@@ -600,6 +614,7 @@ class CspFundAllocator:
             self.flow.address,
             self.strategy.address,
             self.adapter.address,
+            self.settler.address,
             self.usdc,
             self.weth,
             self.valuator.address,
@@ -833,6 +848,10 @@ class CspFundAllocator:
             log.info("CSP allocator decision=skip reason=no_liquid_usdc")
             return
         market = api_client.get_market_data(asset="eth", chain="base")
+        api_client.require_protocol_fee_match(
+            market,
+            int(self.settler.functions.protocolFeeBps().call()),
+        )
         quotes = api_client.get_quotes()
         now = int(time.time())
         quote = select_policy_quote(

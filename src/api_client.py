@@ -41,6 +41,25 @@ def get_market_data(
     return resp.json()
 
 
+def require_protocol_fee_match(
+    market_data: dict[str, Any], onchain_protocol_fee_bps: int
+) -> int:
+    """Fail closed when backend pricing and settlement use different fees."""
+    try:
+        backend_protocol_fee_bps = int(market_data["protocol_fee_bps"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "Backend market data does not contain a valid protocol fee"
+        ) from exc
+    if not 0 <= backend_protocol_fee_bps <= 10_000:
+        raise RuntimeError("Backend protocol fee is outside the valid BPS range")
+    if backend_protocol_fee_bps != onchain_protocol_fee_bps:
+        raise RuntimeError(
+            "Backend protocol fee does not match the on-chain BatchSettler"
+        )
+    return backend_protocol_fee_bps
+
+
 def submit_quotes(quotes: list[dict[str, Any]]) -> dict[str, Any]:
     """POST /mm/quotes — submit signed quotes."""
     resp = _SESSION.post(

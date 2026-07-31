@@ -478,16 +478,14 @@ def minimum_bid_price_for_net_premium(
     if not 0 <= protocol_fee_bps < BPS:
         raise ValueError("Protocol fee must leave a positive net premium")
 
-    collateral_value_usdc = (
-        collateral_weth * spot_price_8 // USDC_TO_WETH_ORACLE_SCALE
-    )
+    collateral_value_usdc = collateral_weth * spot_price_8 // USDC_TO_WETH_ORACLE_SCALE
     required_net_premium = max(
         1,
         (collateral_value_usdc * minimum_net_premium_bps + BPS - 1) // BPS,
     )
-    gross_premium = (
-        required_net_premium * BPS + (BPS - protocol_fee_bps) - 1
-    ) // (BPS - protocol_fee_bps)
+    gross_premium = (required_net_premium * BPS + (BPS - protocol_fee_bps) - 1) // (
+        BPS - protocol_fee_bps
+    )
 
     def net_premium(gross: int) -> int:
         return gross - gross * protocol_fee_bps // BPS
@@ -644,9 +642,7 @@ class CoveredCallFundAllocator:
         )
         if settler_address != Web3.to_checksum_address(config.BATCH_SETTLER):
             raise RuntimeError("Covered-call BatchSettler differs from configuration")
-        self.settler = self.w3.eth.contract(
-            address=settler_address, abi=_SETTLER_ABI
-        )
+        self.settler = self.w3.eth.contract(address=settler_address, abi=_SETTLER_ABI)
         for address in (
             self.vault.address,
             self.flow.address,
@@ -1001,6 +997,8 @@ class CoveredCallFundAllocator:
             log.info("Covered call decision=skip reason=no_deployable_weth")
             return
         market = api_client.get_market_data(asset="eth", chain="base")
+        protocol_fee_bps = int(self.settler.functions.protocolFeeBps().call())
+        api_client.require_protocol_fee_match(market, protocol_fee_bps)
         now = int(time.time())
         quotes = api_client.get_quotes()
         quote = select_covered_call_quote(
@@ -1043,7 +1041,6 @@ class CoveredCallFundAllocator:
             )
             return
         spot_price = int(self.oracle.functions.getPrice(self.weth).call())
-        protocol_fee_bps = int(self.settler.functions.protocolFeeBps().call())
         quoted_bid_price = int(quote["bid_price"])
         execution_bid_price = max(
             quoted_bid_price,

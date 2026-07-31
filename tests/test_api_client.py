@@ -2,6 +2,28 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+
+def test_protocol_fee_policy_must_match_backend_and_batch_settler():
+    from src import api_client
+
+    assert (
+        api_client.require_protocol_fee_match({"protocol_fee_bps": 1_000}, 1_000)
+        == 1_000
+    )
+
+    with pytest.raises(RuntimeError, match="does not match"):
+        api_client.require_protocol_fee_match({"protocol_fee_bps": 400}, 1_000)
+
+
+@pytest.mark.parametrize("market", [{}, {"protocol_fee_bps": "invalid"}])
+def test_protocol_fee_policy_requires_valid_backend_value(market):
+    from src import api_client
+
+    with pytest.raises(RuntimeError, match="valid protocol fee"):
+        api_client.require_protocol_fee_match(market, 1_000)
+
 
 def test_report_capacity_posts_payload():
     """report_capacity POSTs to /mm/capacity."""
