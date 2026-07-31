@@ -387,6 +387,8 @@ class FakeChain:
         self.quotes = actions_quotes
         self.submissions = []
         self.canonical = True
+        self.missing_receipts: set[str] = set()
+        self.noncanonical_receipts: set[str] = set()
 
     def read_snapshot(self, _policy):
         return self.state
@@ -401,7 +403,16 @@ class FakeChain:
         return SubmittedAction(tx_hash=f"0xtx{len(self.submissions)}", nonce=1)
 
     def receipt(self, tx_hash, _confirmations):
-        return CanonicalReceipt(tx_hash, 101, "0xblock", 2, self.canonical, True)
+        if tx_hash in self.missing_receipts:
+            return None
+        return CanonicalReceipt(
+            tx_hash,
+            101,
+            "0xblock",
+            2,
+            self.canonical and tx_hash not in self.noncanonical_receipts,
+            True,
+        )
 
     def reconcile(self, _action, _receipt):
         return Reconciliation(True, True, True, True, True)
@@ -432,6 +443,46 @@ def test_duplicate_action_key_is_chain_parent_tranche_nonce_position_scoped(poli
 
     assert first.key == second.key
     assert first.key != next_nonce.key
+
+
+def test_dropped_submission_is_replanned_from_same_onchain_nonce(policy):
+    state = snapshot(policy)
+    action = MetaWheelPlanner(policy).plan(state, ())[0]
+    chain = FakeChain(state)
+    chain.missing_receipts.add("0xdropped")
+    journal = MemoryJournal()
+    journal.record(action.key, "submitted", "0xdropped")
+    allocator = MetaWheelAllocator(
+        policy_path=POLICY_PATH,
+        approved_policy_hash=policy.policy_hash,
+        chain=chain,
+        journal=journal,
+    )
+
+    allocator.run_once()
+
+    assert len(chain.submissions) == 1
+    assert journal.get(action.key) == ("confirmed", "0xtx1")
+
+
+def test_reorged_confirmation_is_not_final_and_is_safely_replanned(policy):
+    state = snapshot(policy)
+    action = MetaWheelPlanner(policy).plan(state, ())[0]
+    chain = FakeChain(state)
+    chain.noncanonical_receipts.add("0xorphaned")
+    journal = MemoryJournal()
+    journal.record(action.key, "confirmed", "0xorphaned")
+    allocator = MetaWheelAllocator(
+        policy_path=POLICY_PATH,
+        approved_policy_hash=policy.policy_hash,
+        chain=chain,
+        journal=journal,
+    )
+
+    allocator.run_once()
+
+    assert len(chain.submissions) == 1
+    assert journal.get(action.key) == ("confirmed", "0xtx1")
 
 
 def test_sqlite_journal_persists_idempotency_state(tmp_path):
