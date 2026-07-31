@@ -42,7 +42,7 @@ _POLICY_EXPECTED = {
     "strike_rule": "target_call_delta",
     "strike_parameter": Decimal("0.05"),
     "maximum_delta_deviation_bps": 150,
-    "strike_tick_usd": 25,
+    "strike_tick_usd": 5,
     "target_duration_hours": 48,
     "reopen_cadence_hours": 48,
     "target_utilization_bps": 8000,
@@ -53,8 +53,12 @@ _POLICY_EXPECTED = {
     "position_sizing_basis": "current_idle_assets",
     "continuous_operation": "reopen_while_free_weth_and_no_pending_redemptions",
 }
-_LEGACY_POLICY_EXPECTED = {
+_V4_POLICY_EXPECTED = {
     **_POLICY_EXPECTED,
+    "strike_tick_usd": 25,
+}
+_LEGACY_POLICY_EXPECTED = {
+    **_V4_POLICY_EXPECTED,
     "target_utilization_bps": 2500,
 }
 
@@ -358,18 +362,19 @@ def load_covered_call_policy(path: str | Path) -> CoveredCallPolicy:
         **selection,
         "strike_parameter": Decimal(str(selection.get("strike_parameter"))),
     }
-    expected_selection = {
-        3: _LEGACY_POLICY_EXPECTED,
-        4: _POLICY_EXPECTED,
+    expected_policy = {
+        3: (_LEGACY_POLICY_EXPECTED, "B1N-374"),
+        4: (_V4_POLICY_EXPECTED, "B1N-374"),
+        5: (_POLICY_EXPECTED, "B1N-394"),
     }.get(raw.get("schema_version"))
     if (
-        expected_selection is None
-        or raw.get("authority_issue") != "B1N-374"
+        expected_policy is None
+        or raw.get("authority_issue") != expected_policy[1]
         or raw.get("decision") != "go_testnet_only"
         or raw.get("activation_allowed") is not True
         or raw.get("mainnet_authorized") is not False
         or raw.get("scope") != expected_scope
-        or normalized_selection != expected_selection
+        or normalized_selection != expected_policy[0]
         or raw.get("valuation") != _VALUATION_EXPECTED
         or raw.get("base_sepolia_bounds", {}).get("maximum_vault_aum_weth") is not None
         or raw.get("base_sepolia_bounds", {}).get(
@@ -377,7 +382,7 @@ def load_covered_call_policy(path: str | Path) -> CoveredCallPolicy:
         )
         is not None
     ):
-        raise ValueError("Covered-call allocator policy is not approved for B1N-374")
+        raise ValueError("Covered-call allocator policy is not approved for testnet")
     bounds = raw["base_sepolia_bounds"]
     valuation = raw["valuation"]
     if bounds.get("mock_assets_only") is not True or bounds.get("chain_id") != 84532:
