@@ -245,6 +245,8 @@ def test_virtual_policy_quote_materializes_without_allocating(monkeypatch):
     allocator.flow = MagicMock()
     allocator.flow.functions.totalPendingShares.return_value.call.return_value = 0
     allocator.adapter_address = "0x" + "34" * 20
+    allocator.settler = MagicMock()
+    allocator.settler.functions.protocolFeeBps.return_value.call.return_value = 1_000
     allocator._is_compatible_put_series = MagicMock(
         side_effect=AssertionError("virtual series must not be read on-chain")
     )
@@ -270,7 +272,7 @@ def test_virtual_policy_quote_materializes_without_allocating(monkeypatch):
     monkeypatch.setattr(
         api_client,
         "get_market_data",
-        lambda **_: {"spot": 1859.32},
+        lambda **_: {"spot": 1859.32, "protocol_fee_bps": 1_000},
     )
     monkeypatch.setattr(api_client, "get_quotes", lambda: [quote])
     ensure = MagicMock(
