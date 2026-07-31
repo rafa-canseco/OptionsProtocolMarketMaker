@@ -3,8 +3,9 @@ from typing import Any
 from urllib.parse import urlencode, urlparse, urlunparse
 
 import requests
+from eth_account import Account
 
-from src.config import BACKEND_URL, MM_API_KEY
+from src.config import BACKEND_URL, MM_API_KEY, MM_PRIVATE_KEY
 
 log = logging.getLogger(__name__)
 
@@ -12,6 +13,7 @@ _SESSION = requests.Session()
 _SESSION.headers.update({"X-API-Key": MM_API_KEY})
 
 _TIMEOUT = 15
+_MATERIALIZATION_TIMEOUT = 180
 
 
 def _url(path: str) -> str:
@@ -90,6 +92,38 @@ def report_capacity(payload: dict[str, Any]) -> dict[str, Any]:
         _url("/mm/capacity"),
         json=payload,
         timeout=_TIMEOUT,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def ensure_fund_series(
+    *,
+    adapter_address: str,
+    quote: dict[str, Any],
+    amount_raw: int,
+) -> dict[str, Any]:
+    """Request idempotent materialization of one policy-selected fund series."""
+    mm_address = Account.from_key(MM_PRIVATE_KEY).address
+    payload = {
+        "adapter_address": adapter_address,
+        "expected_otoken_address": quote["otoken_address"],
+        "amount_raw": str(amount_raw),
+        "quote": {
+            "otoken_address": quote["otoken_address"],
+            "bid_price_raw": str(quote["bid_price"]),
+            "deadline": str(quote["deadline"]),
+            "quote_id": str(quote["quote_id"]),
+            "max_amount_raw": str(quote["max_amount"]),
+            "maker_nonce": str(quote["maker_nonce"]),
+            "signature": quote["signature"],
+            "mm_address": mm_address,
+        },
+    }
+    resp = _SESSION.post(
+        _url("/mm/series/ensure"),
+        json=payload,
+        timeout=_MATERIALIZATION_TIMEOUT,
     )
     resp.raise_for_status()
     return resp.json()

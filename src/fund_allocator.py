@@ -498,23 +498,27 @@ def select_policy_quote(
     now: int,
     policy: FundPolicy,
     series_validator: Callable[[dict[str, Any]], bool] | None = None,
+    deployment_statuses: frozenset[str] = frozenset({"ready"}),
 ) -> dict[str, Any] | None:
     target_strike = policy_strike(spot, policy)
     candidates = [
         quote
         for quote in quotes
         if quote.get("asset") == "eth"
+        and quote.get("chain", "base") == "base"
         and quote.get("is_put") is True
-        and (
-            quote.get("deployment_status") is None
-            or quote.get("deployment_status") == "ready"
-        )
+        and str(quote.get("deployment_status") or "ready").lower()
+        in deployment_statuses
         and int(quote.get("deadline") or 0) > now + 15
         and policy.min_expiry_delay
         <= int(quote.get("expiry") or 0) - now
         <= policy.max_expiry_delay
         and Decimal(str(quote.get("strike_price"))) == Decimal(target_strike)
-        and (series_validator is None or series_validator(quote))
+        and (
+            str(quote.get("deployment_status") or "ready").lower() != "ready"
+            or series_validator is None
+            or series_validator(quote)
+        )
     ]
     if not candidates:
         return None
@@ -829,15 +833,28 @@ class CspFundAllocator:
             log.info("CSP allocator decision=skip reason=no_liquid_usdc")
             return
         market = api_client.get_market_data(asset="eth", chain="base")
+        quotes = api_client.get_quotes()
+        now = int(time.time())
         quote = select_policy_quote(
-            api_client.get_quotes(),
+            quotes,
             spot=float(market["spot"]),
-            now=int(time.time()),
+            now=now,
             policy=self.policy,
             series_validator=self._is_compatible_put_series,
         )
         if quote is None:
-            raise RuntimeError("No live signed quote matches the 15%-OTM 48h policy")
+            quote = select_policy_quote(
+                quotes,
+                spot=float(market["spot"]),
+                now=now,
+                policy=self.policy,
+                series_validator=self._is_compatible_put_series,
+                deployment_statuses=frozenset({"virtual", "creating"}),
+            )
+            if quote is None:
+                raise RuntimeError(
+                    "No live signed quote matches the 15%-OTM 48h policy"
+                )
         strike_raw = int(Decimal(str(quote["strike_price"])) * OTOKEN_SCALE)
         option_amount = min(
             option_amount_for_collateral(target, strike_raw),
@@ -848,6 +865,19 @@ class CspFundAllocator:
             raise RuntimeError(
                 "Matching quote cannot fill the bounded collateral target"
             )
+        if str(quote.get("deployment_status") or "ready").lower() != "ready":
+            result = api_client.ensure_fund_series(
+                adapter_address=self.adapter_address,
+                quote=quote,
+                amount_raw=option_amount,
+            )
+            log.info(
+                "CSP allocator decision=materialize_series status=%s otoken=%s tx=%s",
+                result["status"],
+                result["otoken_address"],
+                result.get("deployment_tx_hash"),
+            )
+            return
         signature = sign_fund_quote(
             quote,
             owner=self.adapter_address,

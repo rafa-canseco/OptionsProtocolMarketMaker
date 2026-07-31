@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src import config
+from src import api_client, config
 from src.covered_call_allocator import (
     CoveredCallFundAllocator,
     CoveredCallPolicy,
@@ -226,6 +226,28 @@ def test_ready_call_series_reaches_onchain_validator():
     validator.assert_called_once_with(quote)
 
 
+def test_virtual_call_can_be_selected_only_for_materialization():
+    now = int(time.time())
+    validator = MagicMock(
+        side_effect=AssertionError("virtual series must not be read on-chain")
+    )
+    quote = _quote(now, deployment_status="virtual")
+
+    selected = select_covered_call_quote(
+        [quote],
+        spot=2000,
+        iv=0.6,
+        now=now,
+        risk_free_rate=0.05,
+        policy=_policy(),
+        series_validator=validator,
+        deployment_statuses=frozenset({"virtual", "creating"}),
+    )
+
+    assert selected is quote
+    validator.assert_not_called()
+
+
 def test_missing_approved_quote_fails_closed():
     now = int(time.time())
     assert (
@@ -239,6 +261,60 @@ def test_missing_approved_quote_fails_closed():
         )
         is None
     )
+
+
+def test_virtual_call_quote_materializes_without_allocating(monkeypatch):
+    now = 1_000_000
+    allocator = CoveredCallFundAllocator.__new__(CoveredCallFundAllocator)
+    allocator.policy = _policy()
+    allocator.flow = MagicMock()
+    allocator.flow.functions.totalPendingShares.return_value.call.return_value = 0
+    allocator.adapter_address = "0x" + "34" * 20
+    allocator._is_compatible_call_series = MagicMock(
+        side_effect=AssertionError("virtual series must not be read on-chain")
+    )
+    allocator._send = MagicMock(
+        side_effect=AssertionError("capital must stay idle until the series is ready")
+    )
+    quote = _quote(
+        now,
+        deployment_status="virtual",
+        signature="0x" + "ab" * 65,
+        max_amount=100_000_000,
+    )
+    monkeypatch.setattr("src.covered_call_allocator.time.time", lambda: now)
+    monkeypatch.setattr(
+        api_client,
+        "get_market_data",
+        lambda **_: {"spot": 2000, "iv": 0.6},
+    )
+    monkeypatch.setattr(api_client, "get_quotes", lambda: [quote])
+    ensure = MagicMock(
+        return_value={
+            "status": "creating",
+            "otoken_address": quote["otoken_address"],
+            "deployment_tx_hash": "0x" + "cd" * 32,
+        }
+    )
+    monkeypatch.setattr(api_client, "ensure_fund_series", ensure)
+
+    allocator._open(
+        {
+            "adapter_state": (0, b"", 0, 0, 0, 0, 0),
+            "positions": [],
+            "allocated": 0,
+            "pending_shares": 0,
+            "idle_assets": 1 * 10**18,
+        }
+    )
+
+    ensure.assert_called_once_with(
+        adapter_address=allocator.adapter_address,
+        quote=quote,
+        amount_raw=80_000_000,
+    )
+    allocator._is_compatible_call_series.assert_not_called()
+    allocator._send.assert_not_called()
 
 
 def test_normalization_floor_matches_contract_rounding():

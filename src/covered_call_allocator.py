@@ -466,6 +466,7 @@ def select_covered_call_quote(
     risk_free_rate: float,
     policy: CoveredCallPolicy,
     series_validator: Callable[[dict[str, Any]], bool] | None = None,
+    deployment_statuses: frozenset[str] = frozenset({"ready"}),
 ) -> dict[str, Any] | None:
     candidates: list[tuple[int, float, int, dict[str, Any]]] = []
     for quote in quotes:
@@ -476,10 +477,8 @@ def select_covered_call_quote(
             quote.get("asset") != "eth"
             or quote.get("chain", "base") != "base"
             or quote.get("is_put") is not False
-            or (
-                quote.get("deployment_status") is not None
-                and quote.get("deployment_status") != "ready"
-            )
+            or str(quote.get("deployment_status") or "ready").lower()
+            not in deployment_statuses
             or int(quote.get("deadline") or 0) <= now + 15
             or not policy.min_expiry_delay <= delay <= policy.max_expiry_delay
             or strike * OTOKEN_SCALE < policy.min_strike
@@ -488,7 +487,11 @@ def select_covered_call_quote(
             or int(quote.get("bid_price") or 0) <= 0
         ):
             continue
-        if series_validator is not None and not series_validator(quote):
+        if (
+            str(quote.get("deployment_status") or "ready").lower() == "ready"
+            and series_validator is not None
+            and not series_validator(quote)
+        ):
             continue
         time_years = delay / (365 * 86_400)
         actual_delta = bs_delta(
@@ -926,8 +929,9 @@ class CoveredCallFundAllocator:
             return
         market = api_client.get_market_data(asset="eth", chain="base")
         now = int(time.time())
+        quotes = api_client.get_quotes()
         quote = select_covered_call_quote(
-            api_client.get_quotes(),
+            quotes,
             spot=float(market["spot"]),
             iv=float(market["iv"]),
             now=now,
@@ -936,11 +940,35 @@ class CoveredCallFundAllocator:
             series_validator=self._is_compatible_call_series,
         )
         if quote is None:
-            raise RuntimeError("No live signed quote matches covered-call policy")
+            quote = select_covered_call_quote(
+                quotes,
+                spot=float(market["spot"]),
+                iv=float(market["iv"]),
+                now=now,
+                risk_free_rate=config.RISK_FREE_RATE,
+                policy=self.policy,
+                series_validator=self._is_compatible_call_series,
+                deployment_statuses=frozenset({"virtual", "creating"}),
+            )
+            if quote is None:
+                raise RuntimeError("No live signed quote matches covered-call policy")
         option_amount = min(option_amount, int(quote["max_amount"]))
         collateral = call_collateral_for_option_amount(option_amount)
         if option_amount <= 0 or collateral > target:
             raise RuntimeError("Covered-call quote cannot fill bounded target")
+        if str(quote.get("deployment_status") or "ready").lower() != "ready":
+            result = api_client.ensure_fund_series(
+                adapter_address=self.adapter_address,
+                quote=quote,
+                amount_raw=option_amount,
+            )
+            log.info(
+                "Covered call decision=materialize_series status=%s otoken=%s tx=%s",
+                result["status"],
+                result["otoken_address"],
+                result.get("deployment_tx_hash"),
+            )
+            return
         signature = sign_fund_quote(
             quote,
             owner=self.adapter_address,
