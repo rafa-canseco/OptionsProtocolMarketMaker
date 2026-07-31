@@ -147,6 +147,34 @@ def test_ready_put_series_reaches_onchain_validator():
     validator.assert_called_once_with(quote)
 
 
+def test_virtual_put_can_be_selected_only_for_materialization():
+    policy = load_testnet_policy(POLICY_PATH)
+    now = 1_000_000
+    validator = MagicMock(
+        side_effect=AssertionError("virtual series must not be read on-chain")
+    )
+    quote = {
+        "asset": "eth",
+        "is_put": True,
+        "deadline": now + 300,
+        "expiry": now + 48 * 3600,
+        "strike_price": 1575.0,
+        "deployment_status": "virtual",
+    }
+
+    selected = select_policy_quote(
+        [quote],
+        spot=1859.32,
+        now=now,
+        policy=policy,
+        series_validator=validator,
+        deployment_statuses=frozenset({"virtual", "creating"}),
+    )
+
+    assert selected is quote
+    validator.assert_not_called()
+
+
 def test_collateral_round_trip_never_exceeds_target():
     strike_raw = 1575 * 10**8
     target = 800 * 10**6
@@ -208,6 +236,68 @@ def test_latest_redemption_request_closes_safe_block_handoff_race(monkeypatch):
             "pending_shares": 0,
         }
     )
+
+
+def test_virtual_policy_quote_materializes_without_allocating(monkeypatch):
+    now = 1_000_000
+    allocator = CspFundAllocator.__new__(CspFundAllocator)
+    allocator.policy = load_testnet_policy(POLICY_PATH)
+    allocator.flow = MagicMock()
+    allocator.flow.functions.totalPendingShares.return_value.call.return_value = 0
+    allocator.adapter_address = "0x" + "34" * 20
+    allocator._is_compatible_put_series = MagicMock(
+        side_effect=AssertionError("virtual series must not be read on-chain")
+    )
+    allocator._send = MagicMock(
+        side_effect=AssertionError("capital must stay idle until the series is ready")
+    )
+    quote = {
+        "asset": "eth",
+        "chain": "base",
+        "is_put": True,
+        "deadline": now + 300,
+        "expiry": now + 48 * 3600,
+        "strike_price": 1575.0,
+        "deployment_status": "virtual",
+        "otoken_address": "0x" + "12" * 20,
+        "bid_price": 10,
+        "quote_id": 7,
+        "max_amount": 100_000_000,
+        "maker_nonce": 3,
+        "signature": "0x" + "ab" * 65,
+    }
+    monkeypatch.setattr("src.fund_allocator.time.time", lambda: now)
+    monkeypatch.setattr(
+        api_client,
+        "get_market_data",
+        lambda **_: {"spot": 1859.32},
+    )
+    monkeypatch.setattr(api_client, "get_quotes", lambda: [quote])
+    ensure = MagicMock(
+        return_value={
+            "status": "creating",
+            "otoken_address": quote["otoken_address"],
+            "deployment_tx_hash": "0x" + "cd" * 32,
+        }
+    )
+    monkeypatch.setattr(api_client, "ensure_fund_series", ensure)
+
+    allocator._open(
+        {
+            "adapter_state": (0, b"", 0, 0, 0, 0),
+            "allocated": 0,
+            "pending_shares": 0,
+            "idle_assets": 1_000 * 10**6,
+        }
+    )
+
+    ensure.assert_called_once_with(
+        adapter_address=allocator.adapter_address,
+        quote=quote,
+        amount_raw=50_793_650,
+    )
+    allocator._is_compatible_put_series.assert_not_called()
+    allocator._send.assert_not_called()
 
 
 def test_allocated_exposure_has_no_static_economic_cap():

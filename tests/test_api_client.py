@@ -1,4 +1,4 @@
-"""Tests for api_client capacity reporting."""
+"""Tests for authenticated backend API calls."""
 
 from unittest.mock import MagicMock, patch
 
@@ -27,3 +27,55 @@ def test_report_capacity_posts_payload():
     assert "/mm/capacity" in call_kwargs[0][0]
     assert call_kwargs[1]["json"] == payload
     assert result == {"status": "ok"}
+
+
+def test_ensure_fund_series_posts_complete_quote_snapshot(monkeypatch):
+    from eth_account import Account
+
+    from src import api_client
+
+    private_key = "0x" + "11" * 32
+    monkeypatch.setattr(api_client, "MM_PRIVATE_KEY", private_key)
+    quote = {
+        "otoken_address": "0x" + "12" * 20,
+        "bid_price": 10,
+        "deadline": 1_900_000_000,
+        "quote_id": 7,
+        "max_amount": 100_000_000,
+        "maker_nonce": 3,
+        "signature": "0x" + "ab" * 65,
+    }
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {
+        "status": "creating",
+        "otoken_address": quote["otoken_address"],
+    }
+
+    with patch.object(api_client._SESSION, "post", return_value=mock_resp) as post:
+        result = api_client.ensure_fund_series(
+            adapter_address="0x" + "34" * 20,
+            quote=quote,
+            amount_raw=25_000_000,
+        )
+
+    post.assert_called_once_with(
+        api_client._url("/mm/series/ensure"),
+        json={
+            "adapter_address": "0x" + "34" * 20,
+            "expected_otoken_address": quote["otoken_address"],
+            "amount_raw": "25000000",
+            "quote": {
+                "otoken_address": quote["otoken_address"],
+                "bid_price_raw": "10",
+                "deadline": "1900000000",
+                "quote_id": "7",
+                "max_amount_raw": "100000000",
+                "maker_nonce": "3",
+                "signature": quote["signature"],
+                "mm_address": Account.from_key(private_key).address,
+            },
+        },
+        timeout=api_client._MATERIALIZATION_TIMEOUT,
+    )
+    mock_resp.raise_for_status.assert_called_once_with()
+    assert result["status"] == "creating"
