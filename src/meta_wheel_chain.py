@@ -121,6 +121,20 @@ def _contract_proxy(contracts: Mapping[str, object], name: str) -> str:
     return _address(entry.get("proxy"), f"contracts.{name}.proxy")
 
 
+def _contract_address(contracts: Mapping[str, object], name: str) -> str:
+    entry = contracts.get(name)
+    if not isinstance(entry, dict):
+        raise RuntimeError(f"Meta Wheel manifest contracts.{name} is missing")
+    return _address(entry.get("address"), f"contracts.{name}.address")
+
+
+def _boundary_address(boundary: Mapping[str, object], name: str) -> str:
+    entry = boundary.get(name)
+    if not isinstance(entry, dict):
+        raise RuntimeError(f"Meta Wheel manifest v1Boundary.{name} is missing")
+    return _address(entry.get("proxy") or entry.get("address"), f"v1Boundary.{name}")
+
+
 @dataclass(frozen=True)
 class WheelManifestGate:
     path: Path
@@ -130,6 +144,18 @@ class WheelManifestGate:
     strategy_manager: str
     coordinator: str
     usdc: str
+    weth: str
+    fund_accounting: str
+    fund_flow_manager: str
+    valuator: str
+    batch_settler: str
+    oracle: str
+    deployment_start_block: int
+    deployment_end_block: int
+    policy_hash: str
+    premium_fee_bps: int
+    management_fee_wad: int
+    performance_fee_bps: int
     final_roles: Mapping[str, str]
 
 
@@ -177,6 +203,20 @@ def load_wheel_manifest_gate(
         or network.get("chainId") != BASE_SEPOLIA_CHAIN_ID
     ):
         raise RuntimeError("Meta Wheel deployment manifest is not Base Sepolia")
+    deployment_blocks = network.get("deploymentBlocks")
+    if not isinstance(deployment_blocks, dict):
+        raise RuntimeError("Meta Wheel deployment blocks are missing")
+    deployment_start_block = deployment_blocks.get("fundFirst")
+    deployment_last_block = deployment_blocks.get("fundLast")
+    if (
+        isinstance(deployment_start_block, bool)
+        or not isinstance(deployment_start_block, int)
+        or isinstance(deployment_last_block, bool)
+        or not isinstance(deployment_last_block, int)
+        or deployment_start_block <= 0
+        or deployment_last_block < deployment_start_block
+    ):
+        raise RuntimeError("Meta Wheel deployment block range is invalid")
     readiness = manifest.get("readiness")
     if not isinstance(readiness, dict) or (
         readiness.get("canonicalReceiptsRecorded") is not True
@@ -199,6 +239,12 @@ def load_wheel_manifest_gate(
         )
     ):
         raise RuntimeError("Meta Wheel canonical deployment receipts are incomplete")
+    receipt_blocks = {int(receipt["blockNumber"]) for receipt in receipts}
+    if (
+        deployment_start_block not in receipt_blocks
+        or deployment_last_block not in receipt_blocks
+    ):
+        raise RuntimeError("Meta Wheel receipts do not bind deployment boundaries")
 
     roles = manifest.get("finalRoles")
     if not isinstance(roles, dict) or set(roles) != set(REQUIRED_FINAL_ROLES):
@@ -214,12 +260,39 @@ def load_wheel_manifest_gate(
 
     contracts = manifest.get("contracts")
     assets = manifest.get("assets")
-    if not isinstance(contracts, dict) or not isinstance(assets, dict):
+    boundary = manifest.get("v1Boundary")
+    policy = manifest.get("policy")
+    if (
+        not isinstance(contracts, dict)
+        or not isinstance(assets, dict)
+        or not isinstance(boundary, dict)
+        or not isinstance(policy, dict)
+    ):
         raise RuntimeError("Meta Wheel manifest contracts/assets are missing")
     parent = _contract_proxy(contracts, "fundVault")
     strategy_manager = _contract_proxy(contracts, "strategyManager")
     coordinator = _contract_proxy(contracts, "wheelCoordinator")
     usdc = _address(assets.get("usdc"), "assets.usdc")
+    weth = _address(assets.get("weth"), "assets.weth")
+    fund_accounting = _contract_proxy(contracts, "fundAccounting")
+    fund_flow_manager = _contract_proxy(contracts, "fundFlowManager")
+    valuator = _contract_address(contracts, "metaWheelValuator")
+    batch_settler = _boundary_address(boundary, "batchSettler")
+    oracle = _boundary_address(boundary, "oracle")
+    policy_hash = str(policy.get("policyHash", "")).removeprefix("0x").lower()
+    if len(policy_hash) != 64 or any(
+        character not in "0123456789abcdef" for character in policy_hash
+    ):
+        raise RuntimeError("Meta Wheel manifest policy hash is invalid")
+    premium_fee_bps = policy.get("premiumFeeBps")
+    management_fee_wad = policy.get("managementFeeWad")
+    performance_fee_bps = policy.get("performanceFeeBps")
+    if (
+        premium_fee_bps != 1_000
+        or management_fee_wad != 20_000_000_000_000_000
+        or performance_fee_bps != 1_000
+    ):
+        raise RuntimeError("Meta Wheel manifest fee policy is invalid")
     configured = {
         "fundVault": _address(configured_parent, "configured parent"),
         "strategyManager": _address(
@@ -249,6 +322,18 @@ def load_wheel_manifest_gate(
         strategy_manager=strategy_manager,
         coordinator=coordinator,
         usdc=usdc,
+        weth=weth,
+        fund_accounting=fund_accounting,
+        fund_flow_manager=fund_flow_manager,
+        valuator=valuator,
+        batch_settler=batch_settler,
+        oracle=oracle,
+        deployment_start_block=deployment_start_block,
+        deployment_end_block=deployment_last_block,
+        policy_hash=policy_hash,
+        premium_fee_bps=premium_fee_bps,
+        management_fee_wad=management_fee_wad,
+        performance_fee_bps=performance_fee_bps,
         final_roles=final_roles,
     )
 
@@ -369,12 +454,18 @@ def load_runtime_gate_and_signers() -> tuple[WheelManifestGate, WheelRoleSigners
         "META_WHEEL_DEPLOYMENT_MANIFEST_SHA256": (
             config.META_WHEEL_DEPLOYMENT_MANIFEST_SHA256
         ),
+        "META_WHEEL_APPROVED_POLICY_SHA256": (config.META_WHEEL_APPROVED_POLICY_SHA256),
         "META_WHEEL_PARENT_ADDRESS": config.META_WHEEL_PARENT_ADDRESS,
         "META_WHEEL_STRATEGY_MANAGER_ADDRESS": (
             config.META_WHEEL_STRATEGY_MANAGER_ADDRESS
         ),
         "META_WHEEL_COORDINATOR_ADDRESS": config.META_WHEEL_COORDINATOR_ADDRESS,
+        "META_WHEEL_VALUATOR_ADDRESS": config.META_WHEEL_VALUATOR_ADDRESS,
+        "META_WHEEL_CSP_LANE_ADDRESSES": config.META_WHEEL_CSP_LANE_ADDRESSES,
+        "META_WHEEL_CALL_LANE_ADDRESSES": config.META_WHEEL_CALL_LANE_ADDRESSES,
         "USDC_ADDRESS": config.USDC_ADDRESS,
+        "COVERED_CALL_WETH_ADDRESS": config.COVERED_CALL_WETH_ADDRESS,
+        "BATCH_SETTLER": config.BATCH_SETTLER,
         "META_WHEEL_ALLOCATOR_PRIVATE_KEY": config.META_WHEEL_ALLOCATOR_PRIVATE_KEY,
         "META_WHEEL_PROCESSOR_PRIVATE_KEY": config.META_WHEEL_PROCESSOR_PRIVATE_KEY,
         "META_WHEEL_ALLOCATOR_ADDRESS": config.META_WHEEL_ALLOCATOR_ADDRESS,
@@ -397,6 +488,33 @@ def load_runtime_gate_and_signers() -> tuple[WheelManifestGate, WheelRoleSigners
         configured_coordinator=config.META_WHEEL_COORDINATOR_ADDRESS or "",
         configured_usdc=config.USDC_ADDRESS,
     )
+    approved_policy_hash = (
+        (config.META_WHEEL_APPROVED_POLICY_SHA256 or "").removeprefix("0x").lower()
+    )
+    if approved_policy_hash != manifest.policy_hash:
+        raise RuntimeError("Meta Wheel approved policy differs from final manifest")
+    configured_runtime_addresses = {
+        "COVERED_CALL_WETH_ADDRESS": (
+            _address(config.COVERED_CALL_WETH_ADDRESS, "configured WETH"),
+            manifest.weth,
+        ),
+        "BATCH_SETTLER": (
+            _address(config.BATCH_SETTLER, "configured BatchSettler"),
+            manifest.batch_settler,
+        ),
+        "META_WHEEL_VALUATOR_ADDRESS": (
+            _address(
+                config.META_WHEEL_VALUATOR_ADDRESS,
+                "configured Meta Wheel valuator",
+            ),
+            manifest.valuator,
+        ),
+    }
+    if any(
+        configured.lower() != expected.lower()
+        for configured, expected in configured_runtime_addresses.values()
+    ):
+        raise RuntimeError("Meta Wheel runtime boundary differs from final manifest")
     private_keys = {
         WheelSignerRole.ALLOCATOR: config.META_WHEEL_ALLOCATOR_PRIVATE_KEY or "",
         WheelSignerRole.PROCESSOR: config.META_WHEEL_PROCESSOR_PRIVATE_KEY or "",

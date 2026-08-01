@@ -68,6 +68,7 @@ def lane(
         position_state_hash=position_hash,
         nav_position_state_hash=position_hash,
         lot_ids=lot_ids,
+        adapter=f"{address}:adapter",
         active_options=int(phase in {LanePhase.CSP_OPEN, LanePhase.CALL_OPEN}),
     )
 
@@ -150,7 +151,17 @@ def quote(
     strike: int,
     now: int = 1_000_000,
     delta_bps: int | None = None,
+    lane_address: str | None = None,
+    tranche_id: int = 1,
+    lot_id: int | None = None,
+    allocation_amount: int | None = None,
 ) -> WheelQuote:
+    bound_lot_id = (0 if is_put else 1) if lot_id is None else lot_id
+    bound_amount = (
+        (5_000 * 10**6 if is_put else 10**18)
+        if allocation_amount is None
+        else allocation_amount
+    )
     return WheelQuote(
         quote_id=quote_id,
         is_put=is_put,
@@ -163,6 +174,10 @@ def quote(
         canonical_series=True,
         delta_bps=delta_bps,
         open_data=b"signed-open-data",
+        lane=lane_address or ("0xcsp1" if is_put else "0xcc1"),
+        tranche_id=tranche_id,
+        lot_id=bound_lot_id,
+        allocation_amount=bound_amount,
     )
 
 
@@ -303,7 +318,7 @@ def test_oversized_pending_tranche_splits_then_sibling_opens(policy):
         pending_csp_tranches=(oversized,),
         csp_lanes=(lane("0xcsp1", LaneKind.CSP),),
     )
-    put = quote(quote_id="put", is_put=True, strike=1700)
+    put = quote(quote_id="put", is_put=True, strike=1700, tranche_id=2)
 
     first_actions = MetaWheelPlanner(policy).plan(first_tick, (put,))
 
@@ -357,7 +372,23 @@ def test_redemptions_preempt_new_allocation_but_not_expired_settlement(policy):
     assert (reserve.tranche_id, reserve.amount) == (8, 3_000 * 10**6)
 
 
-def test_settling_tranches_handoff_once(policy):
+def test_cancelled_redemptions_release_surplus_back_to_pending_csp(policy):
+    state = snapshot(
+        policy,
+        idle_usdc=0,
+        pending_redemption_usdc=1_000 * 10**6,
+        reserved_redemption_usdc=3_000 * 10**6,
+        reserved_principal_usdc=2_500 * 10**6,
+    )
+
+    (action,) = MetaWheelPlanner(policy).plan(state, ())
+
+    assert action.kind == ActionKind.RELEASE_REDEMPTION
+    assert action.amount == 2_000 * 10**6
+    assert action.transition_nonce == state.coordinator_transition_nonce
+
+
+def test_pending_physical_settlement_retries_until_ready_for_handoff(policy):
     state = snapshot(
         policy,
         idle_usdc=0,
@@ -376,6 +407,42 @@ def test_settling_tranches_handoff_once(policy):
                 "0xcc1",
                 LaneKind.COVERED_CALL,
                 LanePhase.CALL_SETTLING,
+                tranche_id=4,
+                nonce=5,
+                position_id=10,
+                lot_ids=(4,),
+            ),
+        ),
+    )
+
+    actions = MetaWheelPlanner(policy).plan(state, ())
+
+    assert [action.kind for action in actions] == [
+        ActionKind.SETTLE_CSP,
+        ActionKind.SETTLE_CALL,
+    ]
+    assert actions[0].key != actions[1].key
+
+
+def test_ready_tranches_handoff_once(policy):
+    state = snapshot(
+        policy,
+        idle_usdc=0,
+        csp_lanes=(
+            lane(
+                "0xcsp1",
+                LaneKind.CSP,
+                LanePhase.CSP_READY_FOR_HANDOFF,
+                tranche_id=3,
+                nonce=4,
+                position_id=9,
+            ),
+        ),
+        call_lanes=(
+            lane(
+                "0xcc1",
+                LaneKind.COVERED_CALL,
+                LanePhase.CALL_READY_FOR_HANDOFF,
                 tranche_id=4,
                 nonce=5,
                 position_id=10,
@@ -463,7 +530,13 @@ def test_assignment_and_sibling_cash_tranches_progress_in_parallel(policy):
     actions = MetaWheelPlanner(policy).plan(
         first_tick,
         (
-            quote(quote_id="sibling-put", is_put=True, strike=1700),
+            quote(
+                quote_id="sibling-put",
+                is_put=True,
+                strike=1700,
+                tranche_id=2,
+                allocation_amount=sibling.pending_usdc,
+            ),
             quote(
                 quote_id="assigned-call",
                 is_put=False,
@@ -562,8 +635,11 @@ def test_four_lanes_progress_one_lot_each_and_fifth_remains_queued(policy):
             is_put=False,
             strike=2020 + index * 5,
             delta_bps=500,
+            lane_address=f"0xcc{index}",
+            tranche_id=index,
+            lot_id=index,
         )
-        for index in range(1, 6)
+        for index in range(1, 5)
     )
 
     actions = MetaWheelPlanner(policy).plan(state, quotes)
@@ -571,6 +647,43 @@ def test_four_lanes_progress_one_lot_each_and_fifth_remains_queued(policy):
     assert len(actions) == 4
     assert [action.lot_ids for action in actions] == [(1,), (2,), (3,), (4,)]
     assert assignments[4].status == LotStatus.AVAILABLE
+
+
+def test_one_signed_quote_is_not_reused_across_parallel_lanes(policy):
+    assignments = (lot(1, 2000), lot(2, 2000))
+    state = snapshot(
+        policy,
+        idle_usdc=0,
+        csp_lanes=(
+            lane("0xcsp1", LaneKind.CSP, LanePhase.PAUSED),
+            lane("0xcsp2", LaneKind.CSP, LanePhase.PAUSED),
+        ),
+        call_lanes=(
+            lane("0xcc1", LaneKind.COVERED_CALL),
+            lane("0xcc2", LaneKind.COVERED_CALL),
+        ),
+        assignment_lots=assignments,
+    )
+    first = quote(
+        quote_id="same-onchain-quote",
+        is_put=False,
+        strike=2015,
+        delta_bps=500,
+        lane_address="0xcc1",
+        tranche_id=1,
+        lot_id=1,
+    )
+    second = replace(
+        first,
+        lane="0xcc2",
+        tranche_id=2,
+        lot_id=2,
+    )
+
+    actions = MetaWheelPlanner(policy).plan(state, (first, second))
+
+    assert len(actions) == 1
+    assert actions[0].lot_ids == (1,)
 
 
 def test_wrong_fee_hash_stale_nav_or_standalone_lane_fails_closed(policy):
@@ -648,6 +761,7 @@ class FakeChain:
         self.canonical = True
         self.missing_receipts: set[str] = set()
         self.noncanonical_receipts: set[str] = set()
+        self.reconciliations = 0
 
     def read_snapshot(self, _policy):
         return self.state
@@ -674,6 +788,7 @@ class FakeChain:
         )
 
     def reconcile(self, _action, _receipt):
+        self.reconciliations += 1
         return Reconciliation(True, True, True, True, True, True)
 
 
@@ -738,7 +853,7 @@ def test_duplicate_action_key_is_chain_parent_tranche_nonce_position_scoped(poli
     assert first.key != next_nonce.key
 
 
-def test_dropped_submission_is_replanned_from_same_onchain_nonce(policy):
+def test_unknown_submission_fails_closed_without_resubmitting(policy):
     state = snapshot(policy)
     action = MetaWheelPlanner(policy).plan(state, ())[0]
     chain = FakeChain(state)
@@ -752,10 +867,11 @@ def test_dropped_submission_is_replanned_from_same_onchain_nonce(policy):
         journal=journal,
     )
 
-    allocator.run_once()
+    with pytest.raises(RuntimeError, match="receipt is unavailable"):
+        allocator.run_once()
 
-    assert len(chain.submissions) == 1
-    assert journal.get(action.key) == ("confirmed", "0xtx1")
+    assert chain.submissions == []
+    assert journal.get(action.key) == ("submitted", "0xdropped")
 
 
 def test_reorged_confirmation_is_not_final_and_is_safely_replanned(policy):
@@ -785,3 +901,36 @@ def test_sqlite_journal_persists_idempotency_state(tmp_path):
     second = SqliteActionJournal(path)
 
     assert second.get("key") == ("submitted", "0xtx")
+    first.close()
+    second.close()
+
+
+def test_process_restart_reconciles_confirmed_action_without_resubmitting(
+    policy, tmp_path
+):
+    state = snapshot(policy)
+    chain = FakeChain(state)
+    path = tmp_path / "actions.sqlite3"
+    first_journal = SqliteActionJournal(path)
+    first = MetaWheelAllocator(
+        policy_path=POLICY_PATH,
+        approved_policy_hash=policy.policy_hash,
+        chain=chain,
+        journal=first_journal,
+    )
+
+    (action,) = first.run_once()
+    first_journal.close()
+    second_journal = SqliteActionJournal(path)
+    restarted = MetaWheelAllocator(
+        policy_path=POLICY_PATH,
+        approved_policy_hash=policy.policy_hash,
+        chain=chain,
+        journal=second_journal,
+    )
+
+    assert restarted.run_once() == (action,)
+    assert len(chain.submissions) == 1
+    assert chain.reconciliations == 2
+    assert second_journal.get(action.key) == ("confirmed", "0xtx1")
+    second_journal.close()

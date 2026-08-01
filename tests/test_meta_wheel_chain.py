@@ -59,7 +59,11 @@ def _manifest() -> tuple[dict, dict[WheelSignerRole, str]]:
             "status": "CONFIRMED_CANONICAL_RECEIPTS",
             "deploymentStatus": "DEPLOYED",
             "handoffReady": True,
-            "network": {"name": "base-sepolia", "chainId": 84532},
+            "network": {
+                "name": "base-sepolia",
+                "chainId": 84532,
+                "deploymentBlocks": {"fundFirst": 100, "fundLast": 100},
+            },
             "readiness": {
                 "canonicalReceiptsRecorded": True,
                 "finalRolesReconciled": True,
@@ -77,11 +81,24 @@ def _manifest() -> tuple[dict, dict[WheelSignerRole, str]]:
             "finalRoles": {
                 role: _account_address(index) for role, index in role_indexes.items()
             },
-            "assets": {"usdc": _address(10)},
+            "assets": {"usdc": _address(10), "weth": _address(14)},
             "contracts": {
                 "fundVault": {"proxy": _address(11)},
                 "strategyManager": {"proxy": _address(12)},
                 "wheelCoordinator": {"proxy": _address(13)},
+                "fundAccounting": {"proxy": _address(15)},
+                "fundFlowManager": {"proxy": _address(16)},
+                "metaWheelValuator": {"address": _address(17)},
+            },
+            "v1Boundary": {
+                "batchSettler": {"proxy": _address(18)},
+                "oracle": {"proxy": _address(19)},
+            },
+            "policy": {
+                "policyHash": "db47fcd1f4f96b656fe462956c85194b1f5e25d0c1d8c8862864b256d38fa93c",
+                "premiumFeeBps": 1_000,
+                "managementFeeWad": 20_000_000_000_000_000,
+                "performanceFeeBps": 1_000,
             },
         },
         private_keys,

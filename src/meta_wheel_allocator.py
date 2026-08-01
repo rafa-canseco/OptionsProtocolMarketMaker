@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -40,8 +41,10 @@ class LanePhase(StrEnum):
     IDLE = "idle"
     CSP_OPEN = "csp_open"
     CSP_SETTLING = "csp_settling"
+    CSP_READY_FOR_HANDOFF = "csp_ready_for_handoff"
     CALL_OPEN = "call_open"
     CALL_SETTLING = "call_settling"
+    CALL_READY_FOR_HANDOFF = "call_ready_for_handoff"
     PAUSED = "paused"
 
 
@@ -271,6 +274,7 @@ class LaneSnapshot:
     position_state_hash: str
     nav_position_state_hash: str
     lot_ids: tuple[int, ...] = ()
+    adapter: str = ""
     dedicated_to_parent: bool = True
     active_options: int = 0
 
@@ -289,6 +293,10 @@ class WheelQuote:
     delta_bps: int | None = None
     execution_slippage_bps: int = 0
     open_data: bytes = b""
+    lane: str = ""
+    tranche_id: int = 0
+    lot_id: int = 0
+    allocation_amount: int = 0
 
 
 @dataclass(frozen=True)
@@ -478,7 +486,14 @@ class SqliteActionJournal:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(self.path)
+        self.connection = sqlite3.connect(
+            self.path,
+            timeout=5.0,
+            check_same_thread=False,
+        )
+        self.connection.execute("PRAGMA journal_mode=WAL")
+        self.connection.execute("PRAGMA synchronous=FULL")
+        self.connection.execute("PRAGMA busy_timeout=5000")
         self.connection.execute(
             """
             CREATE TABLE IF NOT EXISTS meta_wheel_actions (
@@ -490,6 +505,9 @@ class SqliteActionJournal:
             """
         )
         self.connection.commit()
+
+    def close(self) -> None:
+        self.connection.close()
 
     def get(self, action_key: str) -> tuple[str, str | None] | None:
         row = self.connection.execute(
@@ -531,6 +549,9 @@ def _quote_is_fresh(quote: WheelQuote, now: int, policy: MetaWheelPolicy) -> boo
         and quote.deadline - now >= policy.quote_minimum_ttl
         and policy.min_expiry_delay <= quote.expiry - now <= policy.max_expiry_delay
         and quote.maximum_collateral > 0
+        and quote.allocation_amount > 0
+        and bool(quote.lane)
+        and quote.tranche_id > 0
         and quote.execution_slippage_bps <= policy.maximum_execution_slippage_bps
         and quote.gross_premium_bps
         * (BPS - policy.protocol_gross_premium_fee_bps)
@@ -540,7 +561,12 @@ def _quote_is_fresh(quote: WheelQuote, now: int, policy: MetaWheelPolicy) -> boo
 
 
 def select_csp_quote(
-    quotes: Sequence[WheelQuote], snapshot: WheelSnapshot, policy: MetaWheelPolicy
+    quotes: Sequence[WheelQuote],
+    snapshot: WheelSnapshot,
+    policy: MetaWheelPolicy,
+    *,
+    lane: LaneSnapshot,
+    tranche: PendingCspTranche,
 ) -> WheelQuote | None:
     discounted = snapshot.spot_price8 * (BPS - policy.csp_strike_otm_bps) // BPS
     target = discounted // policy.csp_strike_tick * policy.csp_strike_tick
@@ -548,6 +574,10 @@ def select_csp_quote(
         quote
         for quote in quotes
         if quote.is_put
+        and quote.lane.lower() == lane.address.lower()
+        and quote.tranche_id == tranche.tranche_id
+        and quote.lot_id == 0
+        and quote.allocation_amount == tranche.pending_usdc
         and quote.strike8 == target
         and _quote_is_fresh(quote, snapshot.timestamp, policy)
     ]
@@ -561,12 +591,18 @@ def select_call_quote(
     snapshot: WheelSnapshot,
     policy: MetaWheelPolicy,
     lot: AssignmentLot,
+    *,
+    lane: LaneSnapshot,
 ) -> tuple[WheelQuote, int] | None:
     floor = required_call_floor8(lot, policy)
     candidates = [
         quote
         for quote in quotes
         if not quote.is_put
+        and quote.lane.lower() == lane.address.lower()
+        and quote.tranche_id == lot.tranche_id
+        and quote.lot_id == lot.lot_id
+        and quote.allocation_amount == lot.remaining_weth
         and quote.strike8 >= floor
         and _quote_is_fresh(quote, snapshot.timestamp, policy)
         and quote.maximum_collateral >= lot.remaining_weth
@@ -685,6 +721,8 @@ class MetaWheelPlanner:
         for lane in (*snapshot.csp_lanes, *snapshot.call_lanes):
             if not lane.dedicated_to_parent or not lane.address:
                 raise RuntimeError("Meta Wheel references a non-dedicated child lane")
+            if not lane.adapter:
+                raise RuntimeError("Meta Wheel child lane adapter is not configured")
             address = lane.address.lower()
             if address in addresses:
                 raise RuntimeError("Meta Wheel child lane is registered twice")
@@ -756,19 +794,45 @@ class MetaWheelPlanner:
 
         # Settlements and terminal handoffs remain live so risk can decrease.
         for lane in snapshot.csp_lanes:
-            if lane.phase == LanePhase.CSP_OPEN and lane.expiry <= snapshot.timestamp:
+            if (
+                lane.phase == LanePhase.CSP_SETTLING
+                or lane.phase == LanePhase.CSP_OPEN
+                and lane.expiry <= snapshot.timestamp
+            ):
                 actions.append(self._action(snapshot, lane, ActionKind.SETTLE_CSP))
-            elif lane.phase == LanePhase.CSP_SETTLING:
+            elif lane.phase == LanePhase.CSP_READY_FOR_HANDOFF:
                 actions.append(
                     self._action(snapshot, lane, ActionKind.HANDOFF_ASSIGNMENT)
                 )
         for lane in snapshot.call_lanes:
-            if lane.phase == LanePhase.CALL_OPEN and lane.expiry <= snapshot.timestamp:
+            if (
+                lane.phase == LanePhase.CALL_SETTLING
+                or lane.phase == LanePhase.CALL_OPEN
+                and lane.expiry <= snapshot.timestamp
+            ):
                 actions.append(self._action(snapshot, lane, ActionKind.SETTLE_CALL))
-            elif lane.phase == LanePhase.CALL_SETTLING:
+            elif lane.phase == LanePhase.CALL_READY_FOR_HANDOFF:
                 actions.append(
                     self._action(snapshot, lane, ActionKind.HANDOFF_CALL_AWAY)
                 )
+
+        release_surplus = max(
+            snapshot.reserved_redemption_usdc - snapshot.pending_redemption_usdc,
+            0,
+        )
+        if release_surplus:
+            actions.append(
+                WheelAction(
+                    kind=ActionKind.RELEASE_REDEMPTION,
+                    chain_id=snapshot.chain_id,
+                    parent=snapshot.parent,
+                    lane=snapshot.coordinator,
+                    tranche_id=0,
+                    transition_nonce=snapshot.coordinator_transition_nonce,
+                    child_position_id=0,
+                    amount=release_surplus,
+                )
+            )
 
         reserve_gap = max(
             snapshot.pending_redemption_usdc - snapshot.reserved_redemption_usdc,
@@ -812,15 +876,38 @@ class MetaWheelPlanner:
             ),
             key=lambda lot: (lot.literal_assignment_strike8, lot.lot_id),
         )
+        used_quote_ids: set[str] = set()
         for assignment in available_lots:
             if not free_call_lanes:
                 break
-            selected = select_call_quote(quotes, snapshot, self.policy, assignment)
-            if selected is None:
+            selected_pair = next(
+                (
+                    (lane, selected)
+                    for lane in free_call_lanes
+                    if (
+                        selected := select_call_quote(
+                            tuple(
+                                quote
+                                for quote in quotes
+                                if quote.quote_id not in used_quote_ids
+                            ),
+                            snapshot,
+                            self.policy,
+                            assignment,
+                            lane=lane,
+                        )
+                    )
+                    is not None
+                ),
+                None,
+            )
+            if selected_pair is None:
                 # Do not starve a lower-floor lot that may have an executable quote.
                 continue
+            lane, selected = selected_pair
             quote, floor = selected
-            lane = free_call_lanes.pop(0)
+            free_call_lanes.remove(lane)
+            used_quote_ids.add(quote.quote_id)
             actions.append(
                 WheelAction(
                     kind=ActionKind.OPEN_CALL,
@@ -842,7 +929,6 @@ class MetaWheelPlanner:
         free_csp_lanes = [
             lane for lane in snapshot.csp_lanes if lane.phase == LanePhase.IDLE
         ]
-        quote = select_csp_quote(quotes, snapshot, self.policy)
         available_pending_csp = snapshot.pending_csp_usdc
         for tranche in sorted(
             snapshot.pending_csp_tranches, key=lambda item: item.tranche_id
@@ -863,14 +949,35 @@ class MetaWheelPlanner:
                     )
                 )
                 continue
-            if (
-                quote is None
-                or tranche.pending_usdc > available_pending_csp
-                or quote.maximum_collateral < tranche.pending_usdc
-            ):
+            selected_pair = next(
+                (
+                    (lane, selected)
+                    for lane in free_csp_lanes
+                    if (
+                        selected := select_csp_quote(
+                            tuple(
+                                quote
+                                for quote in quotes
+                                if quote.quote_id not in used_quote_ids
+                            ),
+                            snapshot,
+                            self.policy,
+                            lane=lane,
+                            tranche=tranche,
+                        )
+                    )
+                    is not None
+                ),
+                None,
+            )
+            if selected_pair is None or tranche.pending_usdc > available_pending_csp:
                 # No quote/no capacity leaves the tranche in the pending queue.
                 continue
-            lane = free_csp_lanes.pop(0)
+            lane, quote = selected_pair
+            if quote.maximum_collateral < tranche.pending_usdc:
+                continue
+            free_csp_lanes.remove(lane)
+            used_quote_ids.add(quote.quote_id)
             amount = tranche.pending_usdc
             actions.append(
                 WheelAction(
@@ -952,28 +1059,28 @@ class MetaWheelAllocator:
         if existing is None:
             return False
         status, tx_hash = existing
-        if status == "confirmed" and tx_hash:
-            receipt = self.chain.receipt(tx_hash, self.confirmations)
-            if receipt and receipt.succeeded and receipt.canonical:
-                return True
-            self.journal.record(action.key, "orphaned", tx_hash)
-        elif status == "submitted" and tx_hash:
+        if status in {"confirmed", "submitted"} and tx_hash:
             receipt = self.chain.receipt(tx_hash, self.confirmations)
             if receipt is None:
-                # Unknown/dropped remains non-final and may be reconsidered only
-                # after a fresh authoritative snapshot produces the same nonce.
-                self.journal.record(action.key, "dropped", tx_hash)
-            elif receipt.succeeded and receipt.canonical:
-                reconciliation = self.chain.reconcile(action, receipt)
-                if not reconciliation.valid:
-                    self.journal.record(action.key, "reconciliation_failed", tx_hash)
-                    raise RuntimeError(
-                        "Meta Wheel action balance reconciliation failed"
-                    )
-                self.journal.record(action.key, "confirmed", tx_hash)
-                return True
-            else:
+                raise RuntimeError(
+                    "Meta Wheel submitted transaction receipt is unavailable"
+                )
+            if receipt.confirmations < self.confirmations:
+                raise RuntimeError(
+                    "Meta Wheel submitted transaction awaits confirmations"
+                )
+            if not receipt.succeeded:
+                self.journal.record(action.key, "reverted", tx_hash)
+                raise RuntimeError("Meta Wheel submitted transaction reverted")
+            if not receipt.canonical:
                 self.journal.record(action.key, "orphaned", tx_hash)
+                return False
+            reconciliation = self.chain.reconcile(action, receipt)
+            if not reconciliation.valid:
+                self.journal.record(action.key, "reconciliation_failed", tx_hash)
+                raise RuntimeError("Meta Wheel action balance reconciliation failed")
+            self.journal.record(action.key, "confirmed", tx_hash)
+            return True
         return False
 
     def _execute(self, action: WheelAction) -> None:
@@ -996,7 +1103,12 @@ class MetaWheelAllocator:
         receipt = self.chain.receipt(submitted.tx_hash, self.confirmations)
         if receipt is None:
             raise RuntimeError("Meta Wheel transaction dropped or is not confirmed")
-        if not receipt.succeeded or not receipt.canonical:
+        if receipt.confirmations < self.confirmations:
+            raise RuntimeError("Meta Wheel transaction awaits confirmations")
+        if not receipt.succeeded:
+            self.journal.record(action.key, "reverted", submitted.tx_hash)
+            raise RuntimeError("Meta Wheel transaction reverted")
+        if not receipt.canonical:
             self.journal.record(action.key, "orphaned", submitted.tx_hash)
             raise RuntimeError("Meta Wheel transaction receipt is not canonical")
         reconciliation = self.chain.reconcile(action, receipt)
@@ -1032,6 +1144,59 @@ def install_chain_port_factory(factory: Callable[[], MetaWheelChainPort]) -> Non
     _chain_port_factory = factory
 
 
+def persistent_action_journal_path() -> Path:
+    """Return a journal path only when an explicit durable root is configured."""
+
+    raw_root = config.META_WHEEL_PERSISTENT_ROOT
+    raw_path = config.META_WHEEL_ACTION_JOURNAL_PATH
+    if not raw_root or not raw_path:
+        raise RuntimeError(
+            "META_WHEEL_PERSISTENT_ROOT and META_WHEEL_ACTION_JOURNAL_PATH are required"
+        )
+    root = Path(raw_root).expanduser()
+    path = Path(raw_path).expanduser()
+    if not root.is_absolute() or not path.is_absolute():
+        raise RuntimeError("Meta Wheel journal paths must be absolute")
+    resolved_root = root.resolve()
+    resolved_path = path.resolve()
+    if resolved_root == Path(resolved_root.anchor):
+        raise RuntimeError("Meta Wheel persistent root cannot be a filesystem root")
+    if resolved_path == resolved_root or not resolved_path.is_relative_to(
+        resolved_root
+    ):
+        raise RuntimeError("Meta Wheel journal must be inside its persistent root")
+    if not resolved_root.is_dir():
+        raise RuntimeError("Meta Wheel persistent root does not exist")
+    railway_environment = any(
+        os.getenv(name, "").strip()
+        for name in (
+            "RAILWAY_ENVIRONMENT_ID",
+            "RAILWAY_ENVIRONMENT_NAME",
+            "RAILWAY_ENVIRONMENT",
+            "RAILWAY_PROJECT_ID",
+            "RAILWAY_SERVICE_ID",
+            "RAILWAY_DEPLOYMENT_ID",
+        )
+    )
+    if railway_environment:
+        railway_mount = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+        if not railway_mount or Path(railway_mount).resolve() != resolved_root:
+            raise RuntimeError(
+                "Meta Wheel Railway journal requires its persistent root to match "
+                "RAILWAY_VOLUME_MOUNT_PATH"
+            )
+    return resolved_path
+
+
+def _authoritative_chain_port_factory() -> MetaWheelChainPort:
+    from src.meta_wheel_runtime import build_authoritative_chain_port
+
+    return build_authoritative_chain_port()
+
+
+install_chain_port_factory(_authoritative_chain_port_factory)
+
+
 def start() -> threading.Thread | None:
     if not config.META_WHEEL_ALLOCATOR_ENABLED:
         log.info("Meta Wheel allocator disabled")
@@ -1043,11 +1208,12 @@ def start() -> threading.Thread | None:
     load_runtime_gate_and_signers()
     if _chain_port_factory is None:
         raise RuntimeError("Meta Wheel contract ABI adapter is not installed")
+    journal_path = persistent_action_journal_path()
     allocator = MetaWheelAllocator(
         policy_path=config.META_WHEEL_ALLOCATOR_POLICY_PATH,
         approved_policy_hash=config.META_WHEEL_APPROVED_POLICY_SHA256 or "",
         chain=_chain_port_factory(),
-        journal=SqliteActionJournal(config.META_WHEEL_ACTION_JOURNAL_PATH),
+        journal=SqliteActionJournal(journal_path),
         confirmations=config.META_WHEEL_ALLOCATOR_CONFIRMATIONS,
     )
     thread = threading.Thread(
