@@ -1,3 +1,5 @@
+import pytest
+
 from src import config, meta_wheel_allocator
 from src.covered_call_allocator import (
     call_collateral_target,
@@ -23,3 +25,16 @@ def test_disabled_wheel_does_not_start_or_change_standalone_planning(monkeypatch
     assert meta_wheel_allocator.start() is None
     assert liquid_collateral_target(1_000 * 10**6, csp) == csp_before
     assert call_collateral_target(10**18, covered_call) == call_before
+
+
+def test_enabled_wheel_cannot_reach_factory_without_final_manifest(monkeypatch):
+    monkeypatch.setattr(config, "META_WHEEL_ALLOCATOR_ENABLED", True)
+    monkeypatch.setattr(config, "META_WHEEL_DEPLOYMENT_MANIFEST_PATH", None)
+    monkeypatch.setattr(
+        meta_wheel_allocator,
+        "_chain_port_factory",
+        lambda: (_ for _ in ()).throw(AssertionError("factory must remain gated")),
+    )
+
+    with pytest.raises(RuntimeError, match="activation configuration"):
+        meta_wheel_allocator.start()

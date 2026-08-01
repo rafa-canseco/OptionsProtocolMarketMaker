@@ -98,6 +98,35 @@ def test_meta_wheel_flag_is_isolated_from_standalone_workers():
     )
 
 
+def test_meta_wheel_role_signers_and_manifest_are_separate_configuration():
+    config = _reload_config(
+        _base_env()
+        | {
+            "META_WHEEL_ALLOCATOR_PRIVATE_KEY": "allocator-key",
+            "META_WHEEL_PROCESSOR_PRIVATE_KEY": "processor-key",
+            "META_WHEEL_GUARDIAN_PRIVATE_KEY": "guardian-key",
+            "META_WHEEL_CURATOR_PRIVATE_KEY": "curator-key",
+            "META_WHEEL_ALLOCATOR_ADDRESS": "allocator-address",
+            "META_WHEEL_PROCESSOR_ADDRESS": "processor-address",
+            "META_WHEEL_GUARDIAN_ADDRESS": "guardian-address",
+            "META_WHEEL_CURATOR_ADDRESS": "curator-address",
+            "META_WHEEL_DEPLOYMENT_MANIFEST_PATH": "/manifest.json",
+            "META_WHEEL_DEPLOYMENT_MANIFEST_SHA256": "ab" * 32,
+        }
+    )
+
+    assert config.META_WHEEL_ALLOCATOR_PRIVATE_KEY == "allocator-key"
+    assert config.META_WHEEL_PROCESSOR_PRIVATE_KEY == "processor-key"
+    assert config.META_WHEEL_GUARDIAN_PRIVATE_KEY == "guardian-key"
+    assert config.META_WHEEL_CURATOR_PRIVATE_KEY == "curator-key"
+    assert config.META_WHEEL_ALLOCATOR_ADDRESS == "allocator-address"
+    assert config.META_WHEEL_PROCESSOR_ADDRESS == "processor-address"
+    assert config.META_WHEEL_GUARDIAN_ADDRESS == "guardian-address"
+    assert config.META_WHEEL_CURATOR_ADDRESS == "curator-address"
+    assert config.META_WHEEL_DEPLOYMENT_MANIFEST_PATH == "/manifest.json"
+    assert config.META_WHEEL_DEPLOYMENT_MANIFEST_SHA256 == "ab" * 32
+
+
 def test_lazy_quote_ttl_defaults_leave_creation_budget_without_extending_deadline():
     config = _reload_config(_base_env())
 

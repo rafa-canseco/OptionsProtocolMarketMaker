@@ -1036,6 +1036,11 @@ def start() -> threading.Thread | None:
     if not config.META_WHEEL_ALLOCATOR_ENABLED:
         log.info("Meta Wheel allocator disabled")
         return None
+    # Activation is impossible until the exact B1N-419 manifest and all four
+    # role-separated operational signers pass the final handoff gate.
+    from src.meta_wheel_chain import load_runtime_gate_and_signers
+
+    load_runtime_gate_and_signers()
     if _chain_port_factory is None:
         raise RuntimeError("Meta Wheel contract ABI adapter is not installed")
     allocator = MetaWheelAllocator(
