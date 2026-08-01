@@ -2009,10 +2009,15 @@ def reconcile_wheel_state(
                     pre.tranche_principal_usdc,
                     returned_weth * literal_strike // USDC_PER_WETH_SCALE,
                 )
-                sibling_principal = pre.tranche_principal_usdc - retained
+                sibling_principal = (
+                    pre.tranche_principal_usdc - retained if returned_usdc else 0
+                )
+                current_principal = (
+                    pre.tranche_principal_usdc if returned_usdc == 0 else retained
+                )
                 principal = bool(
                     lot
-                    and post.tranche_principal_usdc == retained
+                    and post.tranche_principal_usdc == current_principal
                     and post.tranche_pending_usdc == 0
                     and (
                         returned_usdc == 0

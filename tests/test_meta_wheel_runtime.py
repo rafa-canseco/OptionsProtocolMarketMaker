@@ -490,6 +490,43 @@ def test_assignment_handoff_reconciles_literal_strike_principal_split():
     ).valid
 
 
+def test_full_assignment_without_usdc_preserves_parent_tranche_principal():
+    pre = _pre(
+        tranche_principal_usdc=300 * 10**6,
+        tranche_pending_usdc=0,
+        lane_accounted_usdc=0,
+        lane_raw_usdc=0,
+        lane_accounted_weth=2 * 10**18,
+        lane_raw_weth=2 * 10**18,
+    )
+    action = _action(ActionKind.HANDOFF_ASSIGNMENT, pre)
+    events = [
+        event(
+            "WheelChildHandoff",
+            childSharesBurned=100,
+            usdcAmount=0,
+            wethAmount=2 * 10**18,
+        ),
+        event(
+            "WheelAssignmentLotCreated",
+            literalAssignmentStrike8=100 * 10**8,
+        ),
+    ]
+    post = _post(
+        pre,
+        coordinator_accounted_weth=10 + 2 * 10**18,
+        coordinator_raw_weth=10 + 2 * 10**18,
+        coordinator_transition_weth=10 + 2 * 10**18,
+        lane_child_shares=0,
+        lane_accounted_weth=0,
+        lane_raw_weth=0,
+        lane_execution_state_hash="0xidle-execution",
+        lane_position_state_hash="0xidle-position",
+    )
+
+    assert reconcile_wheel_state(action, events, post).valid
+
+
 def test_nav_observation_binds_historical_lane_hash_and_windows(monkeypatch):
     runtime = object.__new__(BaseSepoliaMetaWheelRuntime)
     parent = Web3.to_checksum_address("0x" + "11" * 20)
