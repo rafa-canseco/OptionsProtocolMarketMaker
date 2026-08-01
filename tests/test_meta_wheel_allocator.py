@@ -291,6 +291,76 @@ def test_call_quote_at_or_above_floor_is_selected(policy):
     assert actions[0].required_floor8 == 2015 * 10**8
 
 
+def test_assignment_and_sibling_cash_tranches_progress_in_parallel(policy):
+    """A mixed CSP handoff keeps the WETH tranche and queues USDC as a sibling."""
+    sibling = PendingCspTranche(2, 1, 1_000 * 10**6)
+    assignment = lot(1, 2001)
+    first_tick = snapshot(
+        policy,
+        idle_usdc=0,
+        pending_csp_usdc=sibling.pending_usdc,
+        pending_csp_tranches=(sibling,),
+        csp_lanes=(lane("0xcsp1", LaneKind.CSP),),
+        call_lanes=(lane("0xcc1", LaneKind.COVERED_CALL),),
+        assignment_lots=(assignment,),
+    )
+    actions = MetaWheelPlanner(policy).plan(
+        first_tick,
+        (
+            quote(quote_id="sibling-put", is_put=True, strike=1700),
+            quote(
+                quote_id="assigned-call",
+                is_put=False,
+                strike=2015,
+                delta_bps=500,
+            ),
+        ),
+    )
+
+    assert [(action.kind, action.tranche_id) for action in actions] == [
+        (ActionKind.OPEN_CALL, 1),
+        (ActionKind.OPEN_CSP, 2),
+    ]
+
+    next_tick = replace(
+        first_tick,
+        timestamp=first_tick.timestamp + 48 * 3600,
+        pending_csp_usdc=0,
+        pending_csp_tranches=(),
+        assignment_lots=(replace(assignment, status=LotStatus.CALL_OPEN),),
+        csp_lanes=(
+            lane(
+                "0xcsp1",
+                LaneKind.CSP,
+                LanePhase.CSP_OPEN,
+                tranche_id=2,
+                nonce=2,
+                position_id=20,
+                expiry=first_tick.timestamp + 48 * 3600,
+            ),
+        ),
+        call_lanes=(
+            lane(
+                "0xcc1",
+                LaneKind.COVERED_CALL,
+                LanePhase.CALL_OPEN,
+                tranche_id=1,
+                nonce=3,
+                position_id=10,
+                expiry=first_tick.timestamp + 48 * 3600,
+                lot_ids=(1,),
+            ),
+        ),
+    )
+
+    next_actions = MetaWheelPlanner(policy).plan(next_tick, ())
+
+    assert [(action.kind, action.tranche_id) for action in next_actions] == [
+        (ActionKind.SETTLE_CSP, 2),
+        (ActionKind.SETTLE_CALL, 1),
+    ]
+
+
 def test_available_lots_are_fifo_and_unselected_lot_remains_queued(policy):
     assignments = (lot(1, 1800), lot(2, 2200))
     state = snapshot(
