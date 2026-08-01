@@ -53,6 +53,14 @@ class WheelSignerRole(StrEnum):
     CURATOR = "curator"
 
 
+AUTOMATED_SIGNER_ROLES = frozenset(
+    {WheelSignerRole.ALLOCATOR, WheelSignerRole.PROCESSOR}
+)
+MANUAL_SIGNER_ROLES = frozenset({WheelSignerRole.GUARDIAN, WheelSignerRole.CURATOR})
+AUTOMATED_WRAPPERS = frozenset(
+    {StrategyManagerWrapper.ALLOCATION, StrategyManagerWrapper.PROCESSING}
+)
+
 _ROLE_BY_WRAPPER = {
     StrategyManagerWrapper.ALLOCATION: WheelSignerRole.ALLOCATOR,
     StrategyManagerWrapper.PROCESSING: WheelSignerRole.PROCESSOR,
@@ -250,20 +258,22 @@ class WheelRoleSigners:
     accounts: Mapping[WheelSignerRole, LocalAccount] = field(repr=False)
 
     @classmethod
-    def build(
+    def _build(
         cls,
         manifest: WheelManifestGate,
         *,
+        expected_roles: frozenset[WheelSignerRole],
         private_keys: Mapping[WheelSignerRole, str],
         declared_addresses: Mapping[WheelSignerRole, str],
     ) -> WheelRoleSigners:
-        if set(private_keys) != set(WheelSignerRole) or set(declared_addresses) != set(
-            WheelSignerRole
+        if (
+            set(private_keys) != expected_roles
+            or set(declared_addresses) != expected_roles
         ):
-            raise RuntimeError("Meta Wheel requires all four operational signer roles")
+            raise RuntimeError("Meta Wheel signer set has an invalid role boundary")
         accounts: dict[WheelSignerRole, LocalAccount] = {}
         declared: dict[WheelSignerRole, str] = {}
-        for role in WheelSignerRole:
+        for role in expected_roles:
             declared[role] = _address(
                 declared_addresses[role], f"configured {role.value} signer"
             )
@@ -283,18 +293,68 @@ class WheelRoleSigners:
                 )
             accounts[role] = account
         if len({address.lower() for address in declared.values()}) != len(
-            WheelSignerRole
+            expected_roles
         ):
-            raise RuntimeError("Meta Wheel operational signers must be distinct")
+            raise RuntimeError("Meta Wheel signer addresses must be distinct")
         return cls(accounts=accounts)
+
+    @classmethod
+    def build_automated(
+        cls,
+        manifest: WheelManifestGate,
+        *,
+        private_keys: Mapping[WheelSignerRole, str],
+        declared_addresses: Mapping[WheelSignerRole, str],
+    ) -> WheelRoleSigners:
+        """Build the MM service boundary: Allocation and Processing only."""
+
+        return cls._build(
+            manifest,
+            expected_roles=AUTOMATED_SIGNER_ROLES,
+            private_keys=private_keys,
+            declared_addresses=declared_addresses,
+        )
+
+    @classmethod
+    def build_manual(
+        cls,
+        manifest: WheelManifestGate,
+        *,
+        private_keys: Mapping[WheelSignerRole, str],
+        declared_addresses: Mapping[WheelSignerRole, str],
+    ) -> WheelRoleSigners:
+        """Build an explicit manual-only Guardian/Configuration signer set."""
+
+        roles = frozenset(private_keys)
+        if (
+            not roles
+            or not roles <= MANUAL_SIGNER_ROLES
+            or set(declared_addresses) != roles
+        ):
+            raise RuntimeError(
+                "Manual Meta Wheel signer set may contain only guardian/curator"
+            )
+        return cls._build(
+            manifest,
+            expected_roles=roles,
+            private_keys=private_keys,
+            declared_addresses=declared_addresses,
+        )
 
     def for_wrapper(self, wrapper: StrategyManagerWrapper) -> LocalAccount:
         try:
-            return self.accounts[_ROLE_BY_WRAPPER[wrapper]]
+            role = _ROLE_BY_WRAPPER[wrapper]
         except KeyError as error:
             raise RuntimeError(
                 f"Unsupported Meta Wheel managed wrapper {wrapper}"
             ) from error
+        try:
+            return self.accounts[role]
+        except KeyError:
+            boundary = "manual tool" if role in MANUAL_SIGNER_ROLES else "MM service"
+            raise RuntimeError(
+                f"Meta Wheel {role.value} signer is unavailable in this {boundary}"
+            ) from None
 
     @property
     def allocator(self) -> LocalAccount:
@@ -317,12 +377,8 @@ def load_runtime_gate_and_signers() -> tuple[WheelManifestGate, WheelRoleSigners
         "USDC_ADDRESS": config.USDC_ADDRESS,
         "META_WHEEL_ALLOCATOR_PRIVATE_KEY": config.META_WHEEL_ALLOCATOR_PRIVATE_KEY,
         "META_WHEEL_PROCESSOR_PRIVATE_KEY": config.META_WHEEL_PROCESSOR_PRIVATE_KEY,
-        "META_WHEEL_GUARDIAN_PRIVATE_KEY": config.META_WHEEL_GUARDIAN_PRIVATE_KEY,
-        "META_WHEEL_CURATOR_PRIVATE_KEY": config.META_WHEEL_CURATOR_PRIVATE_KEY,
         "META_WHEEL_ALLOCATOR_ADDRESS": config.META_WHEEL_ALLOCATOR_ADDRESS,
         "META_WHEEL_PROCESSOR_ADDRESS": config.META_WHEEL_PROCESSOR_ADDRESS,
-        "META_WHEEL_GUARDIAN_ADDRESS": config.META_WHEEL_GUARDIAN_ADDRESS,
-        "META_WHEEL_CURATOR_ADDRESS": config.META_WHEEL_CURATOR_ADDRESS,
     }
     missing = sorted(name for name, value in required.items() if not value)
     if missing:
@@ -344,16 +400,12 @@ def load_runtime_gate_and_signers() -> tuple[WheelManifestGate, WheelRoleSigners
     private_keys = {
         WheelSignerRole.ALLOCATOR: config.META_WHEEL_ALLOCATOR_PRIVATE_KEY or "",
         WheelSignerRole.PROCESSOR: config.META_WHEEL_PROCESSOR_PRIVATE_KEY or "",
-        WheelSignerRole.GUARDIAN: config.META_WHEEL_GUARDIAN_PRIVATE_KEY or "",
-        WheelSignerRole.CURATOR: config.META_WHEEL_CURATOR_PRIVATE_KEY or "",
     }
     declared_addresses = {
         WheelSignerRole.ALLOCATOR: config.META_WHEEL_ALLOCATOR_ADDRESS or "",
         WheelSignerRole.PROCESSOR: config.META_WHEEL_PROCESSOR_ADDRESS or "",
-        WheelSignerRole.GUARDIAN: config.META_WHEEL_GUARDIAN_ADDRESS or "",
-        WheelSignerRole.CURATOR: config.META_WHEEL_CURATOR_ADDRESS or "",
     }
-    return manifest, WheelRoleSigners.build(
+    return manifest, WheelRoleSigners.build_automated(
         manifest,
         private_keys=private_keys,
         declared_addresses=declared_addresses,
@@ -361,7 +413,7 @@ def load_runtime_gate_and_signers() -> tuple[WheelManifestGate, WheelRoleSigners
 
 
 class Web3MetaWheelChainPort:
-    """Minimal EVM chain port with injectable authoritative reads/reconciliation."""
+    """Automated EVM port with injectable authoritative reads/reconciliation."""
 
     def __init__(
         self,
@@ -379,6 +431,10 @@ class Web3MetaWheelChainPort:
     ) -> None:
         self.manifest = manifest
         self.signers = signers
+        if set(signers.accounts) != AUTOMATED_SIGNER_ROLES:
+            raise RuntimeError(
+                "Automated Meta Wheel port requires allocator and processor only"
+            )
         self.snapshot_reader = snapshot_reader
         self.quote_reader = quote_reader
         self.reconciler = reconciler
@@ -436,6 +492,13 @@ class Web3MetaWheelChainPort:
                 bytes.fromhex(action.key),
             )
         else:
+            if (
+                managed_request is not None
+                and managed_request.wrapper not in AUTOMATED_WRAPPERS
+            ):
+                raise RuntimeError(
+                    "Guardian/Configuration requests require an explicit manual tool"
+                )
             expected = managed_operation_for_action(action)
             if managed_request is None or managed_request != expected:
                 raise RuntimeError(

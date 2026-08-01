@@ -106,21 +106,20 @@ def _gate(tmp_path, manifest: dict):
     )
 
 
-def _signers(gate, manifest, private_keys):
-    return WheelRoleSigners.build(
+def _automated_signers(gate, manifest, private_keys):
+    roles = (WheelSignerRole.ALLOCATOR, WheelSignerRole.PROCESSOR)
+    return WheelRoleSigners.build_automated(
         gate,
-        private_keys=private_keys,
-        declared_addresses={
-            role: manifest["finalRoles"][role.value] for role in WheelSignerRole
-        },
+        private_keys={role: private_keys[role] for role in roles},
+        declared_addresses={role: manifest["finalRoles"][role.value] for role in roles},
     )
 
 
-def test_final_manifest_and_four_operational_signers_are_bound(tmp_path):
+def test_final_manifest_and_two_automated_signers_are_bound(tmp_path):
     manifest, private_keys = _manifest()
 
     gate = _gate(tmp_path, manifest)
-    signers = _signers(gate, manifest, private_keys)
+    signers = _automated_signers(gate, manifest, private_keys)
 
     assert tuple(gate.final_roles) == REQUIRED_FINAL_ROLES
     assert len({value.lower() for value in gate.final_roles.values()}) == 7
@@ -133,17 +132,63 @@ def test_final_manifest_and_four_operational_signers_are_bound(tmp_path):
     (
         (StrategyManagerWrapper.ALLOCATION, WheelSignerRole.ALLOCATOR),
         (StrategyManagerWrapper.PROCESSING, WheelSignerRole.PROCESSOR),
-        (StrategyManagerWrapper.GUARDIAN, WheelSignerRole.GUARDIAN),
-        (StrategyManagerWrapper.CONFIGURATION, WheelSignerRole.CURATOR),
     ),
 )
-def test_wrapper_selects_only_its_role_signer(tmp_path, wrapper, role):
+def test_automated_wrapper_selects_only_its_role_signer(tmp_path, wrapper, role):
     manifest, private_keys = _manifest()
-    signers = _signers(_gate(tmp_path, manifest), manifest, private_keys)
+    signers = _automated_signers(_gate(tmp_path, manifest), manifest, private_keys)
 
     selected = signers.for_wrapper(wrapper)
 
     assert selected.address == manifest["finalRoles"][role.value]
+
+
+@pytest.mark.parametrize(
+    ("wrapper", "role"),
+    (
+        (StrategyManagerWrapper.GUARDIAN, WheelSignerRole.GUARDIAN),
+        (StrategyManagerWrapper.CONFIGURATION, WheelSignerRole.CURATOR),
+    ),
+)
+def test_manual_wrapper_requires_explicit_manual_signer_set(tmp_path, wrapper, role):
+    manifest, private_keys = _manifest()
+    gate = _gate(tmp_path, manifest)
+    automated = _automated_signers(gate, manifest, private_keys)
+    with pytest.raises(RuntimeError, match="manual tool"):
+        automated.for_wrapper(wrapper)
+
+    manual = WheelRoleSigners.build_manual(
+        gate,
+        private_keys={role: private_keys[role]},
+        declared_addresses={role: manifest["finalRoles"][role.value]},
+    )
+
+    assert manual.for_wrapper(wrapper).address == manifest["finalRoles"][role.value]
+
+
+def test_automated_and_manual_signer_boundaries_cannot_mix(tmp_path):
+    manifest, private_keys = _manifest()
+    gate = _gate(tmp_path, manifest)
+    all_declared = {
+        role: manifest["finalRoles"][role.value] for role in WheelSignerRole
+    }
+
+    with pytest.raises(RuntimeError, match="invalid role boundary"):
+        WheelRoleSigners.build_automated(
+            gate,
+            private_keys=private_keys,
+            declared_addresses=all_declared,
+        )
+    with pytest.raises(RuntimeError, match="only guardian/curator"):
+        WheelRoleSigners.build_manual(
+            gate,
+            private_keys={
+                WheelSignerRole.ALLOCATOR: private_keys[WheelSignerRole.ALLOCATOR]
+            },
+            declared_addresses={
+                WheelSignerRole.ALLOCATOR: all_declared[WheelSignerRole.ALLOCATOR]
+            },
+        )
 
 
 def test_manifest_fails_closed_before_deployed_handoff(tmp_path):
@@ -181,10 +226,16 @@ def test_signer_must_match_declared_address_and_final_role(tmp_path):
     declared[WheelSignerRole.PROCESSOR] = manifest["finalRoles"]["guardian"]
 
     with pytest.raises(RuntimeError, match="processor signer does not match"):
-        WheelRoleSigners.build(
+        WheelRoleSigners.build_automated(
             gate,
-            private_keys=private_keys,
-            declared_addresses=declared,
+            private_keys={
+                role: private_keys[role]
+                for role in (WheelSignerRole.ALLOCATOR, WheelSignerRole.PROCESSOR)
+            },
+            declared_addresses={
+                role: declared[role]
+                for role in (WheelSignerRole.ALLOCATOR, WheelSignerRole.PROCESSOR)
+            },
         )
 
 
@@ -192,15 +243,19 @@ def test_invalid_private_key_is_never_exposed_by_error(tmp_path):
     manifest, private_keys = _manifest()
     gate = _gate(tmp_path, manifest)
     secret = "not-a-valid-secret-key"
-    invalid_keys = dict(private_keys)
+    invalid_keys = {
+        role: private_keys[role]
+        for role in (WheelSignerRole.ALLOCATOR, WheelSignerRole.PROCESSOR)
+    }
     invalid_keys[WheelSignerRole.ALLOCATOR] = secret
 
     with pytest.raises(RuntimeError, match="allocator signer") as captured:
-        WheelRoleSigners.build(
+        WheelRoleSigners.build_automated(
             gate,
             private_keys=invalid_keys,
             declared_addresses={
-                role: manifest["finalRoles"][role.value] for role in WheelSignerRole
+                role: manifest["finalRoles"][role.value]
+                for role in (WheelSignerRole.ALLOCATOR, WheelSignerRole.PROCESSOR)
             },
         )
 
@@ -211,7 +266,7 @@ def test_invalid_private_key_is_never_exposed_by_error(tmp_path):
 def test_chain_port_uses_processor_for_processing_and_allocator_for_queue(tmp_path):
     manifest, private_keys = _manifest()
     gate = _gate(tmp_path, manifest)
-    signers = _signers(gate, manifest, private_keys)
+    signers = _automated_signers(gate, manifest, private_keys)
     w3 = MagicMock()
     w3.eth.chain_id = 84532
     w3.eth.get_code.return_value = b"code"
@@ -279,7 +334,7 @@ def test_chain_port_rejects_wrapper_or_payload_substitution(tmp_path):
     w3.eth.get_code.return_value = b"code"
     port = Web3MetaWheelChainPort(
         manifest=gate,
-        signers=_signers(gate, manifest, private_keys),
+        signers=_automated_signers(gate, manifest, private_keys),
         snapshot_reader=MagicMock(),
         quote_reader=MagicMock(),
         reconciler=MagicMock(),
@@ -300,3 +355,7 @@ def test_chain_port_rejects_wrapper_or_payload_substitution(tmp_path):
 
     with pytest.raises(RuntimeError, match="changed before signing"):
         port.submit(action, MagicMock(), substituted)
+
+    guardian_request = encode_managed_operation(ManagedOperation.PAUSE_ALLOCATIONS)
+    with pytest.raises(RuntimeError, match="explicit manual tool"):
+        port.submit(action, MagicMock(), guardian_request)

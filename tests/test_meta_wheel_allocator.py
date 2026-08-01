@@ -245,6 +245,28 @@ def test_open_action_encodes_final_managed_allocation_payload():
     )
 
 
+def test_automated_action_surface_never_reaches_guardian_or_configuration():
+    address = "0x00000000000000000000000000000000000000c5"
+    base = WheelAction(
+        kind=ActionKind.OPEN_CSP,
+        chain_id=84532,
+        parent="0xparent",
+        lane=address,
+        tranche_id=4,
+        transition_nonce=2,
+        child_position_id=0,
+        amount=1,
+        open_data=b"signed-open-data",
+    )
+
+    for kind in set(ActionKind) - {ActionKind.QUEUE_CSP_USDC}:
+        request = managed_operation_for_action(replace(base, kind=kind))
+        assert request.operation_class in {
+            ManagedOperationClass.ALLOCATION,
+            ManagedOperationClass.PROCESSING,
+        }
+
+
 def test_new_usdc_is_queued_in_bounded_csp_tranches(policy):
     actions = MetaWheelPlanner(policy).plan(snapshot(policy), ())
 
