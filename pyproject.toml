@@ -5,6 +5,7 @@ description = "Standalone market maker client for the b1nary options protocol"
 requires-python = ">=3.12"
 dependencies = [
     "eth-account>=0.13",
+    "eth-abi>=5",
     "web3>=7",
     "numpy>=2.0",
     "scipy>=1.14",

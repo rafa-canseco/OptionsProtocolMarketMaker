@@ -1,9 +1,8 @@
 """Fail-closed planner and idempotent runtime for dedicated Meta Wheel lanes.
 
-Contract-specific reads and writes live behind :class:`MetaWheelChainPort` so
-the bounded policy/state machine can be reviewed and tested before B1N-414/415
-freeze their ABI. Standalone CSP and Covered Call workers do not import this
-module and their semantics remain independent.
+Contract-specific reads and writes live behind :class:`MetaWheelChainPort`. The
+managed operation encoding mirrors the ABI frozen by B1N-414/415. Standalone CSP
+and Covered Call workers do not import this module and remain independent.
 """
 
 from __future__ import annotations
@@ -14,11 +13,13 @@ import logging
 import sqlite3
 import threading
 import time
-from dataclasses import asdict, dataclass
-from enum import StrEnum
-from pathlib import Path
 from collections.abc import Callable
+from dataclasses import asdict, dataclass
+from enum import IntEnum, StrEnum
+from pathlib import Path
 from typing import Protocol, Sequence
+
+from eth_abi import encode
 
 from src import config
 from src.meta_wheel_policy import BPS, MetaWheelPolicy, load_meta_wheel_policy
@@ -54,13 +55,160 @@ class LotStatus(StrEnum):
 
 class ActionKind(StrEnum):
     RESERVE_REDEMPTION = "reserve_redemption"
+    RELEASE_REDEMPTION = "release_redemption"
     QUEUE_CSP_USDC = "queue_csp_usdc"
+    SPLIT_PENDING_CSP = "split_pending_csp"
     OPEN_CSP = "open_csp"
     SETTLE_CSP = "settle_csp"
     HANDOFF_ASSIGNMENT = "handoff_assignment"
     OPEN_CALL = "open_call"
     SETTLE_CALL = "settle_call"
     HANDOFF_CALL_AWAY = "handoff_call_away"
+
+
+class ManagedOperationClass(IntEnum):
+    """Exact ``WheelTypes.ManagedOperationClass`` discriminants."""
+
+    NONE = 0
+    ALLOCATION = 1
+    PROCESSING = 2
+    GUARDIAN = 3
+    CONFIGURATION = 4
+
+
+class ContractLaneKind(IntEnum):
+    """Exact ``WheelTypes.LaneKind`` discriminants used by ``RegisterLane``."""
+
+    NONE = 0
+    CSP = 1
+    COVERED_CALL = 2
+
+
+class ManagedOperation(IntEnum):
+    """Exact ``WheelTypes.ManagedOperation`` discriminants."""
+
+    NONE = 0
+    OPEN_CSP = 1
+    OPEN_COVERED_CALL = 2
+    SPLIT_PENDING_CSP = 3
+    SETTLE_CSP = 4
+    HANDOFF_CSP = 5
+    SETTLE_COVERED_CALL = 6
+    HANDOFF_COVERED_CALL = 7
+    RESERVE_REDEMPTION = 8
+    RELEASE_REDEMPTION = 9
+    PAUSE_ALLOCATIONS = 10
+    REGISTER_LANE = 11
+    REMOVE_LANE = 12
+    SET_LANE_ACTIVE = 13
+    SET_POLICY_HASH = 14
+    SET_FLOOR_BUFFER = 15
+    RESUME_ALLOCATIONS = 16
+
+
+class StrategyManagerWrapper(StrEnum):
+    ALLOCATION = "executeAdapterAllocationOperation"
+    PROCESSING = "executeAdapterProcessingOperation"
+    GUARDIAN = "executeAdapterGuardianOperation"
+    CONFIGURATION = "executeAdapterConfigurationOperation"
+
+
+@dataclass(frozen=True)
+class ManagedOperationRequest:
+    """Calldata submitted through a role-separated ``StrategyManager`` wrapper."""
+
+    wrapper: StrategyManagerWrapper
+    operation_class: ManagedOperationClass
+    operation: ManagedOperation
+    arguments: bytes
+    data: bytes
+
+
+_MANAGED_OPERATION_SPECS: dict[
+    ManagedOperation, tuple[ManagedOperationClass, tuple[str, ...]]
+] = {
+    ManagedOperation.OPEN_CSP: (
+        ManagedOperationClass.ALLOCATION,
+        ("uint256", "address", "bytes"),
+    ),
+    ManagedOperation.OPEN_COVERED_CALL: (
+        ManagedOperationClass.ALLOCATION,
+        ("uint256", "address", "bytes"),
+    ),
+    ManagedOperation.SPLIT_PENDING_CSP: (
+        ManagedOperationClass.ALLOCATION,
+        ("uint256", "uint256"),
+    ),
+    ManagedOperation.SETTLE_CSP: (ManagedOperationClass.PROCESSING, ("uint256",)),
+    ManagedOperation.HANDOFF_CSP: (ManagedOperationClass.PROCESSING, ("uint256",)),
+    ManagedOperation.SETTLE_COVERED_CALL: (
+        ManagedOperationClass.PROCESSING,
+        ("uint256",),
+    ),
+    ManagedOperation.HANDOFF_COVERED_CALL: (
+        ManagedOperationClass.PROCESSING,
+        ("uint256",),
+    ),
+    ManagedOperation.RESERVE_REDEMPTION: (
+        ManagedOperationClass.PROCESSING,
+        ("uint256", "uint256"),
+    ),
+    ManagedOperation.RELEASE_REDEMPTION: (
+        ManagedOperationClass.PROCESSING,
+        ("uint256",),
+    ),
+    ManagedOperation.PAUSE_ALLOCATIONS: (ManagedOperationClass.GUARDIAN, ()),
+    ManagedOperation.REGISTER_LANE: (
+        ManagedOperationClass.CONFIGURATION,
+        ("address", "uint8"),
+    ),
+    ManagedOperation.REMOVE_LANE: (
+        ManagedOperationClass.CONFIGURATION,
+        ("address",),
+    ),
+    ManagedOperation.SET_LANE_ACTIVE: (
+        ManagedOperationClass.CONFIGURATION,
+        ("address", "bool"),
+    ),
+    ManagedOperation.SET_POLICY_HASH: (
+        ManagedOperationClass.CONFIGURATION,
+        ("bytes32",),
+    ),
+    ManagedOperation.SET_FLOOR_BUFFER: (
+        ManagedOperationClass.CONFIGURATION,
+        ("uint256",),
+    ),
+    ManagedOperation.RESUME_ALLOCATIONS: (ManagedOperationClass.CONFIGURATION, ()),
+}
+
+_WRAPPER_BY_CLASS = {
+    ManagedOperationClass.ALLOCATION: StrategyManagerWrapper.ALLOCATION,
+    ManagedOperationClass.PROCESSING: StrategyManagerWrapper.PROCESSING,
+    ManagedOperationClass.GUARDIAN: StrategyManagerWrapper.GUARDIAN,
+    ManagedOperationClass.CONFIGURATION: StrategyManagerWrapper.CONFIGURATION,
+}
+
+
+def encode_managed_operation(
+    operation: ManagedOperation, *values: object
+) -> ManagedOperationRequest:
+    """Encode the dispatcher's exact ``abi.encode(operation, arguments)`` payload."""
+
+    try:
+        operation_class, argument_types = _MANAGED_OPERATION_SPECS[operation]
+    except KeyError as error:
+        raise ValueError(
+            f"Unsupported managed Wheel operation {operation!r}"
+        ) from error
+    arguments = encode(list(argument_types), list(values)) if argument_types else b""
+    data = encode(["uint8", "bytes"], [int(operation), arguments])
+    return ManagedOperationRequest(
+        wrapper=_WRAPPER_BY_CLASS[operation_class],
+        operation_class=operation_class,
+        operation=operation,
+        arguments=arguments,
+        data=data,
+    )
 
 
 @dataclass(frozen=True)
@@ -96,13 +244,14 @@ class PendingCspTranche:
     tranche_id: int
     state_nonce: int
     pending_usdc: int
+    principal_usdc: int
 
-    def validate(self, policy: MetaWheelPolicy) -> None:
+    def validate(self) -> None:
         if (
             self.tranche_id <= 0
             or self.state_nonce <= 0
             or self.pending_usdc <= 0
-            or self.pending_usdc > policy.maximum_usdc_per_csp_lane
+            or self.principal_usdc < 0
         ):
             raise RuntimeError(f"Invalid pending CSP tranche {self.tranche_id}")
 
@@ -117,6 +266,10 @@ class LaneSnapshot:
     child_position_id: int
     amount: int
     expiry: int
+    execution_state_hash: str
+    tranche_child_execution_state_hash: str
+    position_state_hash: str
+    nav_position_state_hash: str
     lot_ids: tuple[int, ...] = ()
     dedicated_to_parent: bool = True
     active_options: int = 0
@@ -135,6 +288,7 @@ class WheelQuote:
     canonical_series: bool
     delta_bps: int | None = None
     execution_slippage_bps: int = 0
+    open_data: bytes = b""
 
 
 @dataclass(frozen=True)
@@ -153,9 +307,10 @@ class WheelSnapshot:
     onchain_max_call_lanes: int
     onchain_max_usdc_per_csp_lane: int
     onchain_max_weth_per_call_lane: int
+    coordinator_position_state_hash: str
+    nav_coordinator_position_state_hash: str
     nav_coherent: bool
     nav_fresh: bool
-    positions_hash_match: bool
     transition_balances_reconciled: bool
     paused: bool
     parent_total_assets_usdc: int
@@ -164,6 +319,7 @@ class WheelSnapshot:
     pending_csp_tranches: tuple[PendingCspTranche, ...]
     pending_redemption_usdc: int
     reserved_redemption_usdc: int
+    reserved_principal_usdc: int
     coordinator_transition_nonce: int
     fund_flow_nonce: int
     spot_price8: int
@@ -191,6 +347,7 @@ class WheelAction:
     quote_id: str | None = None
     strike8: int | None = None
     required_floor8: int | None = None
+    open_data: bytes = b""
 
     @property
     def key(self) -> str:
@@ -206,6 +363,50 @@ class WheelAction:
         return hashlib.sha256(
             json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
+
+
+def managed_operation_for_action(action: WheelAction) -> ManagedOperationRequest:
+    """Map a lifecycle action to the frozen coordinator dispatcher ABI."""
+
+    if action.kind == ActionKind.OPEN_CSP:
+        return encode_managed_operation(
+            ManagedOperation.OPEN_CSP,
+            action.tranche_id,
+            action.lane,
+            action.open_data,
+        )
+    if action.kind == ActionKind.OPEN_CALL:
+        return encode_managed_operation(
+            ManagedOperation.OPEN_COVERED_CALL,
+            action.tranche_id,
+            action.lane,
+            action.open_data,
+        )
+    if action.kind == ActionKind.SPLIT_PENDING_CSP:
+        return encode_managed_operation(
+            ManagedOperation.SPLIT_PENDING_CSP, action.tranche_id, action.amount
+        )
+    if action.kind == ActionKind.SETTLE_CSP:
+        return encode_managed_operation(ManagedOperation.SETTLE_CSP, action.tranche_id)
+    if action.kind == ActionKind.HANDOFF_ASSIGNMENT:
+        return encode_managed_operation(ManagedOperation.HANDOFF_CSP, action.tranche_id)
+    if action.kind == ActionKind.SETTLE_CALL:
+        return encode_managed_operation(
+            ManagedOperation.SETTLE_COVERED_CALL, action.tranche_id
+        )
+    if action.kind == ActionKind.HANDOFF_CALL_AWAY:
+        return encode_managed_operation(
+            ManagedOperation.HANDOFF_COVERED_CALL, action.tranche_id
+        )
+    if action.kind == ActionKind.RESERVE_REDEMPTION:
+        return encode_managed_operation(
+            ManagedOperation.RESERVE_REDEMPTION, action.tranche_id, action.amount
+        )
+    if action.kind == ActionKind.RELEASE_REDEMPTION:
+        return encode_managed_operation(
+            ManagedOperation.RELEASE_REDEMPTION, action.amount
+        )
+    raise ValueError(f"Action {action.kind} is not a managed coordinator operation")
 
 
 @dataclass(frozen=True)
@@ -229,6 +430,7 @@ class Reconciliation:
     child_shares_delta_matches: bool
     usdc_delta_matches: bool
     weth_delta_matches: bool
+    principal_delta_matches: bool
     transition_nonce_advanced: bool
     premium_fee_matches: bool
 
@@ -238,13 +440,24 @@ class Reconciliation:
 
 
 class MetaWheelChainPort(Protocol):
-    """Contract adapter boundary; every read must use a confirmed safe block."""
+    """Contract adapter boundary; every read must use a confirmed safe block.
+
+    Implementations must route every non-queue action through
+    :func:`managed_operation_for_action` and the request's role-separated
+    ``StrategyManager`` wrapper. ``QUEUE_CSP_USDC`` remains the manager's normal
+    ``allocate`` entrypoint.
+    """
 
     def read_snapshot(self, policy: MetaWheelPolicy) -> WheelSnapshot: ...
 
     def list_quotes(self, snapshot: WheelSnapshot) -> Sequence[WheelQuote]: ...
 
-    def submit(self, action: WheelAction, policy: MetaWheelPolicy) -> SubmittedAction: ...
+    def submit(
+        self,
+        action: WheelAction,
+        policy: MetaWheelPolicy,
+        managed_request: ManagedOperationRequest | None,
+    ) -> SubmittedAction: ...
 
     def receipt(self, tx_hash: str, confirmations: int) -> CanonicalReceipt | None: ...
 
@@ -305,12 +518,15 @@ def required_call_floor8(lot: AssignmentLot, policy: MetaWheelPolicy) -> int:
     if lot.status not in {LotStatus.AVAILABLE, LotStatus.COMMITTED}:
         raise RuntimeError(f"Assignment lot {lot.lot_id} cannot fund a call")
     buffered = lot.literal_assignment_strike8 + policy.execution_cost_buffer
-    return ((buffered + policy.strike_tick - 1) // policy.strike_tick) * policy.strike_tick
+    return (
+        (buffered + policy.strike_tick - 1) // policy.strike_tick
+    ) * policy.strike_tick
 
 
 def _quote_is_fresh(quote: WheelQuote, now: int, policy: MetaWheelPolicy) -> bool:
     return (
         quote.canonical_series
+        and bool(quote.open_data)
         and 0 <= now - quote.created_at <= policy.quote_maximum_age
         and quote.deadline - now >= policy.quote_minimum_ttl
         and policy.min_expiry_delay <= quote.expiry - now <= policy.max_expiry_delay
@@ -335,7 +551,9 @@ def select_csp_quote(
         and quote.strike8 == target
         and _quote_is_fresh(quote, snapshot.timestamp, policy)
     ]
-    return max(candidates, key=lambda quote: (quote.deadline, quote.quote_id), default=None)
+    return max(
+        candidates, key=lambda quote: (quote.deadline, quote.quote_id), default=None
+    )
 
 
 def select_call_quote(
@@ -401,7 +619,9 @@ class MetaWheelPlanner:
             or snapshot.onchain_max_weth_per_call_lane
             != policy.maximum_weth_per_cc_lane
         ):
-            raise RuntimeError("Meta Wheel on-chain floor or lane caps differ from policy")
+            raise RuntimeError(
+                "Meta Wheel on-chain floor or lane caps differ from policy"
+            )
         if (
             snapshot.safe_block_confirmations < 2
             or not snapshot.safe_block_canonical
@@ -411,10 +631,19 @@ class MetaWheelPlanner:
         if not (
             snapshot.nav_coherent
             and snapshot.nav_fresh
-            and snapshot.positions_hash_match
             and snapshot.transition_balances_reconciled
         ):
             raise RuntimeError("Meta Wheel NAV or custody state is not coherent")
+        if (
+            not snapshot.coordinator_position_state_hash
+            or snapshot.coordinator_position_state_hash
+            != snapshot.nav_coordinator_position_state_hash
+        ):
+            raise RuntimeError(
+                "Meta Wheel coordinator positionStateHash differs from NAV"
+            )
+        if snapshot.reserved_principal_usdc < 0:
+            raise RuntimeError("Meta Wheel reserved principal is invalid")
         expected_fees = (
             policy.protocol_gross_premium_fee_bps,
             policy.parent_management_fee_bps,
@@ -431,9 +660,10 @@ class MetaWheelPlanner:
         )
         if actual_fees != expected_fees:
             raise RuntimeError("Meta Wheel fee configuration differs from policy")
-        if len(snapshot.csp_lanes) > policy.maximum_csp_lanes or len(
-            snapshot.call_lanes
-        ) > policy.maximum_cc_lanes:
+        if (
+            len(snapshot.csp_lanes) > policy.maximum_csp_lanes
+            or len(snapshot.call_lanes) > policy.maximum_cc_lanes
+        ):
             raise RuntimeError("Meta Wheel registered lane count exceeds policy")
         addresses: set[str] = set()
         csp_addresses = {lane.address.lower() for lane in snapshot.csp_lanes}
@@ -448,7 +678,9 @@ class MetaWheelPlanner:
                 if lane.kind == LaneKind.COVERED_CALL:
                     for lot_id in lane.lot_ids:
                         if lot_id in consumed_lots:
-                            raise RuntimeError("Meta Wheel lot is attached to two call lanes")
+                            raise RuntimeError(
+                                "Meta Wheel lot is attached to two call lanes"
+                            )
                         consumed_lots.add(lot_id)
         for lane in (*snapshot.csp_lanes, *snapshot.call_lanes):
             if not lane.dedicated_to_parent or not lane.address:
@@ -461,6 +693,21 @@ class MetaWheelPlanner:
                 raise RuntimeError("Meta Wheel child lane has excess active options")
             if lane.tranche_id < 0 or lane.transition_nonce < 0:
                 raise RuntimeError("Meta Wheel lane identifiers are invalid")
+            active = lane.phase not in {LanePhase.IDLE, LanePhase.PAUSED}
+            if active and (
+                not lane.execution_state_hash
+                or lane.execution_state_hash != lane.tranche_child_execution_state_hash
+            ):
+                raise RuntimeError(
+                    "Meta Wheel child executionStateHash differs from tranche"
+                )
+            if active and (
+                not lane.position_state_hash
+                or lane.position_state_hash != lane.nav_position_state_hash
+            ):
+                raise RuntimeError(
+                    "Meta Wheel child positionStateHash differs from NAV"
+                )
         seen_lots: set[int] = set()
         for lot in snapshot.assignment_lots:
             lot.validate()
@@ -471,10 +718,17 @@ class MetaWheelPlanner:
                 raise RuntimeError("Meta Wheel lot origin is not a dedicated CSP lane")
         seen_tranches: set[int] = set()
         for tranche in snapshot.pending_csp_tranches:
-            tranche.validate(policy)
+            tranche.validate()
             if tranche.tranche_id in seen_tranches:
                 raise RuntimeError("Meta Wheel pending CSP tranche is duplicated")
             seen_tranches.add(tranche.tranche_id)
+        if (
+            sum(tranche.pending_usdc for tranche in snapshot.pending_csp_tranches)
+            != snapshot.pending_csp_usdc
+        ):
+            raise RuntimeError(
+                "Meta Wheel pending CSP tranche accounting is incoherent"
+            )
 
     @staticmethod
     def _action(
@@ -505,29 +759,40 @@ class MetaWheelPlanner:
             if lane.phase == LanePhase.CSP_OPEN and lane.expiry <= snapshot.timestamp:
                 actions.append(self._action(snapshot, lane, ActionKind.SETTLE_CSP))
             elif lane.phase == LanePhase.CSP_SETTLING:
-                actions.append(self._action(snapshot, lane, ActionKind.HANDOFF_ASSIGNMENT))
+                actions.append(
+                    self._action(snapshot, lane, ActionKind.HANDOFF_ASSIGNMENT)
+                )
         for lane in snapshot.call_lanes:
             if lane.phase == LanePhase.CALL_OPEN and lane.expiry <= snapshot.timestamp:
                 actions.append(self._action(snapshot, lane, ActionKind.SETTLE_CALL))
             elif lane.phase == LanePhase.CALL_SETTLING:
-                actions.append(self._action(snapshot, lane, ActionKind.HANDOFF_CALL_AWAY))
+                actions.append(
+                    self._action(snapshot, lane, ActionKind.HANDOFF_CALL_AWAY)
+                )
 
-        reserve_target = snapshot.pending_redemption_usdc
-        reserve_gap = max(reserve_target - snapshot.reserved_redemption_usdc, 0)
-        reserve_amount = min(reserve_gap, snapshot.pending_csp_usdc)
-        if reserve_amount:
+        reserve_gap = max(
+            snapshot.pending_redemption_usdc - snapshot.reserved_redemption_usdc,
+            0,
+        )
+        for tranche in sorted(
+            snapshot.pending_csp_tranches, key=lambda item: item.tranche_id
+        ):
+            if reserve_gap == 0:
+                break
+            amount = min(reserve_gap, tranche.pending_usdc)
             actions.append(
                 WheelAction(
                     kind=ActionKind.RESERVE_REDEMPTION,
                     chain_id=snapshot.chain_id,
                     parent=snapshot.parent,
                     lane=snapshot.coordinator,
-                    tranche_id=0,
-                    transition_nonce=snapshot.coordinator_transition_nonce,
+                    tranche_id=tranche.tranche_id,
+                    transition_nonce=tranche.state_nonce,
                     child_position_id=0,
-                    amount=reserve_amount,
+                    amount=amount,
                 )
             )
+            reserve_gap -= amount
 
         if (
             snapshot.paused
@@ -570,6 +835,7 @@ class MetaWheelPlanner:
                     quote_id=quote.quote_id,
                     strike8=quote.strike8,
                     required_floor8=floor,
+                    open_data=quote.open_data,
                 )
             )
 
@@ -583,6 +849,20 @@ class MetaWheelPlanner:
         ):
             if not free_csp_lanes:
                 break
+            if tranche.pending_usdc > self.policy.maximum_usdc_per_csp_lane:
+                actions.append(
+                    WheelAction(
+                        kind=ActionKind.SPLIT_PENDING_CSP,
+                        chain_id=snapshot.chain_id,
+                        parent=snapshot.parent,
+                        lane=snapshot.coordinator,
+                        tranche_id=tranche.tranche_id,
+                        transition_nonce=tranche.state_nonce,
+                        child_position_id=0,
+                        amount=self.policy.maximum_usdc_per_csp_lane,
+                    )
+                )
+                continue
             if (
                 quote is None
                 or tranche.pending_usdc > available_pending_csp
@@ -604,6 +884,7 @@ class MetaWheelPlanner:
                     amount=amount,
                     quote_id=quote.quote_id,
                     strike8=quote.strike8,
+                    open_data=quote.open_data,
                 )
             )
             available_pending_csp -= amount
@@ -611,8 +892,7 @@ class MetaWheelPlanner:
         protected = max(
             snapshot.idle_usdc * self.policy.parent_liquid_reserve_bps // BPS,
             max(
-                snapshot.pending_redemption_usdc
-                - snapshot.reserved_redemption_usdc,
+                snapshot.pending_redemption_usdc - snapshot.reserved_redemption_usdc,
                 0,
             ),
         )
@@ -624,7 +904,10 @@ class MetaWheelPlanner:
             lane.phase not in {LanePhase.IDLE, LanePhase.PAUSED}
             for lane in snapshot.csp_lanes
         ) + len(snapshot.pending_csp_tranches)
-        if allocatable_parent_usdc > 0 and occupied_or_pending < self.policy.maximum_csp_lanes:
+        if (
+            allocatable_parent_usdc > 0
+            and occupied_or_pending < self.policy.maximum_csp_lanes
+        ):
             actions.append(
                 WheelAction(
                     kind=ActionKind.QUEUE_CSP_USDC,
@@ -684,7 +967,9 @@ class MetaWheelAllocator:
                 reconciliation = self.chain.reconcile(action, receipt)
                 if not reconciliation.valid:
                     self.journal.record(action.key, "reconciliation_failed", tx_hash)
-                    raise RuntimeError("Meta Wheel action balance reconciliation failed")
+                    raise RuntimeError(
+                        "Meta Wheel action balance reconciliation failed"
+                    )
                 self.journal.record(action.key, "confirmed", tx_hash)
                 return True
             else:
@@ -701,7 +986,12 @@ class MetaWheelAllocator:
         candidate = next((item for item in candidates if item.key == action.key), None)
         if candidate != action:
             raise RuntimeError("Meta Wheel action changed during preflight")
-        submitted = self.chain.submit(action, policy)
+        managed_request = (
+            None
+            if action.kind == ActionKind.QUEUE_CSP_USDC
+            else managed_operation_for_action(action)
+        )
+        submitted = self.chain.submit(action, policy, managed_request)
         self.journal.record(action.key, "submitted", submitted.tx_hash)
         receipt = self.chain.receipt(submitted.tx_hash, self.confirmations)
         if receipt is None:
