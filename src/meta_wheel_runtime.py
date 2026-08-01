@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -47,6 +48,9 @@ from src.signer import build_domain, sign_quote
 
 WAD = 10**18
 USDC_PER_WETH_SCALE = 10**20
+EIP1967_IMPLEMENTATION_SLOT = int(
+    "360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc", 16
+)
 
 
 def _function(
@@ -515,6 +519,10 @@ _LANE_EVENTS = [
 
 
 def _hex(value: Any) -> str:
+    if isinstance(value, str):
+        if not value.startswith("0x"):
+            raise ValueError("expected hex string")
+        return value
     return Web3.to_hex(value)
 
 
@@ -535,11 +543,90 @@ def _addresses(raw: str | None, label: str) -> frozenset[str]:
     return frozenset(normalized)
 
 
+def _quote_created_at(raw: dict[str, Any]) -> int:
+    value = raw.get("created_at")
+    if isinstance(value, bool):
+        raise ValueError("boolean quote timestamp")
+    if isinstance(value, (int, float)):
+        timestamp = int(value)
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdecimal():
+            timestamp = int(stripped)
+        else:
+            timestamp = int(
+                datetime.fromisoformat(stripped.replace("Z", "+00:00"))
+                .astimezone(UTC)
+                .timestamp()
+            )
+    else:
+        raise ValueError("missing quote timestamp")
+    if timestamp <= 0:
+        raise ValueError("invalid quote timestamp")
+    return timestamp
+
+
+def _quote_identity(raw: dict[str, Any]) -> tuple[int, int]:
+    return int(raw["maker_nonce"]), int(raw["quote_id"])
+
+
+def _quote_core(raw: dict[str, Any]) -> tuple[str, int, int, int, int, int]:
+    return (
+        Web3.to_checksum_address(raw["otoken_address"]),
+        int(raw["bid_price"]),
+        int(raw["deadline"]),
+        int(raw["quote_id"]),
+        int(raw["max_amount"]),
+        int(raw["maker_nonce"]),
+    )
+
+
+def _ambiguous_quote_identities(
+    raw_quotes: list[dict[str, Any]],
+) -> frozenset[tuple[int, int]]:
+    observed: dict[tuple[int, int], tuple[str, int, int, int, int, int]] = {}
+    ambiguous: set[tuple[int, int]] = set()
+    for raw in raw_quotes:
+        try:
+            identity = _quote_identity(raw)
+            core = _quote_core(raw)
+        except (KeyError, TypeError, ValueError):
+            continue
+        previous = observed.setdefault(identity, core)
+        if previous != core:
+            ambiguous.add(identity)
+    return frozenset(ambiguous)
+
+
 @dataclass(frozen=True)
 class DecodedWheelEvent:
     name: str
     address: str
     args: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class WheelObservedState:
+    parent_idle_usdc: int
+    coordinator_accounted_usdc: int
+    coordinator_accounted_weth: int
+    coordinator_transition_weth: int
+    coordinator_raw_usdc: int
+    coordinator_raw_weth: int
+    pending_csp_usdc: int
+    reserved_redemption_usdc: int
+    reserved_principal_usdc: int
+    tranche_principal_usdc: int = 0
+    tranche_pending_usdc: int = 0
+    sibling_principal_usdc: int = 0
+    sibling_pending_usdc: int = 0
+    lane_child_shares: int = 0
+    lane_accounted_usdc: int = 0
+    lane_accounted_weth: int = 0
+    lane_raw_usdc: int = 0
+    lane_raw_weth: int = 0
+    lane_execution_state_hash: str = ""
+    lane_position_state_hash: str = ""
 
 
 class BaseSepoliaMetaWheelRuntime:
@@ -550,6 +637,7 @@ class BaseSepoliaMetaWheelRuntime:
         self.w3 = w3 or Web3(Web3.HTTPProvider(config.RPC_URL))
         if int(self.w3.eth.chain_id) != BASE_SEPOLIA_CHAIN_ID:
             raise RuntimeError("Meta Wheel runtime RPC is not Base Sepolia")
+        self._verify_manifest_chain()
         self.parent = self.w3.eth.contract(address=manifest.parent, abi=_PARENT_ABI)
         self.coordinator = self.w3.eth.contract(
             address=manifest.coordinator,
@@ -597,6 +685,50 @@ class BaseSepoliaMetaWheelRuntime:
         ):
             if not self.w3.eth.get_code(address):
                 raise RuntimeError(f"Meta Wheel runtime address has no code: {address}")
+
+    def _verify_manifest_chain(self) -> None:
+        safe = int(self.w3.eth.block_number) - max(
+            config.META_WHEEL_ALLOCATOR_CONFIRMATIONS, 2
+        )
+        if safe < self.manifest.deployment_end_block:
+            raise RuntimeError("Meta Wheel manifest is not confirmed on this RPC")
+        for expected in self.manifest.canonical_receipts:
+            try:
+                receipt = self.w3.eth.get_transaction_receipt(expected.transaction_hash)
+                block = self.w3.eth.get_block(expected.block_number)
+            except Exception:
+                raise RuntimeError(
+                    "Meta Wheel canonical deployment receipt is unavailable"
+                ) from None
+            if (
+                int(receipt.status) != 1
+                or int(receipt.blockNumber) != expected.block_number
+                or _hex(receipt.blockHash).lower() != expected.block_hash
+                or _hex(block.hash).lower() != expected.block_hash
+            ):
+                raise RuntimeError(
+                    "Meta Wheel canonical deployment receipt is not canonical"
+                )
+        for binding in self.manifest.proxy_bindings:
+            try:
+                raw = self.w3.eth.get_storage_at(
+                    binding.proxy,
+                    EIP1967_IMPLEMENTATION_SLOT,
+                    block_identifier=safe,
+                )
+                implementation = Web3.to_checksum_address(bytes(raw)[-20:])
+            except Exception:
+                raise RuntimeError(
+                    f"Meta Wheel proxy binding is unreadable: {binding.label}"
+                ) from None
+            if implementation != binding.implementation:
+                raise RuntimeError(
+                    f"Meta Wheel proxy implementation changed: {binding.label}"
+                )
+        for binding in self.manifest.code_bindings:
+            code = bytes(self.w3.eth.get_code(binding.address, block_identifier=safe))
+            if not code or _hex(Web3.keccak(code)).lower() != binding.codehash:
+                raise RuntimeError(f"Meta Wheel codehash changed: {binding.label}")
 
     def _call(self, function: Any, block: int) -> Any:
         return function.call(block_identifier=block)
@@ -726,11 +858,9 @@ class BaseSepoliaMetaWheelRuntime:
         )
         accounting = self.w3.eth.contract(address=address, abi=accounting_abi)
         accounted = tuple(self._call(accounting.functions.accountingState(), block))
-        balance_ok = int(accounted[0]) <= int(
-            self._call(self.usdc.functions.balanceOf(address), block)
-        ) and int(accounted[1]) <= int(
-            self._call(self.weth.functions.balanceOf(address), block)
-        )
+        raw_usdc = int(self._call(self.usdc.functions.balanceOf(address), block))
+        raw_weth = int(self._call(self.weth.functions.balanceOf(address), block))
+        balance_ok = int(accounted[0]) <= raw_usdc and int(accounted[1]) <= raw_weth
         return (
             LaneSnapshot(
                 address=address,
@@ -749,10 +879,102 @@ class BaseSepoliaMetaWheelRuntime:
                 adapter=adapter_address,
                 dedicated_to_parent=True,
                 active_options=int(state != 0 and position_id != 0),
+                tranche_principal_usdc=int(tranche[4]) if tranche else 0,
+                tranche_pending_usdc=int(tranche[5]) if tranche else 0,
+                accounted_usdc=int(accounted[0]),
+                accounted_weth=int(accounted[1]),
+                raw_usdc=raw_usdc,
+                raw_weth=raw_weth,
             ),
             max_assets,
             balance_ok,
         )
+
+    def _bind_nav_observation(
+        self,
+        *,
+        lanes: tuple[LaneSnapshot, ...],
+        nav: tuple[Any, ...],
+        component_id: bytes,
+        safe_block: int,
+    ) -> tuple[LaneSnapshot, ...]:
+        fund_key = config.META_WHEEL_FUND_KEY
+        if not fund_key:
+            raise RuntimeError("META_WHEEL_FUND_KEY is required")
+        snapshot_block = int(nav[5])
+        try:
+            observation = api_client.get_meta_wheel_nav_observation(
+                fund_key, snapshot_block=snapshot_block
+            )
+            block = self.w3.eth.get_block(snapshot_block)
+            expected_block_hash = _hex(block.hash).lower()
+            coordinator_at_snapshot = _hex(
+                self._call(
+                    self.coordinator.functions.positionStateHash(), snapshot_block
+                )
+            ).lower()
+            if (
+                observation.get("fundKey") != fund_key
+                or int(observation["chainId"]) != BASE_SEPOLIA_CHAIN_ID
+                or Web3.to_checksum_address(observation["fundAddress"])
+                != self.manifest.parent
+                or Web3.to_checksum_address(observation["coordinator"])
+                != self.manifest.coordinator
+                or int(observation["reportNonce"]) != int(nav[9])
+                or _hex(observation["componentId"]).lower()
+                != _hex(component_id).lower()
+                or _hex(observation["coordinatorPositionStateHash"]).lower()
+                != coordinator_at_snapshot
+                or int(observation["snapshotBlock"]) != snapshot_block
+                or _hex(observation["snapshotBlockHash"]).lower() != expected_block_hash
+                or not int(observation["validAfterBlock"])
+                <= safe_block
+                <= int(observation["validUntilBlock"])
+                or not int(nav[6]) <= safe_block <= int(nav[7])
+            ):
+                raise RuntimeError("Meta Wheel NAV observation is incoherent")
+            raw_lanes = observation["lanes"]
+            if not isinstance(raw_lanes, list):
+                raise RuntimeError("Meta Wheel NAV lanes are invalid")
+            by_address: dict[str, dict[str, Any]] = {}
+            for raw in raw_lanes:
+                if not isinstance(raw, dict):
+                    raise RuntimeError("Meta Wheel NAV lane is invalid")
+                address = Web3.to_checksum_address(raw["lane"])
+                if address in by_address:
+                    raise RuntimeError("Meta Wheel NAV lane is duplicated")
+                by_address[address] = raw
+            active = {lane.address: lane for lane in lanes if lane.amount > 0}
+            if set(by_address) != set(active):
+                raise RuntimeError("Meta Wheel NAV lane set is incomplete")
+            bound: list[LaneSnapshot] = []
+            for lane in lanes:
+                if lane.amount == 0:
+                    bound.append(lane)
+                    continue
+                raw = by_address[lane.address]
+                lane_contract = self._lane_contract(lane.address)
+                position_hash = _hex(
+                    self._call(
+                        lane_contract.functions.positionStateHash(), snapshot_block
+                    )
+                ).lower()
+                if (
+                    int(raw["childShares"]) != lane.amount
+                    or _hex(raw["positionStateHash"]).lower() != position_hash
+                    or int(raw["snapshotBlock"]) != snapshot_block
+                    or _hex(raw["snapshotBlockHash"]).lower() != expected_block_hash
+                    or not int(raw["validAfterBlock"])
+                    <= snapshot_block
+                    <= int(raw["validUntilBlock"])
+                ):
+                    raise RuntimeError("Meta Wheel NAV lane evidence is incoherent")
+                bound.append(replace(lane, nav_position_state_hash=position_hash))
+            return tuple(bound)
+        except RuntimeError:
+            raise
+        except Exception:
+            raise RuntimeError("Meta Wheel NAV observation is unavailable") from None
 
     def read_snapshot(self, policy: MetaWheelPolicy) -> WheelSnapshot:
         if (
@@ -867,6 +1089,15 @@ class BaseSepoliaMetaWheelRuntime:
             )
         )
         nav_component_hash = _hex(component[3])
+        all_lanes = self._bind_nav_observation(
+            lanes=(*csp_lanes, *call_lanes),
+            nav=nav,
+            component_id=component_id,
+            safe_block=safe,
+        )
+        by_lane = {lane.address: lane for lane in all_lanes}
+        csp_lanes = tuple(by_lane[lane.address] for lane in csp_lanes)
+        call_lanes = tuple(by_lane[lane.address] for lane in call_lanes)
         nav_coherent = (
             bool(component[4])
             and Web3.to_checksum_address(component[0]) == self.manifest.valuator
@@ -933,6 +1164,8 @@ class BaseSepoliaMetaWheelRuntime:
                     literal_assignment_strike8=int(value[7]),
                     created_at=int(value[1]),
                     status=lot_status[raw_status],
+                    tranche_principal_usdc=int(tranches[tranche_id][4]),
+                    tranche_pending_usdc=int(tranches[tranche_id][5]),
                 )
             )
         after = self.w3.eth.get_block(safe)
@@ -986,6 +1219,11 @@ class BaseSepoliaMetaWheelRuntime:
             csp_lanes=csp_lanes,
             call_lanes=call_lanes,
             assignment_lots=tuple(assignment_lots),
+            coordinator_accounted_usdc=int(summary[7]),
+            coordinator_accounted_weth=int(summary[8]),
+            coordinator_transition_weth=int(summary[6]),
+            coordinator_raw_usdc=coordinator_usdc,
+            coordinator_raw_weth=coordinator_weth,
         )
 
     def _compatible_series(self, raw: dict[str, Any], is_put: bool, block: int) -> bool:
@@ -1095,6 +1333,7 @@ class BaseSepoliaMetaWheelRuntime:
         market = api_client.get_market_data(asset="eth", chain="base")
         api_client.require_protocol_fee_match(market, snapshot.protocol_premium_fee_bps)
         raw_quotes = api_client.get_quotes()
+        ambiguous_quote_identities = _ambiguous_quote_identities(raw_quotes)
         try:
             signer = Web3.to_checksum_address(
                 Account.from_key(config.MM_PRIVATE_KEY).address
@@ -1128,6 +1367,8 @@ class BaseSepoliaMetaWheelRuntime:
         ]
         for raw in raw_quotes:
             try:
+                if _quote_identity(raw) in ambiguous_quote_identities:
+                    continue
                 is_put = raw.get("is_put") is True
                 if (
                     raw.get("asset") != "eth"
@@ -1148,7 +1389,7 @@ class BaseSepoliaMetaWheelRuntime:
                     "is_put": is_put,
                     "strike8": strike8,
                     "expiry": int(raw["expiry"]),
-                    "created_at": snapshot.timestamp,
+                    "created_at": _quote_created_at(raw),
                     "deadline": int(raw["deadline"]),
                     "canonical_series": True,
                 }
@@ -1197,7 +1438,11 @@ class BaseSepoliaMetaWheelRuntime:
                             minimum_net_premium_bps=self._minimum_net_premium_bps,
                             protocol_fee_bps=snapshot.protocol_premium_fee_bps,
                         )
-                        bid_price = max(bid_price, int(raw["bid_price"]))
+                        if int(raw["bid_price"]) < bid_price:
+                            # Never mutate and re-sign a backend quote. Its exact raw
+                            # digest is the only key checked for fills/cancellation.
+                            continue
+                        bid_price = int(raw["bid_price"])
                         premium = option_amount * bid_price // 10**8
                         collateral_value = (
                             lot.remaining_weth
@@ -1285,6 +1530,11 @@ class BaseSepoliaMetaWheelRuntime:
         reconciled = reconcile_wheel_events(
             action, events, premium_fee_bps=self.manifest.premium_fee_bps
         )
+        state_reconciled = reconcile_wheel_state(
+            action,
+            events,
+            self._observed_state(action, events, receipt.block_number),
+        )
         if action.kind == ActionKind.QUEUE_CSP_USDC:
             advanced = (
                 int(
@@ -1329,9 +1579,133 @@ class BaseSepoliaMetaWheelRuntime:
             advanced = int(post[2]) > action.transition_nonce
         return replace(
             reconciled,
-            transition_nonce_advanced=(
-                reconciled.transition_nonce_advanced and advanced
+            child_shares_delta_matches=(
+                reconciled.child_shares_delta_matches
+                and state_reconciled.child_shares_delta_matches
             ),
+            usdc_delta_matches=(
+                reconciled.usdc_delta_matches and state_reconciled.usdc_delta_matches
+            ),
+            weth_delta_matches=(
+                reconciled.weth_delta_matches and state_reconciled.weth_delta_matches
+            ),
+            principal_delta_matches=(
+                reconciled.principal_delta_matches
+                and state_reconciled.principal_delta_matches
+            ),
+            transition_nonce_advanced=(
+                reconciled.transition_nonce_advanced
+                and advanced
+                and state_reconciled.transition_nonce_advanced
+            ),
+            premium_fee_matches=(
+                reconciled.premium_fee_matches and state_reconciled.premium_fee_matches
+            ),
+        )
+
+    def _observed_state(
+        self,
+        action: WheelAction,
+        events: list[DecodedWheelEvent],
+        block: int,
+    ) -> WheelObservedState:
+        summary = tuple(self._call(self.coordinator.functions.summary(), block))
+        tranche = (
+            tuple(
+                self._call(self.coordinator.functions.tranche(action.tranche_id), block)
+            )
+            if action.tranche_id
+            else None
+        )
+        sibling_id = 0
+        for event_name in (
+            "WheelSiblingTrancheQueued",
+            "WheelRedemptionUsdcReleased",
+            "WheelTrancheQueued",
+        ):
+            event = _matching(events, event_name)
+            if event is not None:
+                sibling_id = int(
+                    event.args.get("siblingTrancheId")
+                    or event.args.get("trancheId")
+                    or 0
+                )
+        sibling = (
+            tuple(self._call(self.coordinator.functions.tranche(sibling_id), block))
+            if sibling_id
+            else None
+        )
+        lane_shares = lane_accounted_usdc = lane_accounted_weth = 0
+        lane_raw_usdc = lane_raw_weth = 0
+        lane_execution_hash = lane_position_hash = ""
+        if action.kind in {
+            ActionKind.OPEN_CSP,
+            ActionKind.OPEN_CALL,
+            ActionKind.SETTLE_CSP,
+            ActionKind.SETTLE_CALL,
+            ActionKind.HANDOFF_ASSIGNMENT,
+            ActionKind.HANDOFF_CALL_AWAY,
+        }:
+            lane = self._lane_contract(Web3.to_checksum_address(action.lane))
+            lane_shares = int(self._call(lane.functions.childShares(), block))
+            lane_execution_hash = _hex(
+                self._call(lane.functions.executionStateHash(), block)
+            )
+            lane_position_hash = _hex(
+                self._call(lane.functions.positionStateHash(), block)
+            )
+            accounting_abi = (
+                _CSP_ACCOUNTING_ABI
+                if action.kind
+                in {
+                    ActionKind.OPEN_CSP,
+                    ActionKind.SETTLE_CSP,
+                    ActionKind.HANDOFF_ASSIGNMENT,
+                }
+                else _CALL_ACCOUNTING_ABI
+            )
+            accounting = self.w3.eth.contract(
+                address=Web3.to_checksum_address(action.lane), abi=accounting_abi
+            )
+            values = tuple(self._call(accounting.functions.accountingState(), block))
+            lane_accounted_usdc, lane_accounted_weth = map(int, values[:2])
+            lane_raw_usdc = int(
+                self._call(self.usdc.functions.balanceOf(action.lane), block)
+            )
+            lane_raw_weth = int(
+                self._call(self.weth.functions.balanceOf(action.lane), block)
+            )
+        return WheelObservedState(
+            parent_idle_usdc=int(
+                self._call(self.parent.functions.accountedIdleAssets(), block)
+            ),
+            coordinator_accounted_usdc=int(summary[7]),
+            coordinator_accounted_weth=int(summary[8]),
+            coordinator_transition_weth=int(summary[6]),
+            coordinator_raw_usdc=int(
+                self._call(
+                    self.usdc.functions.balanceOf(self.manifest.coordinator), block
+                )
+            ),
+            coordinator_raw_weth=int(
+                self._call(
+                    self.weth.functions.balanceOf(self.manifest.coordinator), block
+                )
+            ),
+            pending_csp_usdc=int(summary[3]),
+            reserved_redemption_usdc=int(summary[4]),
+            reserved_principal_usdc=int(summary[5]),
+            tranche_principal_usdc=int(tranche[4]) if tranche else 0,
+            tranche_pending_usdc=int(tranche[5]) if tranche else 0,
+            sibling_principal_usdc=int(sibling[4]) if sibling else 0,
+            sibling_pending_usdc=int(sibling[5]) if sibling else 0,
+            lane_child_shares=lane_shares,
+            lane_accounted_usdc=lane_accounted_usdc,
+            lane_accounted_weth=lane_accounted_weth,
+            lane_raw_usdc=lane_raw_usdc,
+            lane_raw_weth=lane_raw_weth,
+            lane_execution_state_hash=lane_execution_hash,
+            lane_position_state_hash=lane_position_hash,
         )
 
 
@@ -1345,15 +1719,18 @@ def _matching(
             return value.lower()
         return value
 
-    for event in events:
-        if event.name != name:
-            continue
+    candidates = [event for event in events if event.name == name]
+    if len(candidates) != 1:
+        return None
+    event = candidates[0]
+    return (
+        event
         if all(
             normalized(event.args.get(field)) == normalized(value)
             for field, value in expected.items()
-        ):
-            return event
-    return None
+        )
+        else None
+    )
 
 
 def _premium_ok(
@@ -1371,6 +1748,316 @@ def _premium_ok(
     fee = int(event.args["protocolFeeAssets"])
     net = int(event.args["netPremiumAssets"])
     return gross > 0 and fee == gross * premium_fee_bps // BPS and net == gross - fee
+
+
+def _principal_share(principal: int, total_assets: int, assets: int) -> int:
+    if total_assets <= 0 or not 0 <= assets <= total_assets:
+        return -1
+    return principal if assets == total_assets else principal * assets // total_assets
+
+
+def reconcile_wheel_state(
+    action: WheelAction,
+    events: list[DecodedWheelEvent],
+    post: WheelObservedState,
+) -> Reconciliation:
+    """Check receipt-block custody, child-share, and principal deltas."""
+
+    pre = action.pre_state
+    if pre is None:
+        return Reconciliation(False, False, False, False, False, False)
+    coordinator_reserves_unchanged = (
+        post.reserved_redemption_usdc == pre.reserved_redemption_usdc
+        and post.reserved_principal_usdc == pre.reserved_principal_usdc
+    )
+    coordinator_usdc_unchanged = (
+        post.coordinator_accounted_usdc == pre.coordinator_accounted_usdc
+        and post.coordinator_raw_usdc == pre.coordinator_raw_usdc
+        and post.pending_csp_usdc == pre.pending_csp_usdc
+        and post.parent_idle_usdc == pre.parent_idle_usdc
+    )
+    coordinator_weth_unchanged = (
+        post.coordinator_accounted_weth == pre.coordinator_accounted_weth
+        and post.coordinator_raw_weth == pre.coordinator_raw_weth
+        and post.coordinator_transition_weth == pre.coordinator_transition_weth
+    )
+    child = usdc = weth = principal = transition = False
+    if action.kind == ActionKind.QUEUE_CSP_USDC:
+        event = _matching(events, "WheelTrancheQueued")
+        child = transition = event is not None
+        usdc = bool(
+            event
+            and post.parent_idle_usdc == pre.parent_idle_usdc - action.amount
+            and post.coordinator_accounted_usdc
+            == pre.coordinator_accounted_usdc + action.amount
+            and post.coordinator_raw_usdc == pre.coordinator_raw_usdc + action.amount
+            and post.pending_csp_usdc == pre.pending_csp_usdc + action.amount
+            and coordinator_reserves_unchanged
+        )
+        weth = coordinator_weth_unchanged
+        principal = bool(
+            event
+            and post.sibling_principal_usdc == action.amount
+            and post.sibling_pending_usdc == action.amount
+        )
+    elif action.kind == ActionKind.SPLIT_PENDING_CSP:
+        event = _matching(events, "WheelSiblingTrancheQueued")
+        moved = int(event.args["principalUsdc"]) if event else -1
+        child = transition = event is not None
+        usdc = coordinator_usdc_unchanged and coordinator_reserves_unchanged
+        weth = coordinator_weth_unchanged
+        principal = bool(
+            event
+            and moved
+            == _principal_share(
+                pre.tranche_principal_usdc,
+                pre.tranche_pending_usdc,
+                action.amount,
+            )
+            and post.tranche_principal_usdc == pre.tranche_principal_usdc - moved
+            and post.tranche_pending_usdc == pre.tranche_pending_usdc - action.amount
+            and post.sibling_principal_usdc == moved
+            and post.sibling_pending_usdc == action.amount
+        )
+    elif action.kind == ActionKind.RESERVE_REDEMPTION:
+        event = _matching(events, "WheelRedemptionUsdcReserved")
+        moved = int(event.args["principalReserved"]) if event else -1
+        child = transition = event is not None
+        usdc = (
+            post.parent_idle_usdc == pre.parent_idle_usdc
+            and post.coordinator_accounted_usdc == pre.coordinator_accounted_usdc
+            and post.coordinator_raw_usdc == pre.coordinator_raw_usdc
+            and post.pending_csp_usdc == pre.pending_csp_usdc - action.amount
+            and post.reserved_redemption_usdc
+            == pre.reserved_redemption_usdc + action.amount
+        )
+        weth = coordinator_weth_unchanged
+        principal = bool(
+            event
+            and moved
+            == _principal_share(
+                pre.tranche_principal_usdc,
+                pre.tranche_pending_usdc,
+                action.amount,
+            )
+            and post.tranche_principal_usdc == pre.tranche_principal_usdc - moved
+            and post.tranche_pending_usdc == pre.tranche_pending_usdc - action.amount
+            and post.reserved_principal_usdc == pre.reserved_principal_usdc + moved
+        )
+    elif action.kind == ActionKind.RELEASE_REDEMPTION:
+        event = _matching(events, "WheelRedemptionUsdcReleased")
+        restored = int(event.args["principalRestored"]) if event else -1
+        child = transition = event is not None
+        usdc = (
+            post.parent_idle_usdc == pre.parent_idle_usdc
+            and post.coordinator_accounted_usdc == pre.coordinator_accounted_usdc
+            and post.coordinator_raw_usdc == pre.coordinator_raw_usdc
+            and post.pending_csp_usdc == pre.pending_csp_usdc + action.amount
+            and post.reserved_redemption_usdc
+            == pre.reserved_redemption_usdc - action.amount
+        )
+        weth = coordinator_weth_unchanged
+        principal = bool(
+            event
+            and restored
+            == _principal_share(
+                pre.reserved_principal_usdc,
+                pre.reserved_redemption_usdc,
+                action.amount,
+            )
+            and post.reserved_principal_usdc == pre.reserved_principal_usdc - restored
+            and post.sibling_principal_usdc == restored
+            and post.sibling_pending_usdc == action.amount
+        )
+    elif action.kind in {ActionKind.OPEN_CSP, ActionKind.OPEN_CALL}:
+        opened = _matching(events, "WheelTrancheOpened")
+        opened_child = _matching(
+            events,
+            "CspOpened" if action.kind == ActionKind.OPEN_CSP else "CoveredCallOpened",
+        )
+        child = bool(
+            opened
+            and opened_child
+            and post.lane_child_shares == action.amount
+            and _hex(opened_child.args["positionHash"]).lower()
+            == post.lane_execution_state_hash.lower()
+            and bool(post.lane_position_state_hash)
+        )
+        principal = (
+            post.tranche_principal_usdc == pre.tranche_principal_usdc
+            and post.tranche_pending_usdc == 0
+        )
+        if action.kind == ActionKind.OPEN_CSP:
+            usdc = (
+                post.parent_idle_usdc == pre.parent_idle_usdc
+                and post.coordinator_accounted_usdc
+                == pre.coordinator_accounted_usdc - action.amount
+                and post.coordinator_raw_usdc
+                == pre.coordinator_raw_usdc - action.amount
+                and post.pending_csp_usdc == pre.pending_csp_usdc - action.amount
+                and post.lane_accounted_usdc == pre.lane_accounted_usdc
+                and post.lane_raw_usdc == pre.lane_raw_usdc
+                and coordinator_reserves_unchanged
+            )
+            weth = (
+                coordinator_weth_unchanged
+                and post.lane_accounted_weth == pre.lane_accounted_weth
+                and post.lane_raw_weth == pre.lane_raw_weth
+            )
+        else:
+            collateral = int(opened_child.args["collateral"]) if opened_child else -1
+            usdc = (
+                coordinator_usdc_unchanged
+                and coordinator_reserves_unchanged
+                and post.lane_accounted_usdc == pre.lane_accounted_usdc
+                and post.lane_raw_usdc == pre.lane_raw_usdc
+            )
+            weth = bool(
+                opened_child
+                and 0 < collateral <= action.amount
+                and post.coordinator_accounted_weth
+                == pre.coordinator_accounted_weth - action.amount
+                and post.coordinator_raw_weth
+                == pre.coordinator_raw_weth - action.amount
+                and post.coordinator_transition_weth
+                == pre.coordinator_transition_weth - action.amount
+                and post.lane_accounted_weth
+                == pre.lane_accounted_weth + action.amount - collateral
+                and post.lane_raw_weth == pre.lane_raw_weth + action.amount - collateral
+            )
+        transition = child and (
+            post.lane_execution_state_hash.lower()
+            != pre.lane_execution_state_hash.lower()
+        )
+    elif action.kind in {ActionKind.SETTLE_CSP, ActionKind.SETTLE_CALL}:
+        settled = _matching(
+            events,
+            "CspSettlementAdvanced"
+            if action.kind == ActionKind.SETTLE_CSP
+            else "CoveredCallSettlementAdvanced",
+        )
+        observed_usdc = int(settled.args["observedUsdc"]) if settled else -1
+        observed_weth = int(settled.args["observedWeth"]) if settled else -1
+        child = bool(
+            settled
+            and post.lane_child_shares == pre.lane_child_shares
+            and post.lane_execution_state_hash.lower()
+            == _hex(settled.args["positionHash"]).lower()
+        )
+        usdc = bool(
+            settled
+            and coordinator_usdc_unchanged
+            and coordinator_reserves_unchanged
+            and post.lane_accounted_usdc == pre.lane_accounted_usdc + observed_usdc
+            and post.lane_raw_usdc == pre.lane_raw_usdc + observed_usdc
+        )
+        weth = bool(
+            settled
+            and coordinator_weth_unchanged
+            and post.lane_accounted_weth == pre.lane_accounted_weth + observed_weth
+            and post.lane_raw_weth == pre.lane_raw_weth + observed_weth
+        )
+        principal = (
+            post.tranche_principal_usdc == pre.tranche_principal_usdc
+            and post.tranche_pending_usdc == pre.tranche_pending_usdc
+        )
+        transition = child and (
+            post.lane_execution_state_hash.lower()
+            != pre.lane_execution_state_hash.lower()
+        )
+    elif action.kind in {ActionKind.HANDOFF_ASSIGNMENT, ActionKind.HANDOFF_CALL_AWAY}:
+        handed = _matching(events, "WheelChildHandoff")
+        returned_usdc = int(handed.args["usdcAmount"]) if handed else -1
+        returned_weth = int(handed.args["wethAmount"]) if handed else -1
+        child = bool(
+            handed
+            and int(handed.args["childSharesBurned"]) == pre.lane_child_shares
+            and post.lane_child_shares == 0
+        )
+        usdc = bool(
+            handed
+            and post.parent_idle_usdc == pre.parent_idle_usdc
+            and post.coordinator_accounted_usdc
+            == pre.coordinator_accounted_usdc + returned_usdc
+            and post.coordinator_raw_usdc == pre.coordinator_raw_usdc + returned_usdc
+            and post.pending_csp_usdc == pre.pending_csp_usdc + returned_usdc
+            and post.lane_accounted_usdc == pre.lane_accounted_usdc - returned_usdc
+            and post.lane_raw_usdc == pre.lane_raw_usdc - returned_usdc
+            and coordinator_reserves_unchanged
+        )
+        weth = bool(
+            handed
+            and post.coordinator_accounted_weth
+            == pre.coordinator_accounted_weth + returned_weth
+            and post.coordinator_raw_weth == pre.coordinator_raw_weth + returned_weth
+            and post.coordinator_transition_weth
+            == pre.coordinator_transition_weth + returned_weth
+            and post.lane_accounted_weth == pre.lane_accounted_weth - returned_weth
+            and post.lane_raw_weth == pre.lane_raw_weth - returned_weth
+        )
+        principal = False
+        if handed and action.kind == ActionKind.HANDOFF_ASSIGNMENT:
+            if returned_weth == 0:
+                principal = (
+                    post.tranche_principal_usdc == pre.tranche_principal_usdc
+                    and post.tranche_pending_usdc == returned_usdc
+                )
+            else:
+                lot = _matching(events, "WheelAssignmentLotCreated")
+                literal_strike = int(lot.args["literalAssignmentStrike8"]) if lot else 0
+                retained = min(
+                    pre.tranche_principal_usdc,
+                    returned_weth * literal_strike // USDC_PER_WETH_SCALE,
+                )
+                sibling_principal = pre.tranche_principal_usdc - retained
+                principal = bool(
+                    lot
+                    and post.tranche_principal_usdc == retained
+                    and post.tranche_pending_usdc == 0
+                    and (
+                        returned_usdc == 0
+                        and sibling_principal == 0
+                        or post.sibling_principal_usdc == sibling_principal
+                        and post.sibling_pending_usdc == returned_usdc
+                    )
+                )
+        elif handed:
+            settlement_kind = int(handed.args["settlementKind"])
+            if returned_weth == 0:
+                principal = (
+                    post.tranche_principal_usdc == pre.tranche_principal_usdc
+                    and post.tranche_pending_usdc
+                    == pre.tranche_pending_usdc + returned_usdc
+                )
+            else:
+                consumed = (
+                    _principal_share(
+                        pre.tranche_principal_usdc,
+                        pre.lane_child_shares,
+                        pre.lane_child_shares - returned_weth,
+                    )
+                    if settlement_kind == 4
+                    else 0
+                )
+                principal = (
+                    consumed >= 0
+                    and post.tranche_principal_usdc
+                    == pre.tranche_principal_usdc - consumed
+                    and post.tranche_pending_usdc == 0
+                    and (
+                        returned_usdc == 0
+                        and consumed == 0
+                        or post.sibling_principal_usdc == consumed
+                        and post.sibling_pending_usdc == returned_usdc
+                    )
+                )
+        transition = child and (
+            post.lane_execution_state_hash.lower()
+            != pre.lane_execution_state_hash.lower()
+            and post.lane_position_state_hash.lower()
+            != pre.lane_position_state_hash.lower()
+        )
+    return Reconciliation(child, usdc, weth, principal, transition, True)
 
 
 def reconcile_wheel_events(

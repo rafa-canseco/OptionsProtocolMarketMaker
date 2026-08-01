@@ -934,3 +934,30 @@ def test_process_restart_reconciles_confirmed_action_without_resubmitting(
     assert chain.reconciliations == 2
     assert second_journal.get(action.key) == ("confirmed", "0xtx1")
     second_journal.close()
+
+
+@pytest.mark.parametrize("status", ("reconciliation_failed", "reverted"))
+def test_process_restart_never_retries_terminal_journal_failure(
+    policy, tmp_path, status
+):
+    state = snapshot(policy)
+    action = MetaWheelPlanner(policy).plan(state, ())[0]
+    chain = FakeChain(state)
+    path = tmp_path / "actions.sqlite3"
+    journal = SqliteActionJournal(path)
+    journal.record(action.key, status, "0xfailed")
+    journal.close()
+    restarted_journal = SqliteActionJournal(path)
+    restarted = MetaWheelAllocator(
+        policy_path=POLICY_PATH,
+        approved_policy_hash=policy.policy_hash,
+        chain=chain,
+        journal=restarted_journal,
+    )
+
+    with pytest.raises(RuntimeError, match="terminally failed"):
+        restarted.run_once()
+
+    assert chain.submissions == []
+    assert restarted_journal.get(action.key) == (status, "0xfailed")
+    restarted_journal.close()

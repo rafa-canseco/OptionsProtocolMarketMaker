@@ -318,6 +318,7 @@ META_WHEEL_CSP_LANE_ADDRESSES: str | None = _optional_env(
 META_WHEEL_CALL_LANE_ADDRESSES: str | None = _optional_env(
     "META_WHEEL_CALL_LANE_ADDRESSES"
 )
+META_WHEEL_FUND_KEY: str | None = _optional_env("META_WHEEL_FUND_KEY")
 
 
 # --- Multi-asset configuration ---

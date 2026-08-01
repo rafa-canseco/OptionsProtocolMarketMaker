@@ -135,6 +135,51 @@ def _boundary_address(boundary: Mapping[str, object], name: str) -> str:
     return _address(entry.get("proxy") or entry.get("address"), f"v1Boundary.{name}")
 
 
+def _bytes32(value: object, label: str, *, allow_zero: bool = False) -> str:
+    if (
+        not isinstance(value, str)
+        or len(value) != 66
+        or not value.startswith("0x")
+        or any(character not in "0123456789abcdefABCDEF" for character in value[2:])
+        or not allow_zero
+        and int(value, 16) == 0
+    ):
+        raise RuntimeError(f"Invalid Meta Wheel bytes32 for {label}")
+    return value.lower()
+
+
+def _block_number(value: object, label: str, *, allow_zero: bool = False) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or value < (0 if allow_zero else 1)
+    ):
+        raise RuntimeError(f"Invalid Meta Wheel block for {label}")
+    return value
+
+
+@dataclass(frozen=True)
+class ManifestReceiptBinding:
+    transaction_hash: str
+    block_number: int
+    block_hash: str
+
+
+@dataclass(frozen=True)
+class ManifestProxyBinding:
+    label: str
+    proxy: str
+    implementation: str
+    implementation_codehash: str | None
+
+
+@dataclass(frozen=True)
+class ManifestCodeBinding:
+    label: str
+    address: str
+    codehash: str
+
+
 @dataclass(frozen=True)
 class WheelManifestGate:
     path: Path
@@ -157,6 +202,9 @@ class WheelManifestGate:
     management_fee_wad: int
     performance_fee_bps: int
     final_roles: Mapping[str, str]
+    canonical_receipts: tuple[ManifestReceiptBinding, ...]
+    proxy_bindings: tuple[ManifestProxyBinding, ...]
+    code_bindings: tuple[ManifestCodeBinding, ...]
 
 
 def load_wheel_manifest_gate(
@@ -188,6 +236,28 @@ def load_wheel_manifest_gate(
         raise RuntimeError("Unable to load Meta Wheel deployment manifest") from error
     if not isinstance(manifest, dict):
         raise RuntimeError("Meta Wheel deployment manifest must be an object")
+    required_top_level = {
+        "schemaVersion",
+        "issue",
+        "status",
+        "deploymentStatus",
+        "handoffReady",
+        "sourceCommit",
+        "deploymentId",
+        "network",
+        "canonicalReceipts",
+        "assets",
+        "contracts",
+        "v1Boundary",
+        "policy",
+        "linkedLibraries",
+        "linkedLibraryCodehashes",
+        "finalRoles",
+        "standaloneBaselines",
+        "readiness",
+    }
+    if not required_top_level <= set(manifest):
+        raise RuntimeError("Meta Wheel deployment manifest schema is incomplete")
     if (
         manifest.get("schemaVersion") != "1.0.0"
         or manifest.get("issue") != "B1N-419"
@@ -196,6 +266,17 @@ def load_wheel_manifest_gate(
         or manifest.get("handoffReady") is not True
     ):
         raise RuntimeError("Meta Wheel deployment manifest is not a final handoff")
+    source_commit = manifest.get("sourceCommit")
+    if (
+        not isinstance(source_commit, str)
+        or len(source_commit.removeprefix("0x")) != 40
+        or any(
+            character not in "0123456789abcdefABCDEF"
+            for character in source_commit.removeprefix("0x")
+        )
+    ):
+        raise RuntimeError("Meta Wheel source commit is invalid")
+    _bytes32(manifest.get("deploymentId"), "deploymentId")
 
     network = manifest.get("network")
     if not isinstance(network, dict) or (
@@ -206,21 +287,21 @@ def load_wheel_manifest_gate(
     deployment_blocks = network.get("deploymentBlocks")
     if not isinstance(deployment_blocks, dict):
         raise RuntimeError("Meta Wheel deployment blocks are missing")
-    deployment_start_block = deployment_blocks.get("fundFirst")
-    deployment_last_block = deployment_blocks.get("fundLast")
-    if (
-        isinstance(deployment_start_block, bool)
-        or not isinstance(deployment_start_block, int)
-        or isinstance(deployment_last_block, bool)
-        or not isinstance(deployment_last_block, int)
-        or deployment_start_block <= 0
-        or deployment_last_block < deployment_start_block
-    ):
+    deployment_start_block = _block_number(
+        deployment_blocks.get("fundFirst"), "network.deploymentBlocks.fundFirst"
+    )
+    deployment_last_block = _block_number(
+        deployment_blocks.get("fundLast"), "network.deploymentBlocks.fundLast"
+    )
+    if deployment_last_block < deployment_start_block:
         raise RuntimeError("Meta Wheel deployment block range is invalid")
     readiness = manifest.get("readiness")
     if not isinstance(readiness, dict) or (
         readiness.get("canonicalReceiptsRecorded") is not True
+        or readiness.get("blockscoutVerificationComplete") is not True
+        or readiness.get("bootstrapReconciled") is not True
         or readiness.get("finalRolesReconciled") is not True
+        or readiness.get("standaloneBaselinesUnchanged") is not True
         or readiness.get("backendHandoffReady") is not True
         or readiness.get("mainnetAuthorized") is not False
     ):
@@ -228,18 +309,34 @@ def load_wheel_manifest_gate(
     receipts = manifest.get("canonicalReceipts")
     if (
         not isinstance(receipts, list)
-        or not receipts
+        or len(receipts) < 2
         or any(
             not isinstance(receipt, dict)
+            or isinstance(receipt.get("status"), bool)
+            or not isinstance(receipt.get("status"), int)
             or receipt.get("status") != 1
-            or not receipt.get("transactionHash")
-            or not receipt.get("blockHash")
             or not isinstance(receipt.get("blockNumber"), int)
             for receipt in receipts
         )
     ):
         raise RuntimeError("Meta Wheel canonical deployment receipts are incomplete")
-    receipt_blocks = {int(receipt["blockNumber"]) for receipt in receipts}
+    canonical_receipts = tuple(
+        ManifestReceiptBinding(
+            transaction_hash=_bytes32(
+                receipt["transactionHash"], "canonicalReceipts.transactionHash"
+            ),
+            block_number=_block_number(
+                receipt["blockNumber"], "canonicalReceipts.blockNumber"
+            ),
+            block_hash=_bytes32(receipt["blockHash"], "canonicalReceipts.blockHash"),
+        )
+        for receipt in receipts
+    )
+    if len({receipt.transaction_hash for receipt in canonical_receipts}) != len(
+        canonical_receipts
+    ):
+        raise RuntimeError("Meta Wheel canonical receipts are duplicated")
+    receipt_blocks = {receipt.block_number for receipt in canonical_receipts}
     if (
         deployment_start_block not in receipt_blocks
         or deployment_last_block not in receipt_blocks
@@ -262,13 +359,95 @@ def load_wheel_manifest_gate(
     assets = manifest.get("assets")
     boundary = manifest.get("v1Boundary")
     policy = manifest.get("policy")
+    standalone = manifest.get("standaloneBaselines")
+    linked_libraries = manifest.get("linkedLibraries")
+    linked_library_codehashes = manifest.get("linkedLibraryCodehashes")
     if (
         not isinstance(contracts, dict)
         or not isinstance(assets, dict)
         or not isinstance(boundary, dict)
         or not isinstance(policy, dict)
+        or not isinstance(standalone, dict)
+        or not isinstance(linked_libraries, list)
+        or not isinstance(linked_library_codehashes, list)
     ):
         raise RuntimeError("Meta Wheel manifest contracts/assets are missing")
+    required_proxy_contracts = {
+        "fundVault",
+        "fundShare",
+        "fundAccounting",
+        "fundFlowManager",
+        "strategyManager",
+        "wheelCoordinator",
+    }
+    required_immutable_contracts = {
+        "claimEscrow",
+        "accessManager",
+        "metaWheelValuator",
+        "navReportVerifier",
+    }
+    if not (required_proxy_contracts | required_immutable_contracts) <= set(contracts):
+        raise RuntimeError("Meta Wheel manifest contract set is incomplete")
+    proxy_bindings: list[ManifestProxyBinding] = []
+    code_bindings: list[ManifestCodeBinding] = []
+    for name in sorted(required_proxy_contracts):
+        entry = contracts[name]
+        if not isinstance(entry, dict):
+            raise RuntimeError(f"Meta Wheel contracts.{name} is invalid")
+        proxy = _address(entry.get("proxy"), f"contracts.{name}.proxy")
+        implementation = _address(
+            entry.get("implementation"), f"contracts.{name}.implementation"
+        )
+        implementation_codehash = _bytes32(
+            entry.get("implementationCodehash"),
+            f"contracts.{name}.implementationCodehash",
+        )
+        _block_number(
+            entry.get("validFromBlock"),
+            f"contracts.{name}.validFromBlock",
+            allow_zero=True,
+        )
+        _block_number(
+            entry.get("implementationValidFromBlock"),
+            f"contracts.{name}.implementationValidFromBlock",
+            allow_zero=True,
+        )
+        proxy_bindings.append(
+            ManifestProxyBinding(
+                label=f"contracts.{name}",
+                proxy=proxy,
+                implementation=implementation,
+                implementation_codehash=implementation_codehash,
+            )
+        )
+        code_bindings.append(
+            ManifestCodeBinding(
+                label=f"contracts.{name}.implementation",
+                address=implementation,
+                codehash=implementation_codehash,
+            )
+        )
+    for name in sorted(required_immutable_contracts):
+        entry = contracts[name]
+        if not isinstance(entry, dict):
+            raise RuntimeError(f"Meta Wheel contracts.{name} is invalid")
+        address = _address(entry.get("address"), f"contracts.{name}.address")
+        codehash = _bytes32(entry.get("codehash"), f"contracts.{name}.codehash")
+        _block_number(
+            entry.get("validFromBlock"),
+            f"contracts.{name}.validFromBlock",
+            allow_zero=True,
+        )
+        code_bindings.append(
+            ManifestCodeBinding(
+                label=f"contracts.{name}",
+                address=address,
+                codehash=codehash,
+            )
+        )
+    if "swapRouter" not in assets:
+        raise RuntimeError("Meta Wheel manifest assets are incomplete")
+    _address(assets.get("swapRouter"), "assets.swapRouter")
     parent = _contract_proxy(contracts, "fundVault")
     strategy_manager = _contract_proxy(contracts, "strategyManager")
     coordinator = _contract_proxy(contracts, "wheelCoordinator")
@@ -279,6 +458,84 @@ def load_wheel_manifest_gate(
     valuator = _contract_address(contracts, "metaWheelValuator")
     batch_settler = _boundary_address(boundary, "batchSettler")
     oracle = _boundary_address(boundary, "oracle")
+    required_v1 = {
+        "addressBook",
+        "controller",
+        "batchSettler",
+        "marginPool",
+        "oracle",
+        "oTokenFactory",
+        "whitelist",
+    }
+    if not required_v1 <= set(boundary):
+        raise RuntimeError("Meta Wheel V1 boundary is incomplete")
+    for name in sorted(required_v1):
+        entry = boundary[name]
+        if not isinstance(entry, dict) or entry.get("unchanged") is not True:
+            raise RuntimeError(f"Meta Wheel v1Boundary.{name} is not unchanged")
+        proxy = _address(entry.get("proxy"), f"v1Boundary.{name}.proxy")
+        if name in {"controller", "batchSettler"}:
+            implementation = _address(
+                entry.get("implementation"), f"v1Boundary.{name}.implementation"
+            )
+            proxy_bindings.append(
+                ManifestProxyBinding(
+                    label=f"v1Boundary.{name}",
+                    proxy=proxy,
+                    implementation=implementation,
+                    implementation_codehash=None,
+                )
+            )
+    required_standalone = {
+        "cspVault",
+        "cspAdapter",
+        "coveredCallVault",
+        "coveredCallAdapter",
+    }
+    if not required_standalone <= set(standalone):
+        raise RuntimeError("Meta Wheel standalone baselines are incomplete")
+    for name in sorted(required_standalone):
+        entry = standalone[name]
+        if not isinstance(entry, dict) or entry.get("unchanged") is not True:
+            raise RuntimeError(f"Meta Wheel standaloneBaselines.{name} changed")
+        proxy = _address(entry.get("proxy"), f"standaloneBaselines.{name}.proxy")
+        implementation = _address(
+            entry.get("implementation"),
+            f"standaloneBaselines.{name}.implementation",
+        )
+        implementation_codehash = _bytes32(
+            entry.get("implementationCodehash"),
+            f"standaloneBaselines.{name}.implementationCodehash",
+        )
+        proxy_bindings.append(
+            ManifestProxyBinding(
+                label=f"standaloneBaselines.{name}",
+                proxy=proxy,
+                implementation=implementation,
+                implementation_codehash=implementation_codehash,
+            )
+        )
+        code_bindings.append(
+            ManifestCodeBinding(
+                label=f"standaloneBaselines.{name}.implementation",
+                address=implementation,
+                codehash=implementation_codehash,
+            )
+        )
+    if len(linked_libraries) < 5 or len(linked_libraries) != len(
+        linked_library_codehashes
+    ):
+        raise RuntimeError("Meta Wheel linked library evidence is incomplete")
+    for index, (address, codehash) in enumerate(
+        zip(linked_libraries, linked_library_codehashes, strict=True)
+    ):
+        code_bindings.append(
+            ManifestCodeBinding(
+                label=f"linkedLibraries[{index}]",
+                address=_address(address, f"linkedLibraries[{index}]"),
+                codehash=_bytes32(codehash, f"linkedLibraryCodehashes[{index}]"),
+            )
+        )
     policy_hash = str(policy.get("policyHash", "")).removeprefix("0x").lower()
     if len(policy_hash) != 64 or any(
         character not in "0123456789abcdef" for character in policy_hash
@@ -335,6 +592,9 @@ def load_wheel_manifest_gate(
         management_fee_wad=management_fee_wad,
         performance_fee_bps=performance_fee_bps,
         final_roles=final_roles,
+        canonical_receipts=canonical_receipts,
+        proxy_bindings=tuple(proxy_bindings),
+        code_bindings=tuple(code_bindings),
     )
 
 

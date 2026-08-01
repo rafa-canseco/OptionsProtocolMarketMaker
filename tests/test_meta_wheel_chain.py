@@ -1,9 +1,12 @@
 import hashlib
 import json
+from dataclasses import replace
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 from eth_account import Account
+from hexbytes import HexBytes
 from web3 import Web3
 
 from src.fund_tx import ConfirmedTransaction
@@ -22,6 +25,10 @@ from src.meta_wheel_chain import (
     WheelSignerRole,
     load_wheel_manifest_gate,
 )
+from src.meta_wheel_runtime import (
+    EIP1967_IMPLEMENTATION_SLOT,
+    BaseSepoliaMetaWheelRuntime,
+)
 
 
 def _private_key(index: int) -> str:
@@ -34,6 +41,28 @@ def _account_address(index: int) -> str:
 
 def _address(index: int) -> str:
     return Web3.to_checksum_address(f"0x{index:040x}")
+
+
+def _bytes32(index: int) -> str:
+    return f"0x{index:064x}"
+
+
+def _proxy(proxy_index: int, implementation_index: int) -> dict:
+    return {
+        "proxy": _address(proxy_index),
+        "implementation": _address(implementation_index),
+        "validFromBlock": 100,
+        "implementationValidFromBlock": 100,
+        "implementationCodehash": _bytes32(implementation_index),
+    }
+
+
+def _immutable(index: int) -> dict:
+    return {
+        "address": _address(index),
+        "validFromBlock": 100,
+        "codehash": _bytes32(index),
+    }
 
 
 def _manifest() -> tuple[dict, dict[WheelSignerRole, str]]:
@@ -59,14 +88,19 @@ def _manifest() -> tuple[dict, dict[WheelSignerRole, str]]:
             "status": "CONFIRMED_CANONICAL_RECEIPTS",
             "deploymentStatus": "DEPLOYED",
             "handoffReady": True,
+            "sourceCommit": "a" * 40,
+            "deploymentId": _bytes32(1),
             "network": {
                 "name": "base-sepolia",
                 "chainId": 84532,
-                "deploymentBlocks": {"fundFirst": 100, "fundLast": 100},
+                "deploymentBlocks": {"fundFirst": 100, "fundLast": 101},
             },
             "readiness": {
                 "canonicalReceiptsRecorded": True,
+                "blockscoutVerificationComplete": True,
+                "bootstrapReconciled": True,
                 "finalRolesReconciled": True,
+                "standaloneBaselinesUnchanged": True,
                 "backendHandoffReady": True,
                 "mainnetAuthorized": False,
             },
@@ -76,29 +110,72 @@ def _manifest() -> tuple[dict, dict[WheelSignerRole, str]]:
                     "blockHash": "0x" + "22" * 32,
                     "blockNumber": 100,
                     "status": 1,
-                }
+                },
+                {
+                    "transactionHash": "0x" + "33" * 32,
+                    "blockHash": "0x" + "44" * 32,
+                    "blockNumber": 101,
+                    "status": 1,
+                },
             ],
             "finalRoles": {
                 role: _account_address(index) for role, index in role_indexes.items()
             },
-            "assets": {"usdc": _address(10), "weth": _address(14)},
+            "assets": {
+                "usdc": _address(10),
+                "weth": _address(14),
+                "swapRouter": _address(20),
+            },
             "contracts": {
-                "fundVault": {"proxy": _address(11)},
-                "strategyManager": {"proxy": _address(12)},
-                "wheelCoordinator": {"proxy": _address(13)},
-                "fundAccounting": {"proxy": _address(15)},
-                "fundFlowManager": {"proxy": _address(16)},
-                "metaWheelValuator": {"address": _address(17)},
+                "fundVault": _proxy(11, 41),
+                "strategyManager": _proxy(12, 42),
+                "wheelCoordinator": _proxy(13, 43),
+                "fundAccounting": _proxy(15, 45),
+                "fundFlowManager": _proxy(16, 46),
+                "fundShare": _proxy(17, 47),
+                "claimEscrow": _immutable(48),
+                "accessManager": _immutable(49),
+                "metaWheelValuator": _immutable(50),
+                "navReportVerifier": _immutable(51),
             },
             "v1Boundary": {
-                "batchSettler": {"proxy": _address(18)},
-                "oracle": {"proxy": _address(19)},
+                "addressBook": {"proxy": _address(60), "unchanged": True},
+                "controller": {
+                    "proxy": _address(61),
+                    "implementation": _address(71),
+                    "unchanged": True,
+                },
+                "batchSettler": {
+                    "proxy": _address(18),
+                    "implementation": _address(72),
+                    "unchanged": True,
+                },
+                "marginPool": {"proxy": _address(62), "unchanged": True},
+                "oracle": {"proxy": _address(19), "unchanged": True},
+                "oTokenFactory": {"proxy": _address(63), "unchanged": True},
+                "whitelist": {"proxy": _address(64), "unchanged": True},
             },
             "policy": {
                 "policyHash": "db47fcd1f4f96b656fe462956c85194b1f5e25d0c1d8c8862864b256d38fa93c",
                 "premiumFeeBps": 1_000,
                 "managementFeeWad": 20_000_000_000_000_000,
                 "performanceFeeBps": 1_000,
+            },
+            "linkedLibraries": [_address(index) for index in range(80, 85)],
+            "linkedLibraryCodehashes": [_bytes32(index) for index in range(80, 85)],
+            "standaloneBaselines": {
+                name: {
+                    "proxy": _address(index),
+                    "implementation": _address(index + 10),
+                    "implementationCodehash": _bytes32(index + 10),
+                    "unchanged": True,
+                }
+                for name, index in {
+                    "cspVault": 90,
+                    "cspAdapter": 91,
+                    "coveredCallVault": 92,
+                    "coveredCallAdapter": 93,
+                }.items()
             },
         },
         private_keys,
@@ -218,6 +295,37 @@ def test_manifest_fails_closed_before_deployed_handoff(tmp_path):
     ):
         candidate = manifest | changes
         with pytest.raises(RuntimeError, match="not a final handoff"):
+            _gate(tmp_path, candidate)
+
+
+@pytest.mark.parametrize(
+    "field",
+    (
+        "canonicalReceiptsRecorded",
+        "blockscoutVerificationComplete",
+        "bootstrapReconciled",
+        "finalRolesReconciled",
+        "standaloneBaselinesUnchanged",
+        "backendHandoffReady",
+    ),
+)
+def test_manifest_requires_every_readiness_attestation(tmp_path, field):
+    manifest, _ = _manifest()
+    manifest["readiness"] = manifest["readiness"] | {field: False}
+
+    with pytest.raises(RuntimeError, match="readiness is incomplete"):
+        _gate(tmp_path, manifest)
+
+
+def test_manifest_requires_source_deployment_and_two_receipts(tmp_path):
+    manifest, _ = _manifest()
+    for field, value, message in (
+        ("sourceCommit", "not-a-commit", "source commit"),
+        ("deploymentId", "0x" + "00" * 32, "deploymentId"),
+        ("canonicalReceipts", manifest["canonicalReceipts"][:1], "receipts"),
+    ):
+        candidate = manifest | {field: value}
+        with pytest.raises(RuntimeError, match=message):
             _gate(tmp_path, candidate)
 
 
@@ -376,3 +484,55 @@ def test_chain_port_rejects_wrapper_or_payload_substitution(tmp_path):
     guardian_request = encode_managed_operation(ManagedOperation.PAUSE_ALLOCATIONS)
     with pytest.raises(RuntimeError, match="explicit manual tool"):
         port.submit(action, MagicMock(), guardian_request)
+
+
+def test_runtime_anchors_manifest_receipts_proxies_and_codehashes(tmp_path):
+    manifest, _ = _manifest()
+    gate = _gate(tmp_path, manifest)
+    code_by_address = {
+        binding.address: f"code:{binding.label}".encode()
+        for binding in gate.code_bindings
+    }
+    gate = replace(
+        gate,
+        code_bindings=tuple(
+            replace(
+                binding,
+                codehash="0x" + Web3.keccak(code_by_address[binding.address]).hex(),
+            )
+            for binding in gate.code_bindings
+        ),
+    )
+    runtime = object.__new__(BaseSepoliaMetaWheelRuntime)
+    runtime.manifest = gate
+    runtime.w3 = MagicMock()
+    runtime.w3.eth.block_number = 105
+    receipts = {
+        expected.transaction_hash: SimpleNamespace(
+            status=1,
+            blockNumber=expected.block_number,
+            blockHash=HexBytes(expected.block_hash),
+        )
+        for expected in gate.canonical_receipts
+    }
+    blocks = {
+        expected.block_number: SimpleNamespace(hash=HexBytes(expected.block_hash))
+        for expected in gate.canonical_receipts
+    }
+    runtime.w3.eth.get_transaction_receipt.side_effect = receipts.__getitem__
+    runtime.w3.eth.get_block.side_effect = blocks.__getitem__
+    implementation_by_proxy = {
+        binding.proxy: bytes.fromhex(binding.implementation[2:]).rjust(32, b"\0")
+        for binding in gate.proxy_bindings
+    }
+    runtime.w3.eth.get_storage_at.side_effect = lambda proxy, slot, **_: (
+        implementation_by_proxy[proxy] if slot == EIP1967_IMPLEMENTATION_SLOT else b""
+    )
+    runtime.w3.eth.get_code.side_effect = lambda address, **_: code_by_address[address]
+
+    runtime._verify_manifest_chain()
+
+    first = gate.proxy_bindings[0]
+    implementation_by_proxy[first.proxy] = b"\0" * 32
+    with pytest.raises(RuntimeError, match="proxy implementation changed"):
+        runtime._verify_manifest_chain()

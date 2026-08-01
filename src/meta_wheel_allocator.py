@@ -226,6 +226,8 @@ class AssignmentLot:
     literal_assignment_strike8: int
     created_at: int
     status: LotStatus
+    tranche_principal_usdc: int = 0
+    tranche_pending_usdc: int = 0
 
     def validate(self) -> None:
         if (
@@ -277,6 +279,12 @@ class LaneSnapshot:
     adapter: str = ""
     dedicated_to_parent: bool = True
     active_options: int = 0
+    tranche_principal_usdc: int = 0
+    tranche_pending_usdc: int = 0
+    accounted_usdc: int = 0
+    accounted_weth: int = 0
+    raw_usdc: int = 0
+    raw_weth: int = 0
 
 
 @dataclass(frozen=True)
@@ -339,6 +347,34 @@ class WheelSnapshot:
     csp_lanes: tuple[LaneSnapshot, ...]
     call_lanes: tuple[LaneSnapshot, ...]
     assignment_lots: tuple[AssignmentLot, ...]
+    coordinator_accounted_usdc: int = 0
+    coordinator_accounted_weth: int = 0
+    coordinator_transition_weth: int = 0
+    coordinator_raw_usdc: int = 0
+    coordinator_raw_weth: int = 0
+
+
+@dataclass(frozen=True)
+class WheelActionPreState:
+    parent_idle_usdc: int
+    coordinator_accounted_usdc: int
+    coordinator_accounted_weth: int
+    coordinator_transition_weth: int
+    coordinator_raw_usdc: int
+    coordinator_raw_weth: int
+    pending_csp_usdc: int
+    reserved_redemption_usdc: int
+    reserved_principal_usdc: int
+    tranche_principal_usdc: int = 0
+    tranche_pending_usdc: int = 0
+    lane_child_shares: int = 0
+    lane_accounted_usdc: int = 0
+    lane_accounted_weth: int = 0
+    lane_raw_usdc: int = 0
+    lane_raw_weth: int = 0
+    lane_execution_state_hash: str = ""
+    lane_position_state_hash: str = ""
+    nav_lane_position_state_hash: str = ""
 
 
 @dataclass(frozen=True)
@@ -356,6 +392,7 @@ class WheelAction:
     strike8: int | None = None
     required_floor8: int | None = None
     open_data: bytes = b""
+    pre_state: WheelActionPreState | None = None
 
     @property
     def key(self) -> str:
@@ -769,6 +806,59 @@ class MetaWheelPlanner:
             )
 
     @staticmethod
+    def _pre_state(
+        snapshot: WheelSnapshot,
+        *,
+        lane: LaneSnapshot | None = None,
+        tranche: PendingCspTranche | None = None,
+        tranche_principal_usdc: int | None = None,
+        tranche_pending_usdc: int | None = None,
+    ) -> WheelActionPreState:
+        return WheelActionPreState(
+            parent_idle_usdc=snapshot.idle_usdc,
+            coordinator_accounted_usdc=snapshot.coordinator_accounted_usdc,
+            coordinator_accounted_weth=snapshot.coordinator_accounted_weth,
+            coordinator_transition_weth=snapshot.coordinator_transition_weth,
+            coordinator_raw_usdc=snapshot.coordinator_raw_usdc,
+            coordinator_raw_weth=snapshot.coordinator_raw_weth,
+            pending_csp_usdc=snapshot.pending_csp_usdc,
+            reserved_redemption_usdc=snapshot.reserved_redemption_usdc,
+            reserved_principal_usdc=snapshot.reserved_principal_usdc,
+            tranche_principal_usdc=(
+                tranche_principal_usdc
+                if tranche_principal_usdc is not None
+                else tranche.principal_usdc
+                if tranche is not None
+                else lane.tranche_principal_usdc
+                if lane is not None
+                else 0
+            ),
+            tranche_pending_usdc=(
+                tranche_pending_usdc
+                if tranche_pending_usdc is not None
+                else tranche.pending_usdc
+                if tranche is not None
+                else lane.tranche_pending_usdc
+                if lane is not None
+                else 0
+            ),
+            lane_child_shares=lane.amount if lane is not None else 0,
+            lane_accounted_usdc=lane.accounted_usdc if lane is not None else 0,
+            lane_accounted_weth=lane.accounted_weth if lane is not None else 0,
+            lane_raw_usdc=lane.raw_usdc if lane is not None else 0,
+            lane_raw_weth=lane.raw_weth if lane is not None else 0,
+            lane_execution_state_hash=(
+                lane.execution_state_hash if lane is not None else ""
+            ),
+            lane_position_state_hash=(
+                lane.position_state_hash if lane is not None else ""
+            ),
+            nav_lane_position_state_hash=(
+                lane.nav_position_state_hash if lane is not None else ""
+            ),
+        )
+
+    @staticmethod
     def _action(
         snapshot: WheelSnapshot,
         lane: LaneSnapshot,
@@ -783,6 +873,7 @@ class MetaWheelPlanner:
             tranche_id=lane.tranche_id,
             transition_nonce=lane.transition_nonce,
             child_position_id=lane.child_position_id,
+            pre_state=MetaWheelPlanner._pre_state(snapshot, lane=lane),
             **values,
         )
 
@@ -831,6 +922,7 @@ class MetaWheelPlanner:
                     transition_nonce=snapshot.coordinator_transition_nonce,
                     child_position_id=0,
                     amount=release_surplus,
+                    pre_state=self._pre_state(snapshot),
                 )
             )
 
@@ -854,6 +946,7 @@ class MetaWheelPlanner:
                     transition_nonce=tranche.state_nonce,
                     child_position_id=0,
                     amount=amount,
+                    pre_state=self._pre_state(snapshot, tranche=tranche),
                 )
             )
             reserve_gap -= amount
@@ -923,6 +1016,12 @@ class MetaWheelPlanner:
                     strike8=quote.strike8,
                     required_floor8=floor,
                     open_data=quote.open_data,
+                    pre_state=self._pre_state(
+                        snapshot,
+                        lane=lane,
+                        tranche_principal_usdc=(assignment.tranche_principal_usdc),
+                        tranche_pending_usdc=assignment.tranche_pending_usdc,
+                    ),
                 )
             )
 
@@ -946,6 +1045,7 @@ class MetaWheelPlanner:
                         transition_nonce=tranche.state_nonce,
                         child_position_id=0,
                         amount=self.policy.maximum_usdc_per_csp_lane,
+                        pre_state=self._pre_state(snapshot, tranche=tranche),
                     )
                 )
                 continue
@@ -992,6 +1092,11 @@ class MetaWheelPlanner:
                     quote_id=quote.quote_id,
                     strike8=quote.strike8,
                     open_data=quote.open_data,
+                    pre_state=self._pre_state(
+                        snapshot,
+                        lane=lane,
+                        tranche=tranche,
+                    ),
                 )
             )
             available_pending_csp -= amount
@@ -1028,6 +1133,7 @@ class MetaWheelPlanner:
                         allocatable_parent_usdc,
                         self.policy.maximum_usdc_per_csp_lane,
                     ),
+                    pre_state=self._pre_state(snapshot),
                 )
             )
         return tuple(actions)
@@ -1059,6 +1165,10 @@ class MetaWheelAllocator:
         if existing is None:
             return False
         status, tx_hash = existing
+        if status in {"reconciliation_failed", "reverted"}:
+            raise RuntimeError(
+                f"Meta Wheel action is terminally failed in the journal: {status}"
+            )
         if status in {"confirmed", "submitted"} and tx_hash:
             receipt = self.chain.receipt(tx_hash, self.confirmations)
             if receipt is None:
