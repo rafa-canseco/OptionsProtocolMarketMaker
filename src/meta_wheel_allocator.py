@@ -30,6 +30,7 @@ log = logging.getLogger(__name__)
 USDC_SCALE = 10**6
 WETH_SCALE = 10**18
 STRIKE_SCALE = 10**8
+USDC_PER_WETH_PRICE_SCALE = STRIKE_SCALE * WETH_SCALE // USDC_SCALE
 
 
 class LaneKind(StrEnum):
@@ -240,6 +241,8 @@ class AssignmentLot:
             or self.literal_assignment_strike8 <= 0
             or self.created_at <= 0
             or not self.origin_csp_lane
+            or self.tranche_principal_usdc < 0
+            or self.tranche_pending_usdc < 0
         ):
             raise RuntimeError(f"Invalid immutable assignment lot {self.lot_id}")
 
@@ -568,13 +571,31 @@ class SqliteActionJournal:
         self.connection.commit()
 
 
-def required_call_floor8(lot: AssignmentLot, policy: MetaWheelPolicy) -> int:
+def _exact_required_call_floor8(
+    lot: AssignmentLot,
+    policy: MetaWheelPolicy,
+) -> int:
     lot.validate()
     if lot.status not in {LotStatus.AVAILABLE, LotStatus.COMMITTED}:
         raise RuntimeError(f"Assignment lot {lot.lot_id} cannot fund a call")
-    buffered = lot.literal_assignment_strike8 + policy.execution_cost_buffer
+    if lot.remaining_weth == 0:
+        raise RuntimeError(f"Assignment lot {lot.lot_id} has no remaining WETH")
+    if lot.tranche_pending_usdc != 0:
+        raise RuntimeError(f"Assignment lot {lot.lot_id} has pending USDC")
+    protected_basis8 = (
+        lot.tranche_principal_usdc * USDC_PER_WETH_PRICE_SCALE + lot.remaining_weth - 1
+    ) // lot.remaining_weth
+    protected_base_floor8 = max(
+        lot.literal_assignment_strike8,
+        protected_basis8,
+    )
+    return protected_base_floor8 + policy.execution_cost_buffer
+
+
+def required_call_floor8(lot: AssignmentLot, policy: MetaWheelPolicy) -> int:
+    exact_required_floor8 = _exact_required_call_floor8(lot, policy)
     return (
-        (buffered + policy.strike_tick - 1) // policy.strike_tick
+        (exact_required_floor8 + policy.strike_tick - 1) // policy.strike_tick
     ) * policy.strike_tick
 
 
@@ -631,7 +652,10 @@ def select_call_quote(
     *,
     lane: LaneSnapshot,
 ) -> tuple[WheelQuote, int] | None:
-    floor = required_call_floor8(lot, policy)
+    exact_required_floor8 = _exact_required_call_floor8(lot, policy)
+    quote_floor8 = (
+        (exact_required_floor8 + policy.strike_tick - 1) // policy.strike_tick
+    ) * policy.strike_tick
     candidates = [
         quote
         for quote in quotes
@@ -640,7 +664,7 @@ def select_call_quote(
         and quote.tranche_id == lot.tranche_id
         and quote.lot_id == lot.lot_id
         and quote.allocation_amount == lot.remaining_weth
-        and quote.strike8 >= floor
+        and quote.strike8 >= quote_floor8
         and _quote_is_fresh(quote, snapshot.timestamp, policy)
         and quote.maximum_collateral >= lot.remaining_weth
     ]
@@ -665,7 +689,7 @@ def select_call_quote(
     else:
         # The protected floor wins when a target-delta series would violate it.
         selected = min(candidates, key=lambda quote: (quote.strike8, -quote.deadline))
-    return selected, floor
+    return selected, exact_required_floor8
 
 
 class MetaWheelPlanner:
@@ -998,7 +1022,7 @@ class MetaWheelPlanner:
                 # Do not starve a lower-floor lot that may have an executable quote.
                 continue
             lane, selected = selected_pair
-            quote, floor = selected
+            quote, exact_required_floor8 = selected
             free_call_lanes.remove(lane)
             used_quote_ids.add(quote.quote_id)
             actions.append(
@@ -1014,7 +1038,7 @@ class MetaWheelPlanner:
                     lot_ids=(assignment.lot_id,),
                     quote_id=quote.quote_id,
                     strike8=quote.strike8,
-                    required_floor8=floor,
+                    required_floor8=exact_required_floor8,
                     open_data=quote.open_data,
                     pre_state=self._pre_state(
                         snapshot,

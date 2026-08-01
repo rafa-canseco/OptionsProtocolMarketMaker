@@ -78,6 +78,8 @@ def lot(
     strike: int,
     *,
     amount: int = 10**18,
+    remaining_amount: int | None = None,
+    principal_usdc: int = 0,
     status: LotStatus = LotStatus.AVAILABLE,
 ) -> AssignmentLot:
     return AssignmentLot(
@@ -87,10 +89,11 @@ def lot(
         origin_csp_lane=f"0xcsp{lot_id}",
         origin_csp_position_id=lot_id,
         weth_received=amount,
-        remaining_weth=amount,
+        remaining_weth=amount if remaining_amount is None else remaining_amount,
         literal_assignment_strike8=strike * 10**8,
         created_at=100,
         status=status,
+        tranche_principal_usdc=principal_usdc,
     )
 
 
@@ -460,8 +463,83 @@ def test_ready_tranches_handoff_once(policy):
     assert actions[0].key != actions[1].key
 
 
-def test_call_floor_uses_literal_strike_plus_buffer_and_ceil(policy):
+def test_initial_and_proportional_partial_assignment_keep_literal_floor(policy):
+    initial = lot(
+        1,
+        2001,
+        amount=10 * 10**18,
+        principal_usdc=20_010 * 10**6,
+    )
+    proportional_partial = lot(
+        1,
+        2001,
+        amount=10 * 10**18,
+        remaining_amount=4 * 10**18,
+        principal_usdc=8_004 * 10**6,
+    )
+
+    assert required_call_floor8(initial, policy) == 2015 * 10**8
+    assert required_call_floor8(proportional_partial, policy) == 2015 * 10**8
+
+
+def test_call_floor_uses_literal_strike_plus_buffer_and_tick(policy):
     assert required_call_floor8(lot(1, 2001), policy) == 2015 * 10**8
+
+
+def test_fallback_concentrated_basis_uses_ceiling_then_buffer_and_tick(policy):
+    fallback = lot(
+        1,
+        2000,
+        amount=10 * 10**18,
+        remaining_amount=9 * 10**18,
+        principal_usdc=20_000 * 10**6,
+    )
+
+    assert required_call_floor8(fallback, policy) == 2235 * 10**8
+
+
+def test_basis_division_ceiling_crosses_to_the_next_strike_tick(policy):
+    one_wei_short = lot(
+        1,
+        2000,
+        amount=10**18,
+        remaining_amount=10**18 - 1,
+        principal_usdc=2_000 * 10**6,
+    )
+    numerator = one_wei_short.tranche_principal_usdc * 10**20
+
+    assert numerator // one_wei_short.remaining_weth == 2000 * 10**8
+    assert numerator % one_wei_short.remaining_weth != 0
+    assert required_call_floor8(one_wei_short, policy) == 2015 * 10**8
+
+
+def test_zero_principal_retains_literal_floor(policy):
+    fallback = lot(
+        1,
+        2001,
+        amount=10 * 10**18,
+        remaining_amount=9 * 10**18,
+        principal_usdc=0,
+    )
+
+    assert required_call_floor8(fallback, policy) == 2015 * 10**8
+
+
+def test_call_floor_fails_closed_on_zero_remaining_or_incoherent_principal(policy):
+    with pytest.raises(RuntimeError, match="no remaining WETH"):
+        required_call_floor8(replace(lot(1, 2000), remaining_weth=0), policy)
+
+    with pytest.raises(RuntimeError, match="Invalid immutable assignment lot"):
+        required_call_floor8(
+            replace(lot(1, 2000), tranche_principal_usdc=-1),
+            policy,
+        )
+
+    with pytest.raises(RuntimeError, match="has pending USDC"):
+        required_call_floor8(
+            replace(lot(1, 2000), tranche_pending_usdc=1),
+            policy,
+        )
 
 
 def test_assignment_lot_origin_and_strike_are_immutable():
@@ -511,7 +589,50 @@ def test_call_quote_at_or_above_floor_is_selected(policy):
     assert actions[0].kind == ActionKind.OPEN_CALL
     assert actions[0].lot_ids == (1,)
     assert actions[0].quote_id == "protected"
-    assert actions[0].required_floor8 == 2015 * 10**8
+    assert actions[0].strike8 == 2015 * 10**8
+    assert actions[0].required_floor8 == 2011 * 10**8
+
+
+def test_fallback_rejects_stale_floor_quote_and_selects_exact_rebased_quote(policy):
+    assignment = lot(
+        1,
+        2000,
+        amount=10 * 10**18,
+        remaining_amount=9 * 10**18,
+        principal_usdc=20_000 * 10**6,
+    )
+    state = snapshot(
+        policy,
+        idle_usdc=0,
+        csp_lanes=(lane("0xcsp1", LaneKind.CSP, LanePhase.PAUSED),),
+        call_lanes=(lane("0xcc1", LaneKind.COVERED_CALL),),
+        assignment_lots=(assignment,),
+    )
+    stale_floor = quote(
+        quote_id="stale-floor",
+        is_put=False,
+        strike=2010,
+        delta_bps=500,
+        allocation_amount=assignment.remaining_weth,
+    )
+    exact_rebased = quote(
+        quote_id="exact-rebased",
+        is_put=False,
+        strike=2235,
+        delta_bps=500,
+        allocation_amount=assignment.remaining_weth,
+    )
+
+    assert MetaWheelPlanner(policy).plan(state, (stale_floor,)) == ()
+
+    (action,) = MetaWheelPlanner(policy).plan(
+        state,
+        (stale_floor, exact_rebased),
+    )
+    assert action.kind == ActionKind.OPEN_CALL
+    assert action.quote_id == "exact-rebased"
+    assert action.strike8 == 2235 * 10**8
+    assert action.required_floor8 == 223_222_222_223
 
 
 def test_assignment_and_sibling_cash_tranches_progress_in_parallel(policy):

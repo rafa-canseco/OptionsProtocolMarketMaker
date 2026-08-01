@@ -125,6 +125,66 @@ def test_open_call_reconciliation_requires_exact_child_floor_and_premium():
     assert not reconcile_wheel_events(action, mismatched, premium_fee_bps=1_000).valid
 
 
+def test_open_call_reconciles_exact_contract_floor_below_tick_rounded_strike():
+    lane = "0x00000000000000000000000000000000000000a1"
+    position_hash = HexBytes("0x" + "ac" * 32)
+    exact_required_floor8 = 223_222_222_223
+    tick_rounded_strike8 = 2_235 * 10**8
+    action = WheelAction(
+        kind=ActionKind.OPEN_CALL,
+        chain_id=84532,
+        parent="0xparent",
+        lane=lane,
+        tranche_id=4,
+        transition_nonce=2,
+        child_position_id=0,
+        amount=9 * 10**18,
+        lot_ids=(9,),
+        strike8=tick_rounded_strike8,
+        required_floor8=exact_required_floor8,
+        open_data=b"signed",
+    )
+    events = [
+        event(
+            "WheelTrancheOpened",
+            trancheId=4,
+            lane=lane,
+            childPositionId=12,
+            childShares=9 * 10**18,
+            childPositionHash=position_hash,
+        ),
+        event(
+            "CoveredCallOpened",
+            trancheId=4,
+            lotId=9,
+            positionId=12,
+            wethAmount=9 * 10**18,
+            requiredFloor8=exact_required_floor8,
+            callStrike8=tick_rounded_strike8,
+            childShares=9 * 10**18,
+            positionHash=position_hash,
+        ),
+        event(
+            "WheelCoveredCallFloorEnforced",
+            trancheId=4,
+            lotId=9,
+            lane=lane,
+            requiredFloor8=exact_required_floor8,
+            callStrike8=tick_rounded_strike8,
+        ),
+        event(
+            "WheelPremiumAccrued",
+            trancheId=4,
+            lane=lane,
+            grossPremiumAssets=1_000,
+            protocolFeeAssets=100,
+            netPremiumAssets=900,
+        ),
+    ]
+
+    assert reconcile_wheel_events(action, events, premium_fee_bps=1_000).valid
+
+
 def test_handoff_reconciliation_requires_matching_transition_hash():
     lane = "0x00000000000000000000000000000000000000a1"
     transition_hash = HexBytes("0x" + "cd" * 32)
