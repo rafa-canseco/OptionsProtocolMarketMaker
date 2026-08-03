@@ -78,6 +78,24 @@ def get_quotes() -> list[dict[str, Any]]:
     return resp.json()
 
 
+def get_meta_wheel_nav_observation(
+    fund_key: str, *, snapshot_block: int
+) -> dict[str, Any]:
+    """Return the backend's authoritative, block-bound Meta Wheel NAV evidence."""
+    if not fund_key or snapshot_block <= 0:
+        raise RuntimeError("Invalid Meta Wheel NAV observation request")
+    resp = _SESSION.get(
+        _url(f"/v2/vaults/{fund_key}/wheel/nav-observation"),
+        params={"snapshot_block": snapshot_block},
+        timeout=_TIMEOUT,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("Meta Wheel NAV observation is not an object")
+    return payload
+
+
 def delete_quotes(chain: str | None = None) -> dict[str, Any]:
     """DELETE /mm/quotes — cancel all active quotes."""
     params: dict[str, str] = {}

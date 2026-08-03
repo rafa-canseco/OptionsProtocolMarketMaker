@@ -74,6 +74,55 @@ def test_covered_call_workers_are_disabled_by_default():
     )
 
 
+def test_meta_wheel_flag_is_isolated_from_standalone_workers():
+    config = _reload_config(
+        _base_env()
+        | {
+            "FUND_ALLOCATOR_ENABLED": "true",
+            "COVERED_CALL_ALLOCATOR_ENABLED": "true",
+            "META_WHEEL_ALLOCATOR_ENABLED": "false",
+        }
+    )
+
+    assert config.FUND_ALLOCATOR_ENABLED is True
+    assert config.COVERED_CALL_ALLOCATOR_ENABLED is True
+    assert config.META_WHEEL_ALLOCATOR_ENABLED is False
+    assert config.FUND_ALLOCATOR_POLICY_PATH.endswith(
+        "csp_fund_policy.v3.base-sepolia.json"
+    )
+    assert config.COVERED_CALL_ALLOCATOR_POLICY_PATH.endswith(
+        "covered_call_fund_policy.v5.base-sepolia.json"
+    )
+    assert config.META_WHEEL_ALLOCATOR_POLICY_PATH.endswith(
+        "meta_wheel_policy.v1.base-sepolia.json"
+    )
+
+
+def test_meta_wheel_automated_signers_and_manifest_are_separate_configuration():
+    config = _reload_config(
+        _base_env()
+        | {
+            "META_WHEEL_ALLOCATOR_PRIVATE_KEY": "allocator-key",
+            "META_WHEEL_PROCESSOR_PRIVATE_KEY": "processor-key",
+            "META_WHEEL_ALLOCATOR_ADDRESS": "allocator-address",
+            "META_WHEEL_PROCESSOR_ADDRESS": "processor-address",
+            "META_WHEEL_GUARDIAN_PRIVATE_KEY": "must-not-load",
+            "META_WHEEL_CURATOR_PRIVATE_KEY": "must-not-load",
+            "META_WHEEL_DEPLOYMENT_MANIFEST_PATH": "/manifest.json",
+            "META_WHEEL_DEPLOYMENT_MANIFEST_SHA256": "ab" * 32,
+        }
+    )
+
+    assert config.META_WHEEL_ALLOCATOR_PRIVATE_KEY == "allocator-key"
+    assert config.META_WHEEL_PROCESSOR_PRIVATE_KEY == "processor-key"
+    assert config.META_WHEEL_ALLOCATOR_ADDRESS == "allocator-address"
+    assert config.META_WHEEL_PROCESSOR_ADDRESS == "processor-address"
+    assert not hasattr(config, "META_WHEEL_GUARDIAN_PRIVATE_KEY")
+    assert not hasattr(config, "META_WHEEL_CURATOR_PRIVATE_KEY")
+    assert config.META_WHEEL_DEPLOYMENT_MANIFEST_PATH == "/manifest.json"
+    assert config.META_WHEEL_DEPLOYMENT_MANIFEST_SHA256 == "ab" * 32
+
+
 def test_lazy_quote_ttl_defaults_leave_creation_budget_without_extending_deadline():
     config = _reload_config(_base_env())
 

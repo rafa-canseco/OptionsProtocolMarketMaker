@@ -51,6 +51,26 @@ def test_report_capacity_posts_payload():
     assert result == {"status": "ok"}
 
 
+def test_get_meta_wheel_nav_observation_uses_authenticated_session():
+    from src import api_client
+
+    payload = {"fundKey": "base-sepolia:wheel", "snapshotBlock": 123}
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = payload
+    with patch.object(api_client._SESSION, "get", return_value=mock_resp) as get:
+        result = api_client.get_meta_wheel_nav_observation(
+            "base-sepolia:wheel", snapshot_block=123
+        )
+
+    assert result == payload
+    get.assert_called_once_with(
+        api_client._url("/v2/vaults/base-sepolia:wheel/wheel/nav-observation"),
+        params={"snapshot_block": 123},
+        timeout=api_client._TIMEOUT,
+    )
+    mock_resp.raise_for_status.assert_called_once_with()
+
+
 def test_ensure_fund_series_posts_complete_quote_snapshot(monkeypatch):
     from eth_account import Account
 

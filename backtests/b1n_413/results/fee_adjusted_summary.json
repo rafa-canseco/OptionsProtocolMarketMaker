@@ -1,0 +1,203 @@
+{
+  "asset": "ETH",
+  "authority_issue": "B1N-413",
+  "fee_method": "10% gross premium; 2% annual management on max(opening, terminal); 10% terminal gain above opening HWM after prior fees",
+  "mainnet_authorized": false,
+  "observation_class": "modeled_fee_overlay_on_observed_spot_iv",
+  "policies": [
+    {
+      "loss_probability": 0.3170731707317073,
+      "mean_parent_management_fee_usdc": 169.25794773335306,
+      "mean_parent_performance_fee_usdc": 284.755198690904,
+      "mean_protocol_premium_fee_usdc": 463.5861376963335,
+      "production_ready": false,
+      "return_after_current_fees": {
+        "median": 0.028023031566286605,
+        "p5": -0.22515825092661365,
+        "p95": 0.06350396801967555,
+        "worst": -0.35824451379060296
+      },
+      "sample_count": 533,
+      "target_delta": 0.1,
+      "window_days": 30
+    },
+    {
+      "loss_probability": 0.3789868667917448,
+      "mean_parent_management_fee_usdc": 171.21705423385404,
+      "mean_parent_performance_fee_usdc": 404.8110852811825,
+      "mean_protocol_premium_fee_usdc": 742.902524866771,
+      "production_ready": false,
+      "return_after_current_fees": {
+        "median": 0.035138380105332434,
+        "p5": -0.24023304959202457,
+        "p95": 0.08778446009853705,
+        "worst": -0.35652386831714433
+      },
+      "sample_count": 533,
+      "target_delta": 0.2,
+      "window_days": 30
+    },
+    {
+      "loss_probability": 0.41088180112570355,
+      "mean_parent_management_fee_usdc": 172.605843517661,
+      "mean_parent_performance_fee_usdc": 489.6608259245178,
+      "mean_protocol_premium_fee_usdc": 978.5850485513985,
+      "production_ready": false,
+      "return_after_current_fees": {
+        "median": 0.02321743646459673,
+        "p5": -0.2509761780922118,
+        "p95": 0.13738044372833771,
+        "worst": -0.3818389830498288
+      },
+      "sample_count": 533,
+      "target_delta": 0.3,
+      "window_days": 30
+    },
+    {
+      "loss_probability": 0.4596622889305816,
+      "mean_parent_management_fee_usdc": 173.52113963694939,
+      "mean_parent_performance_fee_usdc": 546.0733063715041,
+      "mean_protocol_premium_fee_usdc": 1167.7718261557225,
+      "production_ready": false,
+      "return_after_current_fees": {
+        "median": 0.012568648687865336,
+        "p5": -0.26032275648659015,
+        "p95": 0.17684514186580752,
+        "worst": -0.39724116178373525
+      },
+      "sample_count": 533,
+      "target_delta": 0.4,
+      "window_days": 30
+    },
+    {
+      "loss_probability": 0.41749502982107356,
+      "mean_parent_management_fee_usdc": 528.3703639077793,
+      "mean_parent_performance_fee_usdc": 681.6478077511273,
+      "mean_protocol_premium_fee_usdc": 1247.423300357937,
+      "production_ready": false,
+      "return_after_current_fees": {
+        "median": 0.041979256622744376,
+        "p5": -0.3699311854937114,
+        "p95": 0.16362992713959856,
+        "worst": -0.4884062648749925
+      },
+      "sample_count": 503,
+      "target_delta": 0.1,
+      "window_days": 90
+    },
+    {
+      "loss_probability": 0.4691848906560636,
+      "mean_parent_management_fee_usdc": 542.2441427256255,
+      "mean_parent_performance_fee_usdc": 964.0845364474386,
+      "mean_protocol_premium_fee_usdc": 1850.9298367111276,
+      "production_ready": false,
+      "return_after_current_fees": {
+        "median": 0.0470372314864731,
+        "p5": -0.3919888892174746,
+        "p95": 0.25030564127801613,
+        "worst": -0.4989592680221284
+      },
+      "sample_count": 503,
+      "target_delta": 0.2,
+      "window_days": 90
+    },
+    {
+      "loss_probability": 0.4572564612326044,
+      "mean_parent_management_fee_usdc": 553.1241376564086,
+      "mean_parent_performance_fee_usdc": 1183.2385876765761,
+      "mean_protocol_premium_fee_usdc": 2318.1479591552575,
+      "production_ready": false,
+      "return_after_current_fees": {
+        "median": 0.044126476813976856,
+        "p5": -0.4056711550169147,
+        "p95": 0.3464187745531299,
+        "worst": -0.507139196306467
+      },
+      "sample_count": 503,
+      "target_delta": 0.3,
+      "window_days": 90
+    },
+    {
+      "loss_probability": 0.46123260437375746,
+      "mean_parent_management_fee_usdc": 558.2564766335712,
+      "mean_parent_performance_fee_usdc": 1286.9855669973927,
+      "mean_protocol_premium_fee_usdc": 2635.3541341236632,
+      "production_ready": false,
+      "return_after_current_fees": {
+        "median": 0.03661034685264597,
+        "p5": -0.40938857640863596,
+        "p95": 0.39847289430610255,
+        "worst": -0.5141238723218436
+      },
+      "sample_count": 503,
+      "target_delta": 0.4,
+      "window_days": 90
+    },
+    {
+      "loss_probability": 0.462882096069869,
+      "mean_parent_management_fee_usdc": 1100.9335188500063,
+      "mean_parent_performance_fee_usdc": 1097.3339168528719,
+      "mean_protocol_premium_fee_usdc": 2326.968366027042,
+      "production_ready": false,
+      "return_after_current_fees": {
+        "median": 0.025635300900499036,
+        "p5": -0.4453405521617909,
+        "p95": 0.29991404122912935,
+        "worst": -0.5324992893332332
+      },
+      "sample_count": 458,
+      "target_delta": 0.1,
+      "window_days": 180
+    },
+    {
+      "loss_probability": 0.4847161572052402,
+      "mean_parent_management_fee_usdc": 1122.278628895178,
+      "mean_parent_performance_fee_usdc": 1313.6348964705348,
+      "mean_protocol_premium_fee_usdc": 3162.482291777712,
+      "production_ready": false,
+      "return_after_current_fees": {
+        "median": 0.009274923526775836,
+        "p5": -0.5101014649895005,
+        "p95": 0.42087956766479867,
+        "worst": -0.5588358509677832
+      },
+      "sample_count": 458,
+      "target_delta": 0.2,
+      "window_days": 180
+    },
+    {
+      "loss_probability": 0.537117903930131,
+      "mean_parent_management_fee_usdc": 1143.7338687638746,
+      "mean_parent_performance_fee_usdc": 1534.234118748514,
+      "mean_protocol_premium_fee_usdc": 3799.349187454656,
+      "production_ready": false,
+      "return_after_current_fees": {
+        "median": -0.05925340097187082,
+        "p5": -0.5056825871033486,
+        "p95": 0.5462188917216234,
+        "worst": -0.5574746594965624
+      },
+      "sample_count": 458,
+      "target_delta": 0.3,
+      "window_days": 180
+    },
+    {
+      "loss_probability": 0.5414847161572053,
+      "mean_parent_management_fee_usdc": 1150.1834208004832,
+      "mean_parent_performance_fee_usdc": 1599.9261942526798,
+      "mean_protocol_premium_fee_usdc": 4162.947493336504,
+      "production_ready": false,
+      "return_after_current_fees": {
+        "median": -0.06306571832044688,
+        "p5": -0.5168309297010979,
+        "p95": 0.5905684667216786,
+        "worst": -0.5686063256980114
+      },
+      "sample_count": 458,
+      "target_delta": 0.4,
+      "window_days": 180
+    }
+  ],
+  "production_ready_fixed_policies": 0,
+  "source_issue": "B1N-345"
+}

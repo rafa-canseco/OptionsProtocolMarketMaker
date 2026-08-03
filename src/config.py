@@ -267,6 +267,59 @@ COVERED_CALL_VALUATOR_ADDRESS: str | None = _optional_env(
 )
 COVERED_CALL_WETH_ADDRESS: str | None = _optional_env("COVERED_CALL_WETH_ADDRESS")
 
+# --- Base Sepolia Meta Wheel (separate, explicit opt-in; dedicated children only) ---
+META_WHEEL_ALLOCATOR_ENABLED: bool = _env_flag(
+    "META_WHEEL_ALLOCATOR_ENABLED", default=False
+)
+META_WHEEL_ALLOCATOR_PRIVATE_KEY: str | None = _optional_env(
+    "META_WHEEL_ALLOCATOR_PRIVATE_KEY"
+)
+META_WHEEL_PROCESSOR_PRIVATE_KEY: str | None = _optional_env(
+    "META_WHEEL_PROCESSOR_PRIVATE_KEY"
+)
+META_WHEEL_ALLOCATOR_ADDRESS: str | None = _optional_env("META_WHEEL_ALLOCATOR_ADDRESS")
+META_WHEEL_PROCESSOR_ADDRESS: str | None = _optional_env("META_WHEEL_PROCESSOR_ADDRESS")
+META_WHEEL_ALLOCATOR_POLICY_PATH: str = os.getenv(
+    "META_WHEEL_ALLOCATOR_POLICY_PATH",
+    "policies/meta_wheel_policy.v1.base-sepolia.json",
+)
+META_WHEEL_APPROVED_POLICY_SHA256: str | None = _optional_env(
+    "META_WHEEL_APPROVED_POLICY_SHA256"
+)
+META_WHEEL_ALLOCATOR_INTERVAL_SECONDS: int = max(
+    int(os.getenv("META_WHEEL_ALLOCATOR_INTERVAL_SECONDS", "30")), 10
+)
+META_WHEEL_ALLOCATOR_CONFIRMATIONS: int = max(
+    int(os.getenv("META_WHEEL_ALLOCATOR_CONFIRMATIONS", "2")), 2
+)
+META_WHEEL_PERSISTENT_ROOT: str | None = _optional_env(
+    "META_WHEEL_PERSISTENT_ROOT"
+)
+META_WHEEL_ACTION_JOURNAL_PATH: str | None = _optional_env(
+    "META_WHEEL_ACTION_JOURNAL_PATH"
+)
+META_WHEEL_DEPLOYMENT_MANIFEST_PATH: str | None = _optional_env(
+    "META_WHEEL_DEPLOYMENT_MANIFEST_PATH"
+)
+META_WHEEL_DEPLOYMENT_MANIFEST_SHA256: str | None = _optional_env(
+    "META_WHEEL_DEPLOYMENT_MANIFEST_SHA256"
+)
+META_WHEEL_PARENT_ADDRESS: str | None = _optional_env("META_WHEEL_PARENT_ADDRESS")
+META_WHEEL_STRATEGY_MANAGER_ADDRESS: str | None = _optional_env(
+    "META_WHEEL_STRATEGY_MANAGER_ADDRESS"
+)
+META_WHEEL_COORDINATOR_ADDRESS: str | None = _optional_env(
+    "META_WHEEL_COORDINATOR_ADDRESS"
+)
+META_WHEEL_VALUATOR_ADDRESS: str | None = _optional_env("META_WHEEL_VALUATOR_ADDRESS")
+META_WHEEL_CSP_LANE_ADDRESSES: str | None = _optional_env(
+    "META_WHEEL_CSP_LANE_ADDRESSES"
+)
+META_WHEEL_CALL_LANE_ADDRESSES: str | None = _optional_env(
+    "META_WHEEL_CALL_LANE_ADDRESSES"
+)
+META_WHEEL_FUND_KEY: str | None = _optional_env("META_WHEEL_FUND_KEY")
+
 
 # --- Multi-asset configuration ---
 def _parse_assets() -> list[AssetConfig]:
