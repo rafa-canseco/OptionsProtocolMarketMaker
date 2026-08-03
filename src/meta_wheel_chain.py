@@ -255,6 +255,7 @@ def load_wheel_manifest_gate(
         "finalRoles",
         "standaloneBaselines",
         "readiness",
+        "verificationEvidence",
     }
     if not required_top_level <= set(manifest):
         raise RuntimeError("Meta Wheel deployment manifest schema is incomplete")
@@ -298,7 +299,7 @@ def load_wheel_manifest_gate(
     readiness = manifest.get("readiness")
     if not isinstance(readiness, dict) or (
         readiness.get("canonicalReceiptsRecorded") is not True
-        or readiness.get("blockscoutVerificationComplete") is not True
+        or readiness.get("exactSourceRuntimeBytecodeVerified") is not True
         or readiness.get("bootstrapReconciled") is not True
         or readiness.get("finalRolesReconciled") is not True
         or readiness.get("standaloneBaselinesUnchanged") is not True
@@ -306,6 +307,28 @@ def load_wheel_manifest_gate(
         or readiness.get("mainnetAuthorized") is not False
     ):
         raise RuntimeError("Meta Wheel deployment readiness is incomplete")
+    verification_evidence = manifest.get("verificationEvidence")
+    if not isinstance(verification_evidence, dict) or (
+        verification_evidence.get("method")
+        != "SOLC_STANDARD_JSON_RPC_EXACT_V2"
+        or verification_evidence.get("compilerVersion")
+        != "0.8.24+commit.e11b9ed9"
+        or verification_evidence.get("addressCount") != 47
+        or verification_evidence.get("artifactCount") != 25
+    ):
+        raise RuntimeError("Meta Wheel source/runtime verification evidence is invalid")
+    for digest_field in (
+        "sourceRuntimeEvidenceSha256",
+        "coreBuildInfoSha256",
+        "libraryBuildInfoSha256",
+        "coreStandardJsonInputSha256",
+        "libraryStandardJsonInputSha256",
+        "inventorySha256",
+    ):
+        _bytes32(
+            verification_evidence.get(digest_field),
+            f"verificationEvidence.{digest_field}",
+        )
     receipts = manifest.get("canonicalReceipts")
     if (
         not isinstance(receipts, list)

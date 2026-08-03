@@ -97,12 +97,24 @@ def _manifest() -> tuple[dict, dict[WheelSignerRole, str]]:
             },
             "readiness": {
                 "canonicalReceiptsRecorded": True,
-                "blockscoutVerificationComplete": True,
+                "exactSourceRuntimeBytecodeVerified": True,
                 "bootstrapReconciled": True,
                 "finalRolesReconciled": True,
                 "standaloneBaselinesUnchanged": True,
                 "backendHandoffReady": True,
                 "mainnetAuthorized": False,
+            },
+            "verificationEvidence": {
+                "method": "SOLC_STANDARD_JSON_RPC_EXACT_V2",
+                "compilerVersion": "0.8.24+commit.e11b9ed9",
+                "sourceRuntimeEvidenceSha256": _bytes32(71),
+                "coreBuildInfoSha256": _bytes32(72),
+                "libraryBuildInfoSha256": _bytes32(73),
+                "coreStandardJsonInputSha256": _bytes32(74),
+                "libraryStandardJsonInputSha256": _bytes32(75),
+                "inventorySha256": _bytes32(76),
+                "addressCount": 47,
+                "artifactCount": 25,
             },
             "canonicalReceipts": [
                 {
@@ -302,7 +314,7 @@ def test_manifest_fails_closed_before_deployed_handoff(tmp_path):
     "field",
     (
         "canonicalReceiptsRecorded",
-        "blockscoutVerificationComplete",
+        "exactSourceRuntimeBytecodeVerified",
         "bootstrapReconciled",
         "finalRolesReconciled",
         "standaloneBaselinesUnchanged",
@@ -314,6 +326,39 @@ def test_manifest_requires_every_readiness_attestation(tmp_path, field):
     manifest["readiness"] = manifest["readiness"] | {field: False}
 
     with pytest.raises(RuntimeError, match="readiness is incomplete"):
+        _gate(tmp_path, manifest)
+
+
+def test_manifest_does_not_require_public_explorer_verification(tmp_path):
+    manifest, _ = _manifest()
+    manifest["readiness"]["blockscoutVerificationComplete"] = False
+
+    assert _gate(tmp_path, manifest).chain_id == 84532
+
+
+@pytest.mark.parametrize(
+    ("field", "invalid"),
+    (
+        ("method", "PUBLIC_EXPLORER_ONLY"),
+        ("compilerVersion", "0.8.25"),
+        ("sourceRuntimeEvidenceSha256", "0x" + "00" * 32),
+        ("coreBuildInfoSha256", "0x" + "00" * 32),
+        ("libraryBuildInfoSha256", "0x" + "00" * 32),
+        ("coreStandardJsonInputSha256", "0x" + "00" * 32),
+        ("libraryStandardJsonInputSha256", "0x" + "00" * 32),
+        ("inventorySha256", "0x" + "00" * 32),
+        ("addressCount", 46),
+        ("artifactCount", 24),
+    ),
+)
+def test_manifest_rejects_invalid_source_runtime_evidence(tmp_path, field, invalid):
+    manifest, _ = _manifest()
+    manifest["verificationEvidence"][field] = invalid
+
+    with pytest.raises(
+        RuntimeError,
+        match="source/runtime verification evidence|Invalid Meta Wheel bytes32",
+    ):
         _gate(tmp_path, manifest)
 
 
