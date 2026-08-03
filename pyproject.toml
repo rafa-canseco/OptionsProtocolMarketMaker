@@ -25,7 +25,19 @@ packages = ["src"]
 [tool.uv]
 dev-dependencies = [
     "pytest>=9.0.2",
+    "ruff==0.15.2",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [".git", ".venv", ".worktrees", "dist"]
+markers = [
+    "integration: requires a controlled external service or process",
+    "network: requires explicit network access and credentials",
+]
+
+[tool.ruff]
+extend-exclude = [".worktrees", ".venv", "data"]
 
 [build-system]
 requires = ["hatchling"]

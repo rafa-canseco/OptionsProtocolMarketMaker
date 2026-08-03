@@ -596,9 +596,7 @@ def test_resolve_underlying_uses_solana_asset_map(mock_config):
     from src.main import _resolve_underlying, _tracker
 
     mock_config.ASSET_MAP = {"eth": SimpleNamespace(hedge_symbol="ETH")}
-    mock_config.SOLANA_ASSET_MAP = {
-        "tslax": SimpleNamespace(hedge_symbol="xyz:TSLA")
-    }
+    mock_config.SOLANA_ASSET_MAP = {"tslax": SimpleNamespace(hedge_symbol="xyz:TSLA")}
     mock_config.ASSETS = [SimpleNamespace(name="eth", hedge_symbol="ETH")]
 
     _tracker.cache_otokens(

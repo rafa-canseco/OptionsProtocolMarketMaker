@@ -4,7 +4,6 @@ Usage: uv run python scripts/fund_mm.py
 """
 
 import sys
-import time
 
 from eth_account import Account
 from web3 import Web3
@@ -73,9 +72,7 @@ def main() -> None:
     w3 = Web3(Web3.HTTPProvider(RPC_URL))
     mm = Account.from_key(MM_PRIVATE_KEY)
     mm_addr = mm.address
-    lusd = w3.eth.contract(
-        address=Web3.to_checksum_address(LUSD), abi=ERC20_ABI
-    )
+    lusd = w3.eth.contract(address=Web3.to_checksum_address(LUSD), abi=ERC20_ABI)
     settler = Web3.to_checksum_address(BATCH_SETTLER)
 
     bal_before = lusd.functions.balanceOf(mm_addr).call()
@@ -85,11 +82,13 @@ def main() -> None:
     # 1. Mint LUSD
     print(f"\nMinting {MINT_AMOUNT / 1e6:.0f} LUSD...")
     nonce = w3.eth.get_transaction_count(mm_addr)
-    tx = lusd.functions.mint(mm_addr, MINT_AMOUNT).build_transaction({
-        "from": mm_addr,
-        "nonce": nonce,
-        "gas": 100_000,
-    })
+    tx = lusd.functions.mint(mm_addr, MINT_AMOUNT).build_transaction(
+        {
+            "from": mm_addr,
+            "nonce": nonce,
+            "gas": 100_000,
+        }
+    )
     send_tx(w3, tx)
 
     bal_after = lusd.functions.balanceOf(mm_addr).call()
@@ -100,13 +99,13 @@ def main() -> None:
     if allowance < MINT_AMOUNT:
         print(f"\nApproving BatchSettler ({settler[:10]}...) for max LUSD...")
         nonce = w3.eth.get_transaction_count(mm_addr)
-        tx = lusd.functions.approve(
-            settler, 2**256 - 1
-        ).build_transaction({
-            "from": mm_addr,
-            "nonce": nonce,
-            "gas": 100_000,
-        })
+        tx = lusd.functions.approve(settler, 2**256 - 1).build_transaction(
+            {
+                "from": mm_addr,
+                "nonce": nonce,
+                "gas": 100_000,
+            }
+        )
         send_tx(w3, tx)
         new_allowance = lusd.functions.allowance(mm_addr, settler).call()
         print(f"Allowance: {new_allowance}")
