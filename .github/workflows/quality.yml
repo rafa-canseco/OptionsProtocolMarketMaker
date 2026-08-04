@@ -1,0 +1,31 @@
+name: Quality
+
+on:
+  pull_request:
+    branches: [staging, main]
+  push:
+    branches: [staging, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: market-maker-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.3"
+          enable-cache: true
+      - name: Install Python
+        run: uv python install 3.13
+      - name: Sync locked dependencies
+        run: uv sync --frozen --python 3.13
+      - name: Run canonical full check
+        run: ./scripts/harness-check.sh full
