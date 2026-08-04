@@ -109,7 +109,7 @@ def run_cycle(
     w3: Web3,
     domain: dict,
     mm_address: str,
-) -> None:
+) -> dict | None:
     """Single quote-refresh cycle across all chains and assets."""
     # 1. Delete stale quotes from previous cycle (per-chain)
     for chain_cfg in config.CHAINS:
@@ -148,7 +148,11 @@ def run_cycle(
                     exc_info=True,
                 )
 
-    # 4. Per-chain, per-asset: fetch market data, quote, sign, submit
+    # 4. Fetch exposure once for cycle-scoped telemetry. Exposure is deliberately
+    # not cached across cycles or used as a quote/capacity risk input.
+    exposure_snapshot = _fetch_cycle_exposure()
+
+    # 5. Per-chain, per-asset: fetch market data, quote, sign, submit
     for chain_cfg in config.CHAINS:
         for asset_cfg in chain_cfg.assets:
             try:
@@ -158,6 +162,7 @@ def run_cycle(
                     mm_address=mm_address,
                     asset_cfg=asset_cfg,
                     chain=chain_cfg.name,
+                    exposure_snapshot=exposure_snapshot,
                 )
             except Exception:
                 log.error(
@@ -166,6 +171,23 @@ def run_cycle(
                     asset_cfg.name.upper(),
                     exc_info=True,
                 )
+
+    return exposure_snapshot
+
+
+def _fetch_cycle_exposure() -> dict | None:
+    """Fetch one exposure snapshot without inventing a fallback value."""
+    try:
+        exposure = api_client.get_exposure()
+        if not isinstance(exposure, dict):
+            raise TypeError("Exposure response must be an object")
+        return exposure
+    except Exception:
+        log.warning(
+            "Failed to fetch cycle exposure; exposure telemetry is unavailable",
+            exc_info=True,
+        )
+        return None
 
 
 def _track_spot(asset_name: str, spot: float, chain: str = "base") -> None:
@@ -240,6 +262,7 @@ def _run_asset_cycle(
     mm_address: str,
     asset_cfg: config.AssetConfig,
     chain: str = "base",
+    exposure_snapshot: dict | None = None,
 ) -> None:
     """Quote-refresh for a single asset on a given chain."""
     asset_name = asset_cfg.name
@@ -290,7 +313,7 @@ def _run_asset_cycle(
             asset_name.upper(),
         )
 
-    _log_capacity_snapshot(asset_cfg, chain)
+    _log_capacity_snapshot(asset_cfg, chain, exposure_snapshot)
 
     if not otokens:
         log.warning("No oTokens for %s, skipping", chain_label)
@@ -415,18 +438,17 @@ def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg, chain="base")
     return cap
 
 
-def log_monitoring() -> None:
-    """Log fills and exposure for visibility."""
-    try:
-        exposure = api_client.get_exposure()
+def log_monitoring(exposure_snapshot: dict | None) -> None:
+    """Log fills and the current cycle's exposure snapshot for visibility."""
+    if exposure_snapshot is not None:
         log.info(
             "Exposure: active_quotes=%s notional=%s premium_earned=%s",
-            exposure.get("active_quotes_count"),
-            exposure.get("active_quotes_notional"),
-            exposure.get("total_premium_earned"),
+            exposure_snapshot.get("active_quotes_count"),
+            exposure_snapshot.get("active_quotes_notional"),
+            exposure_snapshot.get("total_premium_earned"),
         )
-    except Exception:
-        log.warning("Failed to fetch exposure", exc_info=True)
+    else:
+        log.warning("Exposure monitoring unavailable for this cycle")
 
     # Prefer WebSocket fills; fall back to REST if WS is disconnected
     if fill_listener.is_connected():
@@ -477,11 +499,18 @@ def _solana_call_capacity(asset_cfg: config.AssetConfig) -> int | None:
     return call_capacity
 
 
-def _log_capacity_snapshot(asset_cfg: config.AssetConfig, chain: str = "base") -> None:
+def _log_capacity_snapshot(
+    asset_cfg: config.AssetConfig,
+    chain: str,
+    exposure_snapshot: dict | None,
+) -> None:
     """Log a capacity snapshot for a specific asset."""
+    if exposure_snapshot is None:
+        # Never turn a failed exposure read into zero-premium or stale telemetry.
+        return
+
     mkt = _get_market(asset_cfg.name, chain)
     try:
-        exposure = api_client.get_exposure()
         account_val = hedge_executor.get_account_value(asset_cfg.hedge_symbol)
         hl_positions = hedge_executor.get_positions(asset_cfg.hedge_symbol)
         asset_pos = next(
@@ -492,7 +521,7 @@ def _log_capacity_snapshot(asset_cfg: config.AssetConfig, chain: str = "base") -
         if asset_pos:
             hedge_usd = abs(asset_pos["size"]) * asset_pos["entry_price"]
 
-        premium_usd = float(exposure.get("total_premium_earned", 0))
+        premium_usd = float(exposure_snapshot.get("total_premium_earned", 0))
         has_positions = bool(_tracker.open_positions(underlying=asset_cfg.name))
         status = "active" if has_positions else "idle"
         spot = mkt.spot or 1.0
@@ -714,14 +743,15 @@ def main() -> None:
     while True:
         cycle += 1
         log.info("--- Cycle %d ---", cycle)
+        exposure_snapshot = None
         try:
-            run_cycle(w3, domain, mm_address)
+            exposure_snapshot = run_cycle(w3, domain, mm_address)
         except Exception:
             log.error("Cycle %d failed", cycle, exc_info=True)
 
         # Log monitoring every 5 cycles
         if cycle % 5 == 0:
-            log_monitoring()
+            log_monitoring(exposure_snapshot)
 
         try:
             interval = _pick_refresh_interval()
