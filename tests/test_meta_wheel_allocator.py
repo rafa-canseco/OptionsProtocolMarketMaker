@@ -31,7 +31,7 @@ from src.meta_wheel_allocator import (
 from src.meta_wheel_policy import load_meta_wheel_policy, sha256_file
 
 
-POLICY_PATH = Path("policies/meta_wheel_policy.v1.base-sepolia.json")
+POLICY_PATH = Path("policies/meta_wheel_policy.v2.base-sepolia.json")
 
 
 @pytest.fixture
@@ -165,6 +165,7 @@ def quote(
         if allocation_amount is None
         else allocation_amount
     )
+    realized_delta_bps = (900 if is_put else None) if delta_bps is None else delta_bps
     return WheelQuote(
         quote_id=quote_id,
         is_put=is_put,
@@ -172,10 +173,12 @@ def quote(
         expiry=now + 48 * 3600,
         created_at=now - 5,
         deadline=now + 60,
-        gross_premium_bps=20,
+        gross_premium_bps=24 if is_put else 20,
         maximum_collateral=10_000 * 10**18,
         canonical_series=True,
-        delta_bps=delta_bps,
+        delta_bps=realized_delta_bps,
+        gross_premium=bound_amount * 24 // 10_000 if is_put else 0,
+        collateral=bound_amount if is_put else 0,
         open_data=b"signed-open-data",
         lane=lane_address or ("0xcsp1" if is_put else "0xcc1"),
         tranche_id=tranche_id,
@@ -310,6 +313,107 @@ def test_pending_csp_tranche_opens_atomically_on_free_lane(policy):
     assert actions[0].kind == ActionKind.OPEN_CSP
     assert actions[0].tranche_id == 1
     assert actions[0].lane == "0xcsp1"
+
+
+def test_csp_selects_nearest_put_delta_within_tolerance_and_uses_tick(policy):
+    pending = PendingCspTranche(1, 2, 5_000 * 10**6, 5_000 * 10**6)
+    state = snapshot(
+        policy,
+        idle_usdc=0,
+        pending_csp_usdc=pending.pending_usdc,
+        pending_csp_tranches=(pending,),
+    )
+    farther = quote(quote_id="farther", is_put=True, strike=1675, delta_bps=800)
+    nearest = quote(quote_id="nearest", is_put=True, strike=1700, delta_bps=910)
+
+    (action,) = MetaWheelPlanner(policy).plan(state, (farther, nearest))
+
+    assert action.quote_id == "nearest"
+    assert action.target_delta_bps == 900
+    assert action.realized_delta_bps == 910
+    assert action.delta_deviation_bps == 10
+    assert action.strike8 % (25 * 10**8) == 0
+
+
+def test_csp_delta_tie_prefers_lower_absolute_delta(policy):
+    pending = PendingCspTranche(1, 2, 5_000 * 10**6, 5_000 * 10**6)
+    state = snapshot(
+        policy,
+        idle_usdc=0,
+        pending_csp_usdc=pending.pending_usdc,
+        pending_csp_tranches=(pending,),
+    )
+    high = quote(quote_id="high", is_put=True, strike=1725, delta_bps=1000)
+    low = quote(quote_id="low", is_put=True, strike=1675, delta_bps=800)
+
+    (action,) = MetaWheelPlanner(policy).plan(state, (high, low))
+
+    assert action.quote_id == "low"
+
+
+def test_csp_missing_stale_outside_delta_and_subfloor_quotes_fail_closed(policy):
+    pending = PendingCspTranche(1, 2, 5_000 * 10**6, 5_000 * 10**6)
+    state = snapshot(
+        policy,
+        idle_usdc=0,
+        pending_csp_usdc=pending.pending_usdc,
+        pending_csp_tranches=(pending,),
+    )
+    base = quote(quote_id="base", is_put=True, strike=1700)
+    rejected = (
+        replace(base, quote_id="missing", delta_bps=None),
+        replace(
+            base,
+            quote_id="stale",
+            created_at=state.timestamp - policy.quote_maximum_age - 1,
+        ),
+        replace(base, quote_id="outside", delta_bps=1_051),
+        replace(base, quote_id="subfloor", gross_premium=11_111_110),
+        replace(base, quote_id="off-tick", strike8=1_710 * 10**8),
+    )
+
+    assert MetaWheelPlanner(policy).plan(state, rejected) == ()
+
+
+def test_csp_expiry_accepts_60h_and_rejects_one_second_over(policy):
+    pending = PendingCspTranche(1, 2, 5_000 * 10**6, 5_000 * 10**6)
+    state = snapshot(
+        policy,
+        idle_usdc=0,
+        pending_csp_usdc=pending.pending_usdc,
+        pending_csp_tranches=(pending,),
+    )
+    exact = replace(
+        quote(quote_id="exact-60h", is_put=True, strike=1700),
+        expiry=state.timestamp + 60 * 3600,
+    )
+    over = replace(exact, quote_id="over-60h", expiry=exact.expiry + 1)
+
+    (action,) = MetaWheelPlanner(policy).plan(state, (exact, over))
+
+    assert action.quote_id == "exact-60h"
+    assert MetaWheelPlanner(policy).plan(state, (over,)) == ()
+
+
+def test_csp_exact_20_bps_after_runtime_fee_passes_one_unit_below_fails(policy):
+    collateral = 5_000 * 10**6
+    exact_gross = 11_111_111
+    pending = PendingCspTranche(1, 2, collateral, collateral)
+    state = snapshot(
+        policy,
+        idle_usdc=0,
+        pending_csp_usdc=collateral,
+        pending_csp_tranches=(pending,),
+    )
+    base = quote(quote_id="base", is_put=True, strike=1700)
+    exact = replace(base, quote_id="exact", gross_premium=exact_gross)
+    below = replace(base, quote_id="below", gross_premium=exact_gross - 1)
+
+    assert MetaWheelPlanner(policy).plan(state, (below,)) == ()
+    (action,) = MetaWheelPlanner(policy).plan(state, (exact,))
+    assert action.quote_id == "exact"
+    assert action.net_premium_bps == 20
+    assert action.protocol_fee_bps == 1_000
 
 
 def test_oversized_pending_tranche_splits_then_sibling_opens(policy):

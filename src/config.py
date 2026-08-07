@@ -183,7 +183,7 @@ FUND_ALLOCATOR_ENABLED: bool = _env_flag("FUND_ALLOCATOR_ENABLED", default=False
 FUND_ALLOCATOR_PRIVATE_KEY: str | None = _optional_env("FUND_ALLOCATOR_PRIVATE_KEY")
 FUND_ALLOCATOR_POLICY_PATH: str = os.getenv(
     "FUND_ALLOCATOR_POLICY_PATH",
-    "policies/csp_fund_policy.v3.base-sepolia.json",
+    "policies/csp_fund_policy.v4.base-sepolia.json",
 )
 FUND_ALLOCATOR_INTERVAL_SECONDS: int = max(
     int(os.getenv("FUND_ALLOCATOR_INTERVAL_SECONDS", "30")),
@@ -281,7 +281,7 @@ META_WHEEL_ALLOCATOR_ADDRESS: str | None = _optional_env("META_WHEEL_ALLOCATOR_A
 META_WHEEL_PROCESSOR_ADDRESS: str | None = _optional_env("META_WHEEL_PROCESSOR_ADDRESS")
 META_WHEEL_ALLOCATOR_POLICY_PATH: str = os.getenv(
     "META_WHEEL_ALLOCATOR_POLICY_PATH",
-    "policies/meta_wheel_policy.v1.base-sepolia.json",
+    "policies/meta_wheel_policy.v2.base-sepolia.json",
 )
 META_WHEEL_APPROVED_POLICY_SHA256: str | None = _optional_env(
     "META_WHEEL_APPROVED_POLICY_SHA256"

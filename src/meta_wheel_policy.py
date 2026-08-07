@@ -45,6 +45,7 @@ _SCOPE_FIELDS = {
     "underlying",
 }
 _CADENCE_FIELDS = {
+    "market_maximum_age_seconds",
     "maximum_expiry_delay_seconds",
     "minimum_expiry_delay_seconds",
     "quote_maximum_age_seconds",
@@ -70,12 +71,16 @@ _ASSIGNMENT_FIELDS = {
     "strike_tick_usd",
 }
 _SELECTION_FIELDS = {
-    "csp_strike_otm_bps",
+    "csp_maximum_expiry_delay_seconds",
+    "csp_minimum_net_premium_bps",
+    "csp_strike_rule",
     "csp_strike_tick_usd",
     "maximum_call_delta_deviation_bps",
     "maximum_execution_slippage_bps",
+    "maximum_put_delta_deviation_bps",
     "minimum_net_premium_bps",
     "target_call_delta_bps",
+    "target_put_delta_bps",
 }
 _LIQUIDITY_FIELDS = {
     "csp_target_utilization_bps",
@@ -110,7 +115,9 @@ class MetaWheelPolicy:
     target_duration_seconds: int
     min_expiry_delay: int
     max_expiry_delay: int
+    csp_max_expiry_delay: int
     quote_maximum_age: int
+    market_maximum_age: int
     quote_minimum_ttl: int
     settlement_maximum_delay: int
     maximum_csp_lanes: int
@@ -121,7 +128,8 @@ class MetaWheelPolicy:
     maximum_weth_per_cc_lane: int
     execution_cost_buffer: int
     strike_tick: int
-    csp_strike_otm_bps: int
+    target_put_delta_bps: int
+    maximum_put_delta_deviation_bps: int
     csp_strike_tick: int
     target_call_delta_bps: int
     maximum_call_delta_deviation_bps: int
@@ -129,6 +137,7 @@ class MetaWheelPolicy:
     csp_target_utilization_bps: int
     parent_liquid_reserve_bps: int
     maximum_idle_duration_seconds: int
+    csp_minimum_net_premium_bps: int
     minimum_net_premium_bps: int
     protocol_gross_premium_fee_bps: int
     parent_management_fee_bps: int
@@ -161,7 +170,11 @@ def _positive_int(value: Any, *, label: str) -> int:
 
 def _bounded_bps(value: Any, *, label: str, allow_zero: bool = False) -> int:
     lower = 0 if allow_zero else 1
-    if isinstance(value, bool) or not isinstance(value, int) or not lower <= value <= BPS:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not lower <= value <= BPS
+    ):
         raise ValueError(f"Meta Wheel policy {label} must be in [{lower}, {BPS}]")
     return value
 
@@ -179,7 +192,9 @@ def load_meta_wheel_policy(
     try:
         raw = json.loads(policy_path.read_text())
     except (OSError, json.JSONDecodeError) as error:
-        raise ValueError(f"Unable to load Meta Wheel policy {policy_path}: {error}") from error
+        raise ValueError(
+            f"Unable to load Meta Wheel policy {policy_path}: {error}"
+        ) from error
 
     root = _exact_fields(raw, _ROOT_FIELDS, path=policy_path, label="root")
     scope = _exact_fields(root["scope"], _SCOPE_FIELDS, path=policy_path, label="scope")
@@ -213,8 +228,9 @@ def load_meta_wheel_policy(
         "underlying": "ETH",
     }
     authorization = (
-        root["schema_version"] == 1
-        and root["authority_issue"] == "B1N-413"
+        root["schema_version"] == 2
+        and root["policy_id"] == "eth_usdc_meta_wheel_base_sepolia_v2"
+        and root["authority_issue"] == "B1N-438"
         and root["decision"] == "go_testnet_only"
         and root["activation_allowed"] is True
         and root["runtime_enabled_by_default"] is False
@@ -286,8 +302,27 @@ def load_meta_wheel_policy(
     }:
         raise ValueError("Meta Wheel evidence boundary is not explicit")
 
+    expected_selection = {
+        "csp_maximum_expiry_delay_seconds": 216000,
+        "csp_minimum_net_premium_bps": 20,
+        "csp_strike_rule": "target_absolute_put_delta",
+        "csp_strike_tick_usd": 25,
+        "maximum_call_delta_deviation_bps": 150,
+        "maximum_execution_slippage_bps": 100,
+        "maximum_put_delta_deviation_bps": 150,
+        "minimum_net_premium_bps": 10,
+        "target_call_delta_bps": 500,
+        "target_put_delta_bps": 900,
+    }
+    if selection != expected_selection:
+        raise ValueError("Meta Wheel option selection differs from B1N-438 policy")
+
     protocol_fee_bps = _bounded_bps(
         fees["protocol_gross_premium_fee_bps"], label="protocol fee"
+    )
+    csp_minimum_net_premium_bps = _bounded_bps(
+        selection["csp_minimum_net_premium_bps"],
+        label="csp_minimum_net_premium_bps",
     )
     minimum_net_premium_bps = _bounded_bps(
         selection["minimum_net_premium_bps"], label="minimum_net_premium_bps"
@@ -301,8 +336,15 @@ def load_meta_wheel_policy(
         target_duration_seconds=48 * 3600,
         min_expiry_delay=min_expiry,
         max_expiry_delay=max_expiry,
+        csp_max_expiry_delay=_positive_int(
+            selection["csp_maximum_expiry_delay_seconds"],
+            label="csp_maximum_expiry_delay_seconds",
+        ),
         quote_maximum_age=_positive_int(
             cadence["quote_maximum_age_seconds"], label="quote_maximum_age_seconds"
+        ),
+        market_maximum_age=_positive_int(
+            cadence["market_maximum_age_seconds"], label="market_maximum_age_seconds"
         ),
         quote_minimum_ttl=_positive_int(
             cadence["quote_minimum_ttl_seconds"], label="quote_minimum_ttl_seconds"
@@ -323,9 +365,7 @@ def load_meta_wheel_policy(
             label="maximum_usdc_per_csp_lane",
         )
         * 10**6,
-        maximum_weth_per_cc_lane=_weth_amount(
-            tranches["maximum_weth_per_cc_lane"]
-        ),
+        maximum_weth_per_cc_lane=_weth_amount(tranches["maximum_weth_per_cc_lane"]),
         execution_cost_buffer=_positive_int(
             assignment["execution_cost_buffer_usd"],
             label="execution_cost_buffer_usd",
@@ -335,8 +375,12 @@ def load_meta_wheel_policy(
             assignment["strike_tick_usd"], label="strike_tick_usd"
         )
         * 10**8,
-        csp_strike_otm_bps=_bounded_bps(
-            selection["csp_strike_otm_bps"], label="csp_strike_otm_bps"
+        target_put_delta_bps=_bounded_bps(
+            selection["target_put_delta_bps"], label="target_put_delta_bps"
+        ),
+        maximum_put_delta_deviation_bps=_bounded_bps(
+            selection["maximum_put_delta_deviation_bps"],
+            label="maximum_put_delta_deviation_bps",
         ),
         csp_strike_tick=_positive_int(
             selection["csp_strike_tick_usd"], label="csp_strike_tick_usd"
@@ -368,6 +412,7 @@ def load_meta_wheel_policy(
             label="maximum_idle_duration_hours",
         )
         * 3600,
+        csp_minimum_net_premium_bps=csp_minimum_net_premium_bps,
         minimum_net_premium_bps=minimum_net_premium_bps,
         protocol_gross_premium_fee_bps=protocol_fee_bps,
         parent_management_fee_bps=fees["parent_management_fee_bps_annual"],

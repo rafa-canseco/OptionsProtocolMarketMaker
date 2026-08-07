@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
+import logging
+import math
 from typing import Any
 
 from eth_account import Account
@@ -19,8 +21,10 @@ from src.covered_call_allocator import (
     option_amount_for_call_collateral,
 )
 from src.fund_allocator import (
+    incremental_quote_premium,
     option_amount_for_collateral,
     required_collateral,
+    validate_market_snapshot,
 )
 from src.meta_wheel_allocator import (
     ActionKind,
@@ -42,9 +46,11 @@ from src.meta_wheel_chain import (
     load_runtime_gate_and_signers,
 )
 from src.meta_wheel_policy import BPS, MetaWheelPolicy
-from src.pricer import bs_delta
+from src.pricer import bs_delta, validate_iv
 from src.signer import build_domain, sign_quote
 
+
+log = logging.getLogger(__name__)
 
 WAD = 10**18
 USDC_PER_WETH_SCALE = 10**20
@@ -264,6 +270,7 @@ _STRATEGY_READ_ABI = [
 ]
 _SETTLER_ABI = [
     _scalar("protocolFeeBps", "uint256"),
+    _scalar("treasury", "address"),
     _scalar("makerNonce", "uint256", [{"name": "", "type": "address"}]),
     _scalar("whitelistedMMs", "bool", [{"name": "", "type": "address"}]),
     _function(
@@ -670,7 +677,10 @@ class BaseSepoliaMetaWheelRuntime:
         self._paused = False
         self._lane_pause_cursors: dict[str, int] = {}
         self._lane_paused: dict[str, bool] = {}
+        self._policy_id: str | None = None
         self._minimum_net_premium_bps: int | None = None
+        self._csp_minimum_net_premium_bps: int | None = None
+        self._market_maximum_age: int | None = None
         for address in (
             manifest.parent,
             manifest.strategy_manager,
@@ -985,7 +995,10 @@ class BaseSepoliaMetaWheelRuntime:
             or policy.parent_performance_fee_bps != self.manifest.performance_fee_bps
         ):
             raise RuntimeError("Meta Wheel runtime policy differs from final manifest")
+        self._policy_id = policy.policy_id
         self._minimum_net_premium_bps = policy.minimum_net_premium_bps
+        self._csp_minimum_net_premium_bps = policy.csp_minimum_net_premium_bps
+        self._market_maximum_age = policy.market_maximum_age
         latest = int(self.w3.eth.block_number)
         confirmations = max(config.META_WHEEL_ALLOCATOR_CONFIRMATIONS, 2)
         safe = latest - confirmations
@@ -1111,6 +1124,13 @@ class BaseSepoliaMetaWheelRuntime:
         nav_fresh = int(nav[6]) <= safe <= int(nav[7]) and int(nav[5]) <= safe
         fee = tuple(self._call(self.accounting.functions.feeConfig(), safe))
         premium_fee = int(self._call(self.settler.functions.protocolFeeBps(), safe))
+        treasury = Web3.to_checksum_address(
+            self._call(self.settler.functions.treasury(), safe)
+        )
+        if premium_fee > 0 and int(treasury, 16) == 0:
+            raise RuntimeError(
+                "Meta Wheel protocol fee is configured but the treasury is unset"
+            )
         lane_caps = tuple(self._call(self.coordinator.functions.laneCaps(), safe))
         pending_shares = int(self._call(self.flow.functions.totalPendingShares(), safe))
         pending_redemption = int(
@@ -1255,9 +1275,9 @@ class BaseSepoliaMetaWheelRuntime:
         except (KeyError, TypeError, ValueError):
             return False
 
-    def _remaining_quote_amount(
+    def _quote_fill_state(
         self, raw: dict[str, Any], signer: str, block: int
-    ) -> int:
+    ) -> tuple[int, int]:
         quote_tuple = (
             Web3.to_checksum_address(raw["otoken_address"]),
             int(raw["bid_price"]),
@@ -1270,7 +1290,9 @@ class BaseSepoliaMetaWheelRuntime:
         filled, cancelled = self._call(
             self.settler.functions.getQuoteState(signer, quote_hash), block
         )
-        return 0 if cancelled else max(int(raw["max_amount"]) - int(filled), 0)
+        filled_amount = int(filled)
+        remaining = 0 if cancelled else max(int(raw["max_amount"]) - filled_amount, 0)
+        return filled_amount, remaining
 
     def _open_data(
         self,
@@ -1323,7 +1345,10 @@ class BaseSepoliaMetaWheelRuntime:
 
     def list_quotes(self, snapshot: WheelSnapshot) -> tuple[WheelQuote, ...]:
         if (
-            self._minimum_net_premium_bps is None
+            self._policy_id is None
+            or self._minimum_net_premium_bps is None
+            or self._csp_minimum_net_premium_bps is None
+            or self._market_maximum_age is None
             or snapshot.nav_policy_hash != self.manifest.policy_hash
             or snapshot.onchain_policy_hash != self.manifest.policy_hash
         ):
@@ -1332,6 +1357,29 @@ class BaseSepoliaMetaWheelRuntime:
             )
         market = api_client.get_market_data(asset="eth", chain="base")
         api_client.require_protocol_fee_match(market, snapshot.protocol_premium_fee_bps)
+        try:
+            iv = float(market["iv"])
+            if not math.isfinite(iv) or not validate_iv(iv, "Meta Wheel allocator"):
+                raise ValueError("invalid IV")
+        except (KeyError, TypeError, ValueError, OverflowError) as error:
+            raise RuntimeError("Meta Wheel IV snapshot is invalid") from error
+        csp_market: tuple[float, float] | None
+        try:
+            csp_market = validate_market_snapshot(
+                market,
+                now=snapshot.timestamp,
+                maximum_age=self._market_maximum_age,
+            )
+        except RuntimeError as error:
+            csp_market = None
+            log.info(
+                "Meta Wheel decision=reject policy=%s policy_hash=%s "
+                "reason=invalid_or_stale_csp_market protocol_fee_bps=%d detail=%s",
+                self._policy_id,
+                self.manifest.policy_hash,
+                snapshot.protocol_premium_fee_bps,
+                error,
+            )
         raw_quotes = api_client.get_quotes()
         ambiguous_quote_identities = _ambiguous_quote_identities(raw_quotes)
         try:
@@ -1350,7 +1398,6 @@ class BaseSepoliaMetaWheelRuntime:
                 )
             ):
                 raise RuntimeError("Meta Wheel market maker is not whitelisted")
-            iv = float(market["iv"])
         except Exception:
             raise RuntimeError(
                 "Meta Wheel market-maker quote identity is invalid"
@@ -1380,7 +1427,7 @@ class BaseSepoliaMetaWheelRuntime:
                 ):
                     continue
                 strike8 = int(Decimal(str(raw["strike_price"])) * 10**8)
-                remaining = self._remaining_quote_amount(
+                filled_amount, remaining = self._quote_fill_state(
                     raw, signer, snapshot.safe_block
                 )
                 if remaining <= 0:
@@ -1393,6 +1440,39 @@ class BaseSepoliaMetaWheelRuntime:
                     "deadline": int(raw["deadline"]),
                     "canonical_series": True,
                 }
+                if is_put and csp_market is None:
+                    log.info(
+                        "Meta Wheel decision=reject quote_id=%s reason=invalid_or_stale_csp_market",
+                        raw.get("quote_id"),
+                    )
+                    continue
+                delta_spot = (
+                    csp_market[0]
+                    if is_put and csp_market is not None
+                    else snapshot.spot_price8 / 10**8
+                )
+                delay_years = max(int(raw["expiry"]) - snapshot.timestamp, 1) / (
+                    365 * 86_400
+                )
+                delta_bps = round(
+                    abs(
+                        bs_delta(
+                            is_put,
+                            delta_spot,
+                            strike8 / 10**8,
+                            delay_years,
+                            config.RISK_FREE_RATE,
+                            iv,
+                        )
+                    )
+                    * BPS
+                )
+                if not 0 < delta_bps < BPS:
+                    log.info(
+                        "Meta Wheel decision=reject quote_id=%s reason=invalid_delta",
+                        raw.get("quote_id"),
+                    )
+                    continue
                 if is_put:
                     maximum_collateral = required_collateral(remaining, strike8)
                     for tranche in snapshot.pending_csp_tranches:
@@ -1402,14 +1482,23 @@ class BaseSepoliaMetaWheelRuntime:
                         collateral = required_collateral(option_amount, strike8)
                         if option_amount <= 0 or option_amount > remaining:
                             continue
-                        premium = option_amount * int(raw["bid_price"]) // 10**8
-                        gross_bps = premium * BPS // tranche.pending_usdc
+                        premium, net_premium = incremental_quote_premium(
+                            filled_amount=filled_amount,
+                            option_amount=option_amount,
+                            bid_price=int(raw["bid_price"]),
+                            protocol_fee_bps=snapshot.protocol_premium_fee_bps,
+                        )
+                        gross_bps = premium * BPS // collateral
                         for lane in idle_csp:
                             result.append(
                                 WheelQuote(
                                     quote_id=f"{maker_nonce}:{raw['quote_id']}",
                                     gross_premium_bps=gross_bps,
                                     maximum_collateral=maximum_collateral,
+                                    delta_bps=delta_bps,
+                                    gross_premium=premium,
+                                    net_premium=net_premium,
+                                    collateral=collateral,
                                     open_data=self._open_data(
                                         raw,
                                         option_amount=option_amount,
@@ -1452,22 +1541,6 @@ class BaseSepoliaMetaWheelRuntime:
                         if collateral_value <= 0:
                             continue
                         gross_bps = premium * BPS // collateral_value
-                        delay_years = max(
-                            int(raw["expiry"]) - snapshot.timestamp, 1
-                        ) / (365 * 86_400)
-                        delta_bps = round(
-                            abs(
-                                bs_delta(
-                                    False,
-                                    snapshot.spot_price8 / 10**8,
-                                    strike8 / 10**8,
-                                    delay_years,
-                                    config.RISK_FREE_RATE,
-                                    iv,
-                                )
-                            )
-                            * BPS
-                        )
                         for lane in idle_calls:
                             result.append(
                                 WheelQuote(
@@ -1475,6 +1548,8 @@ class BaseSepoliaMetaWheelRuntime:
                                     gross_premium_bps=gross_bps,
                                     maximum_collateral=maximum_collateral,
                                     delta_bps=delta_bps,
+                                    gross_premium=premium,
+                                    collateral=collateral_value,
                                     open_data=self._open_data(
                                         raw,
                                         option_amount=option_amount,

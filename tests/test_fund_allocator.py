@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -10,10 +11,13 @@ from eth_account.messages import encode_typed_data
 from src.fund_allocator import (
     CspFundAllocator,
     _FUND_QUOTE_TYPES,
+    evaluate_csp_quote,
+    incremental_quote_premium,
     liquid_collateral_target,
     load_testnet_policy,
     option_amount_for_collateral,
-    policy_strike,
+    premium_after_protocol_fee,
+    premium_meets_floor,
     required_collateral,
     safe_block_has_coherent_nav,
     select_policy_quote,
@@ -21,24 +25,44 @@ from src.fund_allocator import (
     UINT256_MAX,
     validate_allocated_exposure,
     validate_fair_nav_policy,
+    validate_market_snapshot,
 )
 from src import api_client
 
 
 POLICY_PATH = (
-    Path(__file__).parents[1] / "policies" / "csp_fund_policy.v3.base-sepolia.json"
+    Path(__file__).parents[1] / "policies" / "csp_fund_policy.v4.base-sepolia.json"
 )
 
 
-def test_approved_policy_is_testnet_only_and_uses_dynamic_idle_sizing():
+def test_approved_policy_is_testnet_only_and_uses_delta_selection():
     policy = load_testnet_policy(POLICY_PATH)
 
-    assert policy_strike(1859.32, policy) == 1575
+    assert policy.policy_id == "eth_usdc_csp_delta_009_base_sepolia_v4"
+    assert policy.target_put_delta_bps == 900
+    assert policy.maximum_delta_deviation_bps == 150
+    assert policy.strike_tick_usd == 25
+    assert policy.target_duration_seconds == 48 * 3600
+    assert policy.minimum_net_premium_bps == 20
     assert policy.maximum_vault_aum == UINT256_MAX
     assert policy.maximum_collateral == UINT256_MAX
     assert policy.maximum_open_positions == 1
     assert policy.liquid_usdc_reserve_bps == 2_000
     assert policy.onchain_minimum_idle_bps == 0
+
+
+def test_checked_in_csp_checksum_matches_active_policy():
+    checksum, filename = (
+        Path("policies/csp_fund_policy.v4.base-sepolia.sha256").read_text().split()
+    )
+
+    assert filename == POLICY_PATH.name
+    assert checksum == hashlib.sha256(POLICY_PATH.read_bytes()).hexdigest()
+
+
+def test_legacy_fixed_moneyness_policy_cannot_load_as_active():
+    with pytest.raises(ValueError, match="approved B1N-438"):
+        load_testnet_policy("policies/csp_fund_policy.v3.base-sepolia.json")
 
 
 def test_policy_rejects_parameter_drift(tmp_path):
@@ -47,47 +71,83 @@ def test_policy_rejects_parameter_drift(tmp_path):
     drifted = tmp_path / "policy.json"
     drifted.write_text(json.dumps(raw))
 
-    with pytest.raises(ValueError, match="approved B1N-374"):
+    with pytest.raises(ValueError, match="approved B1N-438"):
         load_testnet_policy(drifted)
 
 
-def test_selects_only_exact_strike_put_in_expiry_window():
-    policy = load_testnet_policy(POLICY_PATH)
-    now = 1_000_000
-    expected = {
+def policy_quote(now=1_000_000, **changes):
+    quote = {
         "asset": "eth",
+        "chain": "base",
         "is_put": True,
+        "created_at": now - 5,
         "deadline": now + 300,
         "expiry": now + 48 * 3600,
-        "strike_price": 1575.0,
+        "strike_price": 1750.0,
+        "bid_price": 4_000_000,
+        "max_amount": 100_000_000,
+        "quote_id": 1,
     }
+    return quote | changes
+
+
+def select(quotes, policy, now=1_000_000, **changes):
+    return select_policy_quote(
+        quotes,
+        spot=1859.32,
+        iv=0.6,
+        now=now,
+        policy=policy,
+        protocol_fee_bps=1_000,
+        collateral_target=800 * 10**6,
+        **changes,
+    )
+
+
+def test_selects_48h_tick_put_nearest_target_delta_without_moneyness_fallback():
+    policy = load_testnet_policy(POLICY_PATH)
+    now = 1_000_000
+    expected = policy_quote(now)
     quotes = [
-        expected | {"strike_price": 1600.0},
-        expected | {"is_put": False},
-        expected | {"expiry": now + 61 * 3600},
+        policy_quote(now, strike_price=1725.0, quote_id=2),
+        policy_quote(now, strike_price=1760.0, quote_id=3),
+        policy_quote(now, is_put=False, quote_id=4),
+        policy_quote(now, expiry=now + 61 * 3600, quote_id=5),
         expected,
     ]
 
-    assert select_policy_quote(quotes, spot=1859.32, now=now, policy=policy) is expected
+    assert select(quotes, policy, now) is expected
+
+
+def test_delta_tie_prefers_lower_absolute_put_delta_then_strike(monkeypatch):
+    policy = load_testnet_policy(POLICY_PATH)
+    low = policy_quote(strike_price=1725.0, quote_id=2)
+    high = policy_quote(strike_price=1775.0, quote_id=3)
+
+    monkeypatch.setattr(
+        "src.fund_allocator.bs_delta",
+        lambda _put, _spot, strike, *_: -0.08 if strike == 1725.0 else -0.10,
+    )
+
+    assert select([high, low], policy) is low
+
+
+def test_delta_tolerance_rejects_just_over_150_bps(monkeypatch):
+    policy = load_testnet_policy(POLICY_PATH)
+    candidate = policy_quote()
+    monkeypatch.setattr("src.fund_allocator.bs_delta", lambda *_: -0.105_001)
+
+    assert select([candidate], policy) is None
 
 
 def test_selects_compatible_put_when_duplicate_economics_use_wrong_assets():
     policy = load_testnet_policy(POLICY_PATH)
-    now = 1_000_000
-    wrong_assets = {
-        "asset": "eth",
-        "is_put": True,
-        "deadline": now + 300,
-        "expiry": now + 48 * 3600,
-        "strike_price": 1575.0,
-    }
-    compatible = wrong_assets | {"deadline": now + 299}
+    wrong_assets = policy_quote(deadline=1_000_300, quote_id=1)
+    compatible = policy_quote(deadline=1_000_299, quote_id=2)
 
-    selected = select_policy_quote(
+    selected = select(
         [wrong_assets, compatible],
-        spot=1859.32,
-        now=now,
-        policy=policy,
+        policy,
         series_validator=lambda quote: quote is compatible,
     )
 
@@ -97,26 +157,12 @@ def test_selects_compatible_put_when_duplicate_economics_use_wrong_assets():
 @pytest.mark.parametrize("deployment_status", ["virtual", "creating", "failed"])
 def test_lazy_put_series_never_reaches_onchain_validator(deployment_status):
     policy = load_testnet_policy(POLICY_PATH)
-    now = 1_000_000
     validator = MagicMock(
         side_effect=AssertionError("non-ready series must not be read on-chain")
     )
-    quote = {
-        "asset": "eth",
-        "is_put": True,
-        "deadline": now + 300,
-        "expiry": now + 48 * 3600,
-        "strike_price": 1575.0,
-        "deployment_status": deployment_status,
-    }
+    quote = policy_quote(deployment_status=deployment_status)
 
-    selected = select_policy_quote(
-        [quote],
-        spot=1859.32,
-        now=now,
-        policy=policy,
-        series_validator=validator,
-    )
+    selected = select([quote], policy, series_validator=validator)
 
     assert selected is None
     validator.assert_not_called()
@@ -124,24 +170,10 @@ def test_lazy_put_series_never_reaches_onchain_validator(deployment_status):
 
 def test_ready_put_series_reaches_onchain_validator():
     policy = load_testnet_policy(POLICY_PATH)
-    now = 1_000_000
     validator = MagicMock(return_value=True)
-    quote = {
-        "asset": "eth",
-        "is_put": True,
-        "deadline": now + 300,
-        "expiry": now + 48 * 3600,
-        "strike_price": 1575.0,
-        "deployment_status": "ready",
-    }
+    quote = policy_quote(deployment_status="ready")
 
-    selected = select_policy_quote(
-        [quote],
-        spot=1859.32,
-        now=now,
-        policy=policy,
-        series_validator=validator,
-    )
+    selected = select([quote], policy, series_validator=validator)
 
     assert selected is quote
     validator.assert_called_once_with(quote)
@@ -149,30 +181,112 @@ def test_ready_put_series_reaches_onchain_validator():
 
 def test_virtual_put_can_be_selected_only_for_materialization():
     policy = load_testnet_policy(POLICY_PATH)
-    now = 1_000_000
     validator = MagicMock(
         side_effect=AssertionError("virtual series must not be read on-chain")
     )
-    quote = {
-        "asset": "eth",
-        "is_put": True,
-        "deadline": now + 300,
-        "expiry": now + 48 * 3600,
-        "strike_price": 1575.0,
-        "deployment_status": "virtual",
-    }
+    quote = policy_quote(deployment_status="virtual")
 
-    selected = select_policy_quote(
+    selected = select(
         [quote],
-        spot=1859.32,
-        now=now,
-        policy=policy,
+        policy,
         series_validator=validator,
         deployment_statuses=frozenset({"virtual", "creating"}),
     )
 
     assert selected is quote
     validator.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "market",
+    (
+        {"spot": 1859.32, "observed_at": 1_000_000},
+        {"spot": 1859.32, "iv": 0.6},
+        {"spot": 1859.32, "iv": float("nan"), "observed_at": 1_000_000},
+        {"spot": 1859.32, "iv": 0.6, "observed_at": 999_939},
+    ),
+)
+def test_missing_invalid_or_stale_iv_snapshot_fails_closed(market):
+    with pytest.raises(RuntimeError, match="snapshot"):
+        validate_market_snapshot(market, now=1_000_000, maximum_age=60)
+
+
+def test_stale_or_missing_delta_inputs_have_no_fixed_moneyness_fallback():
+    policy = load_testnet_policy(POLICY_PATH)
+    stale = policy_quote(created_at=1_000_000 - policy.quote_maximum_age - 1)
+    outside_delta = policy_quote(strike_price=1700.0, quote_id=2)
+
+    assert select([stale, outside_delta], policy) is None
+
+
+def test_exact_net_premium_floor_matches_contract_fee_rounding():
+    collateral = 500_000_000
+    exact_net = collateral * 20 // 10_000
+    # At 10%, gross=1,111,111 has a floored fee of 111,111 and exact net 1,000,000.
+    exact_gross = 1_111_111
+
+    assert premium_after_protocol_fee(exact_gross, 1_000) == exact_net
+    assert premium_meets_floor(
+        gross_premium=exact_gross,
+        collateral=collateral,
+        protocol_fee_bps=1_000,
+        minimum_net_premium_bps=20,
+    )
+    assert not premium_meets_floor(
+        gross_premium=exact_gross - 1,
+        collateral=collateral,
+        protocol_fee_bps=1_000,
+        minimum_net_premium_bps=20,
+    )
+
+
+def test_incremental_premium_matches_settler_cumulative_rounding():
+    gross, net = incremental_quote_premium(
+        filled_amount=42_857_143,
+        option_amount=45_714_285,
+        bid_price=4_131_531,
+        protocol_fee_bps=1_000,
+    )
+    previous = 42_857_143 * 4_131_531 // 10**8
+    cumulative = (42_857_143 + 45_714_285) * 4_131_531 // 10**8
+
+    assert gross == cumulative - previous
+    assert net == gross - (cumulative * 1_000 // 10_000 - previous * 1_000 // 10_000)
+
+
+def test_prior_fills_bound_capacity_and_fully_filled_quote_is_rejected():
+    policy = load_testnet_policy(POLICY_PATH)
+    partial = policy_quote(_remaining_amount=10_000_000)
+    evaluation = evaluate_csp_quote(
+        partial,
+        spot=1859.32,
+        iv=0.6,
+        now=1_000_000,
+        policy=policy,
+        protocol_fee_bps=1_000,
+        collateral_target=800_000_000,
+    )
+
+    assert evaluation.accepted
+    assert evaluation.option_amount == 10_000_000
+    assert evaluation.collateral == 175_000_000
+    assert select([policy_quote(_remaining_amount=0)], policy) is None
+
+
+def test_quote_one_unit_below_floor_is_rejected():
+    policy = load_testnet_policy(POLICY_PATH)
+    quote = policy_quote(bid_price=3_888_888)
+    evaluation = evaluate_csp_quote(
+        quote,
+        spot=1859.32,
+        iv=0.6,
+        now=1_000_000,
+        policy=policy,
+        protocol_fee_bps=1_000,
+        collateral_target=500_000_000,
+    )
+
+    assert evaluation.rejection_reason == "net_premium_below_floor"
 
 
 def test_collateral_round_trip_never_exceeds_target():
@@ -247,6 +361,10 @@ def test_virtual_policy_quote_materializes_without_allocating(monkeypatch):
     allocator.adapter_address = "0x" + "34" * 20
     allocator.settler = MagicMock()
     allocator.settler.functions.protocolFeeBps.return_value.call.return_value = 1_000
+    allocator.settler.functions.treasury.return_value.call.return_value = (
+        "0x" + "56" * 20
+    )
+    allocator._quote_fill_state = MagicMock(return_value=(0, 100_000_000))
     allocator._is_compatible_put_series = MagicMock(
         side_effect=AssertionError("virtual series must not be read on-chain")
     )
@@ -257,12 +375,13 @@ def test_virtual_policy_quote_materializes_without_allocating(monkeypatch):
         "asset": "eth",
         "chain": "base",
         "is_put": True,
+        "created_at": now - 5,
         "deadline": now + 300,
         "expiry": now + 48 * 3600,
-        "strike_price": 1575.0,
+        "strike_price": 1750.0,
         "deployment_status": "virtual",
         "otoken_address": "0x" + "12" * 20,
-        "bid_price": 10,
+        "bid_price": 4_000_000,
         "quote_id": 7,
         "max_amount": 100_000_000,
         "maker_nonce": 3,
@@ -272,7 +391,12 @@ def test_virtual_policy_quote_materializes_without_allocating(monkeypatch):
     monkeypatch.setattr(
         api_client,
         "get_market_data",
-        lambda **_: {"spot": 1859.32, "protocol_fee_bps": 1_000},
+        lambda **_: {
+            "spot": 1859.32,
+            "iv": 0.6,
+            "observed_at": now,
+            "protocol_fee_bps": 1_000,
+        },
     )
     monkeypatch.setattr(api_client, "get_quotes", lambda: [quote])
     ensure = MagicMock(
@@ -290,13 +414,14 @@ def test_virtual_policy_quote_materializes_without_allocating(monkeypatch):
             "allocated": 0,
             "pending_shares": 0,
             "idle_assets": 1_000 * 10**6,
+            "block": 100,
         }
     )
 
     ensure.assert_called_once_with(
         adapter_address=allocator.adapter_address,
         quote=quote,
-        amount_raw=50_793_650,
+        amount_raw=45_714_285,
     )
     allocator._is_compatible_put_series.assert_not_called()
     allocator._send.assert_not_called()
