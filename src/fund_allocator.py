@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from decimal import Decimal, ROUND_FLOOR
+from datetime import UTC, datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,7 @@ from eth_account.messages import encode_typed_data
 from web3 import Web3
 
 from src import api_client, config
+from src.pricer import bs_delta, validate_iv
 
 log = logging.getLogger(__name__)
 
@@ -34,17 +37,20 @@ FAIR_NAV_OBSERVATION_QUORUM = 2
 FAIR_NAV_HANDOFF_BLOCKS = 2
 
 _POLICY_EXPECTED = {
-    "strike_otm_bps": 1500,
+    "strike_rule": "target_absolute_put_delta",
+    "target_put_delta_bps": 900,
+    "maximum_delta_deviation_bps": 150,
     "strike_tick_usd": 25,
     "target_duration_hours": 48,
     "reopen_cadence_hours": 48,
+    "quote_maximum_age_seconds": 60,
     "target_utilization_bps": 8000,
     "liquid_usdc_reserve_bps": 2000,
     "onchain_minimum_idle_bps": 0,
     "maximum_open_positions": 1,
     "maximum_vault_aum_usdc": None,
     "maximum_collateral_per_position_usdc": None,
-    "minimum_net_premium_bps": 0,
+    "minimum_net_premium_bps": 20,
     "position_sizing_basis": "current_idle_assets",
     "settlement_maximum_loss_bps": 10000,
     "assigned_inventory_action": "hold_weth_and_continue_on_liquid_usdc",
@@ -131,7 +137,48 @@ _SETTLER_ABI = [
         "stateMutability": "view",
         "inputs": [],
         "outputs": [{"type": "uint256"}],
-    }
+    },
+    {
+        "name": "treasury",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [],
+        "outputs": [{"type": "address"}],
+    },
+    {
+        "name": "hashQuoteFor",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [
+            {"name": "owner_", "type": "address"},
+            {
+                "name": "quote",
+                "type": "tuple",
+                "components": [
+                    {"name": "oToken", "type": "address"},
+                    {"name": "bidPrice", "type": "uint256"},
+                    {"name": "deadline", "type": "uint256"},
+                    {"name": "quoteId", "type": "uint256"},
+                    {"name": "maxAmount", "type": "uint256"},
+                    {"name": "makerNonce", "type": "uint256"},
+                ],
+            },
+        ],
+        "outputs": [{"type": "bytes32"}],
+    },
+    {
+        "name": "getQuoteState",
+        "type": "function",
+        "stateMutability": "view",
+        "inputs": [
+            {"name": "mm", "type": "address"},
+            {"name": "quoteHash", "type": "bytes32"},
+        ],
+        "outputs": [
+            {"name": "filledAmount", "type": "uint256"},
+            {"name": "isCancelled", "type": "bool"},
+        ],
+    },
 ]
 
 _STRATEGY_ABI = [
@@ -391,8 +438,12 @@ _VALUATOR_ABI = [
 
 @dataclass(frozen=True)
 class FundPolicy:
-    strike_otm_bps: int
+    policy_id: str
+    target_put_delta_bps: int
+    maximum_delta_deviation_bps: int
     strike_tick_usd: int
+    target_duration_seconds: int
+    quote_maximum_age: int
     target_utilization_bps: int
     liquid_usdc_reserve_bps: int
     onchain_minimum_idle_bps: int
@@ -403,6 +454,25 @@ class FundPolicy:
     settlement_maximum_loss_bps: int
     min_expiry_delay: int = 36 * 3600
     max_expiry_delay: int = 60 * 3600
+
+
+@dataclass(frozen=True)
+class CspQuoteEvaluation:
+    quote: dict[str, Any]
+    rejection_reason: str | None
+    realized_delta_bps: int | None = None
+    delta_deviation_bps: int | None = None
+    strike_distance_bps: int | None = None
+    gross_premium: int | None = None
+    net_premium: int | None = None
+    gross_premium_bps: int | None = None
+    net_premium_bps: int | None = None
+    option_amount: int | None = None
+    collateral: int | None = None
+
+    @property
+    def accepted(self) -> bool:
+        return self.rejection_reason is None
 
 
 def load_testnet_policy(path: str | Path) -> FundPolicy:
@@ -421,20 +491,25 @@ def load_testnet_policy(path: str | Path) -> FundPolicy:
         "underlying": "ETH",
     }
     if (
-        raw.get("schema_version") != 3
+        raw.get("schema_version") != 4
+        or raw.get("policy_id") != "eth_usdc_csp_delta_009_base_sepolia_v4"
         or raw.get("decision") != "go_testnet_only"
         or raw.get("activation_allowed") is not True
-        or raw.get("authority_issue") != "B1N-374"
+        or raw.get("authority_issue") != "B1N-438"
         or raw.get("scope") != expected_scope
         or raw.get("selection") != _POLICY_EXPECTED
     ):
         raise ValueError(
-            f"Allocator policy {policy_path} is not the approved B1N-374 test policy"
+            f"Allocator policy {policy_path} is not the approved B1N-438 test policy"
         )
     selection = raw["selection"]
     return FundPolicy(
-        strike_otm_bps=selection["strike_otm_bps"],
+        policy_id=str(raw["policy_id"]),
+        target_put_delta_bps=selection["target_put_delta_bps"],
+        maximum_delta_deviation_bps=selection["maximum_delta_deviation_bps"],
         strike_tick_usd=selection["strike_tick_usd"],
+        target_duration_seconds=selection["target_duration_hours"] * 3600,
+        quote_maximum_age=selection["quote_maximum_age_seconds"],
         target_utilization_bps=selection["target_utilization_bps"],
         liquid_usdc_reserve_bps=selection["liquid_usdc_reserve_bps"],
         onchain_minimum_idle_bps=selection["onchain_minimum_idle_bps"],
@@ -444,16 +519,6 @@ def load_testnet_policy(path: str | Path) -> FundPolicy:
         minimum_net_premium_bps=selection["minimum_net_premium_bps"],
         settlement_maximum_loss_bps=selection["settlement_maximum_loss_bps"],
     )
-
-
-def policy_strike(spot: float, policy: FundPolicy) -> int:
-    discounted = (
-        Decimal(str(spot)) * Decimal(BPS - policy.strike_otm_bps) / Decimal(BPS)
-    )
-    ticks = (discounted / Decimal(policy.strike_tick_usd)).to_integral_value(
-        rounding=ROUND_FLOOR
-    )
-    return int(ticks * policy.strike_tick_usd)
 
 
 def required_collateral(option_amount: int, strike_raw: int) -> int:
@@ -501,38 +566,283 @@ def validate_fair_nav_policy(
         )
 
 
+def _timestamp(value: Any) -> int:
+    if isinstance(value, bool):
+        raise ValueError("boolean timestamp")
+    if isinstance(value, (int, float)):
+        timestamp = int(value)
+    elif isinstance(value, str):
+        stripped = value.strip()
+        timestamp = (
+            int(stripped)
+            if stripped.isdecimal()
+            else int(
+                datetime.fromisoformat(stripped.replace("Z", "+00:00"))
+                .astimezone(UTC)
+                .timestamp()
+            )
+        )
+    else:
+        raise ValueError("missing timestamp")
+    if timestamp <= 0:
+        raise ValueError("invalid timestamp")
+    return timestamp
+
+
+def validate_market_snapshot(
+    market: dict[str, Any], *, now: int, maximum_age: int
+) -> tuple[float, float]:
+    """Validate the causal spot/IV snapshot used for allocator delta selection."""
+    try:
+        spot = float(market["spot"])
+        iv = float(market["iv"])
+        observed_at = _timestamp(market.get("observed_at"))
+    except (KeyError, TypeError, ValueError, OverflowError) as error:
+        raise RuntimeError("Market spot/IV snapshot is missing or invalid") from error
+    if (
+        not math.isfinite(spot)
+        or not math.isfinite(iv)
+        or spot <= 0
+        or not validate_iv(iv, "ETH CSP allocator")
+    ):
+        raise RuntimeError("Market spot/IV snapshot is outside approved bounds")
+    if observed_at > now + 5 or now - observed_at > maximum_age:
+        raise RuntimeError("Market spot/IV snapshot is stale")
+    return spot, iv
+
+
+def premium_after_protocol_fee(gross_premium: int, protocol_fee_bps: int) -> int:
+    """Mirror BatchSettler integer fee rounding: gross minus floor(gross * fee/BPS)."""
+    if gross_premium < 0:
+        raise ValueError("Gross premium cannot be negative")
+    if not 0 <= protocol_fee_bps < BPS:
+        raise ValueError("Protocol fee must leave a positive net premium")
+    return gross_premium - gross_premium * protocol_fee_bps // BPS
+
+
+def incremental_quote_premium(
+    *, filled_amount: int, option_amount: int, bid_price: int, protocol_fee_bps: int
+) -> tuple[int, int]:
+    """Mirror CspBatchSettler cumulative premium and fee-delta rounding."""
+    if filled_amount < 0 or option_amount < 0 or bid_price < 0:
+        raise ValueError("Quote amounts and bid price cannot be negative")
+    previous_gross = filled_amount * bid_price // OTOKEN_SCALE
+    cumulative_gross = (filled_amount + option_amount) * bid_price // OTOKEN_SCALE
+    gross_premium = cumulative_gross - previous_gross
+    previous_fee = previous_gross * protocol_fee_bps // BPS
+    cumulative_fee = cumulative_gross * protocol_fee_bps // BPS
+    return gross_premium, gross_premium - (cumulative_fee - previous_fee)
+
+
+def premium_meets_floor(
+    *,
+    gross_premium: int,
+    collateral: int,
+    protocol_fee_bps: int,
+    minimum_net_premium_bps: int,
+) -> bool:
+    """Reproduce the adapter's exact cross-multiplied net-premium floor."""
+    if collateral <= 0 or not 0 <= minimum_net_premium_bps <= BPS:
+        return False
+    net_premium = premium_after_protocol_fee(gross_premium, protocol_fee_bps)
+    return net_premium * BPS >= collateral * minimum_net_premium_bps
+
+
+def _base_quote_rejection(
+    quote: dict[str, Any],
+    *,
+    now: int,
+    policy: FundPolicy,
+    deployment_statuses: frozenset[str],
+) -> str | None:
+    try:
+        if quote.get("asset") != "eth" or quote.get("chain", "base") != "base":
+            return "wrong_market"
+        if quote.get("is_put") is not True:
+            return "wrong_option_type"
+        status = str(quote.get("deployment_status") or "ready").lower()
+        if status not in deployment_statuses:
+            return "deployment_status"
+        created_at = _timestamp(quote.get("created_at"))
+        if created_at > now + 5 or now - created_at > policy.quote_maximum_age:
+            return "stale_quote"
+        if int(quote.get("deadline") or 0) <= now + 15:
+            return "insufficient_ttl"
+        delay = int(quote.get("expiry") or 0) - now
+        if not policy.min_expiry_delay <= delay <= policy.max_expiry_delay:
+            return "expiry_outside_48h_window"
+        strike = Decimal(str(quote.get("strike_price")))
+        if strike <= 0 or strike % Decimal(policy.strike_tick_usd) != 0:
+            return "invalid_strike_tick"
+        if int(quote.get("bid_price") or 0) <= 0:
+            return "invalid_premium"
+        if int(quote.get("max_amount") or 0) <= 0:
+            return "no_quote_capacity"
+    except (ArithmeticError, TypeError, ValueError):
+        return "invalid_quote"
+    return None
+
+
+def evaluate_csp_quote(
+    quote: dict[str, Any],
+    *,
+    spot: float,
+    iv: float,
+    now: int,
+    policy: FundPolicy,
+    protocol_fee_bps: int,
+    collateral_target: int,
+    series_validator: Callable[[dict[str, Any]], bool] | None = None,
+    deployment_statuses: frozenset[str] = frozenset({"ready"}),
+) -> CspQuoteEvaluation:
+    reason = _base_quote_rejection(
+        quote,
+        now=now,
+        policy=policy,
+        deployment_statuses=deployment_statuses,
+    )
+    if reason is not None:
+        return CspQuoteEvaluation(quote, reason)
+    try:
+        strike = Decimal(str(quote["strike_price"]))
+        expiry = int(quote["expiry"])
+        delta = abs(
+            bs_delta(
+                True,
+                spot,
+                float(strike),
+                (expiry - now) / (365 * 86_400),
+                config.RISK_FREE_RATE,
+                iv,
+            )
+        )
+        if not 0 < delta < 1:
+            return CspQuoteEvaluation(quote, "invalid_delta")
+        realized_delta_bps = round(delta * BPS)
+        exact_deviation_bps = abs(delta - policy.target_put_delta_bps / BPS) * BPS
+        deviation_bps = round(exact_deviation_bps)
+        strike_distance_bps = round((spot - float(strike)) * BPS / spot)
+        if exact_deviation_bps > policy.maximum_delta_deviation_bps:
+            return CspQuoteEvaluation(
+                quote,
+                "delta_outside_tolerance",
+                realized_delta_bps,
+                deviation_bps,
+                strike_distance_bps,
+            )
+        strike_raw = int(strike * OTOKEN_SCALE)
+        option_amount = min(
+            option_amount_for_collateral(collateral_target, strike_raw),
+            int(quote.get("_remaining_amount", quote["max_amount"])),
+        )
+        collateral = required_collateral(option_amount, strike_raw)
+        if option_amount <= 0 or collateral <= 0 or collateral > collateral_target:
+            return CspQuoteEvaluation(quote, "no_quote_capacity")
+        gross_premium, net_premium = incremental_quote_premium(
+            filled_amount=int(quote.get("_filled_amount", 0)),
+            option_amount=option_amount,
+            bid_price=int(quote["bid_price"]),
+            protocol_fee_bps=protocol_fee_bps,
+        )
+        gross_bps = gross_premium * BPS // collateral
+        net_bps = net_premium * BPS // collateral
+        if net_premium * BPS < collateral * policy.minimum_net_premium_bps:
+            return CspQuoteEvaluation(
+                quote,
+                "net_premium_below_floor",
+                realized_delta_bps,
+                deviation_bps,
+                strike_distance_bps,
+                gross_premium,
+                net_premium,
+                gross_bps,
+                net_bps,
+                option_amount,
+                collateral,
+            )
+        status = str(quote.get("deployment_status") or "ready").lower()
+        if (
+            status == "ready"
+            and series_validator is not None
+            and not series_validator(quote)
+        ):
+            return CspQuoteEvaluation(quote, "incompatible_series")
+        return CspQuoteEvaluation(
+            quote,
+            None,
+            realized_delta_bps,
+            deviation_bps,
+            strike_distance_bps,
+            gross_premium,
+            net_premium,
+            gross_bps,
+            net_bps,
+            option_amount,
+            collateral,
+        )
+    except (ArithmeticError, KeyError, TypeError, ValueError, OverflowError):
+        return CspQuoteEvaluation(quote, "invalid_delta_or_premium")
+
+
 def select_policy_quote(
     quotes: list[dict[str, Any]],
     *,
     spot: float,
+    iv: float,
     now: int,
     policy: FundPolicy,
+    protocol_fee_bps: int,
+    collateral_target: int,
     series_validator: Callable[[dict[str, Any]], bool] | None = None,
     deployment_statuses: frozenset[str] = frozenset({"ready"}),
 ) -> dict[str, Any] | None:
-    target_strike = policy_strike(spot, policy)
-    candidates = [
-        quote
-        for quote in quotes
-        if quote.get("asset") == "eth"
-        and quote.get("chain", "base") == "base"
-        and quote.get("is_put") is True
-        and str(quote.get("deployment_status") or "ready").lower()
-        in deployment_statuses
-        and int(quote.get("deadline") or 0) > now + 15
-        and policy.min_expiry_delay
-        <= int(quote.get("expiry") or 0) - now
-        <= policy.max_expiry_delay
-        and Decimal(str(quote.get("strike_price"))) == Decimal(target_strike)
-        and (
-            str(quote.get("deployment_status") or "ready").lower() != "ready"
-            or series_validator is None
-            or series_validator(quote)
+    evaluations = [
+        evaluate_csp_quote(
+            quote,
+            spot=spot,
+            iv=iv,
+            now=now,
+            policy=policy,
+            protocol_fee_bps=protocol_fee_bps,
+            collateral_target=collateral_target,
+            series_validator=series_validator,
+            deployment_statuses=deployment_statuses,
         )
+        for quote in quotes
     ]
+    for evaluation in evaluations:
+        if not evaluation.accepted:
+            log.info(
+                "CSP allocator decision=reject policy=%s quote_id=%s reason=%s "
+                "target_delta_bps=%d realized_delta_bps=%s deviation_bps=%s "
+                "strike_distance_bps=%s gross_premium_bps=%s net_premium_bps=%s "
+                "protocol_fee_bps=%d",
+                policy.policy_id,
+                evaluation.quote.get("quote_id"),
+                evaluation.rejection_reason,
+                policy.target_put_delta_bps,
+                evaluation.realized_delta_bps,
+                evaluation.delta_deviation_bps,
+                evaluation.strike_distance_bps,
+                evaluation.gross_premium_bps,
+                evaluation.net_premium_bps,
+                protocol_fee_bps,
+            )
+    candidates = [evaluation for evaluation in evaluations if evaluation.accepted]
     if not candidates:
         return None
-    return max(candidates, key=lambda quote: int(quote["deadline"]))
+    selected = min(
+        candidates,
+        key=lambda evaluation: (
+            evaluation.delta_deviation_bps or 0,
+            abs(int(evaluation.quote["expiry"]) - now - policy.target_duration_seconds),
+            evaluation.realized_delta_bps or 0,
+            Decimal(str(evaluation.quote["strike_price"])),
+            -int(evaluation.quote["deadline"]),
+            int(evaluation.quote.get("quote_id") or 0),
+        ),
+    )
+    return selected.quote
 
 
 def sign_fund_quote(
@@ -664,6 +974,27 @@ class CspFundAllocator:
             and int(o_token.functions.strikePrice().call())
             == int(Decimal(str(quote["strike_price"])) * OTOKEN_SCALE)
         )
+
+    def _quote_fill_state(
+        self, quote: dict[str, Any], *, owner: str, signer: str, block: int
+    ) -> tuple[int, int]:
+        quote_tuple = (
+            Web3.to_checksum_address(quote["otoken_address"]),
+            int(quote["bid_price"]),
+            int(quote["deadline"]),
+            int(quote["quote_id"]),
+            int(quote["max_amount"]),
+            int(quote["maker_nonce"]),
+        )
+        quote_hash = self.settler.functions.hashQuoteFor(
+            Web3.to_checksum_address(owner), quote_tuple
+        ).call(block_identifier=block)
+        filled, cancelled = self.settler.functions.getQuoteState(
+            Web3.to_checksum_address(signer), quote_hash
+        ).call(block_identifier=block)
+        filled_amount = int(filled)
+        remaining = 0 if cancelled else max(int(quote["max_amount"]) - filled_amount, 0)
+        return filled_amount, remaining
 
     def _read_gate_state(self, block: int) -> dict[str, Any]:
         nav = self.vault.functions.activeNavWindow().call(block_identifier=block)
@@ -848,38 +1179,104 @@ class CspFundAllocator:
             log.info("CSP allocator decision=skip reason=no_liquid_usdc")
             return
         market = api_client.get_market_data(asset="eth", chain="base")
-        api_client.require_protocol_fee_match(
-            market,
-            int(self.settler.functions.protocolFeeBps().call()),
-        )
-        quotes = api_client.get_quotes()
         now = int(time.time())
+        configured_protocol_fee_bps = int(
+            self.settler.functions.protocolFeeBps().call(
+                block_identifier=state["block"]
+            )
+        )
+        treasury = Web3.to_checksum_address(
+            self.settler.functions.treasury().call(block_identifier=state["block"])
+        )
+        protocol_fee_bps = 0 if int(treasury, 16) == 0 else configured_protocol_fee_bps
+        try:
+            api_client.require_protocol_fee_match(market, configured_protocol_fee_bps)
+            premium_after_protocol_fee(0, protocol_fee_bps)
+            spot, iv = validate_market_snapshot(
+                market,
+                now=now,
+                maximum_age=self.policy.quote_maximum_age,
+            )
+        except (RuntimeError, ValueError) as error:
+            log.info(
+                "CSP allocator decision=reject policy=%s reason=invalid_market_or_fee "
+                "protocol_fee_bps=%s detail=%s",
+                self.policy.policy_id,
+                protocol_fee_bps,
+                error,
+            )
+            raise
+        signer = Account.from_key(config.MM_PRIVATE_KEY).address
+        quotes: list[dict[str, Any]] = []
+        for raw_quote in api_client.get_quotes():
+            bounded_quote = dict(raw_quote)
+            filled_amount, remaining_amount = self._quote_fill_state(
+                raw_quote,
+                owner=self.adapter_address,
+                signer=signer,
+                block=state["block"],
+            )
+            bounded_quote["_filled_amount"] = filled_amount
+            bounded_quote["_remaining_amount"] = remaining_amount
+            quotes.append(bounded_quote)
         quote = select_policy_quote(
             quotes,
-            spot=float(market["spot"]),
+            spot=spot,
+            iv=iv,
             now=now,
             policy=self.policy,
+            protocol_fee_bps=protocol_fee_bps,
+            collateral_target=target,
             series_validator=self._is_compatible_put_series,
         )
         if quote is None:
             quote = select_policy_quote(
                 quotes,
-                spot=float(market["spot"]),
+                spot=spot,
+                iv=iv,
                 now=now,
                 policy=self.policy,
+                protocol_fee_bps=protocol_fee_bps,
+                collateral_target=target,
                 series_validator=self._is_compatible_put_series,
                 deployment_statuses=frozenset({"virtual", "creating"}),
             )
             if quote is None:
-                raise RuntimeError(
-                    "No live signed quote matches the 15%-OTM 48h policy"
+                log.info(
+                    "CSP allocator decision=skip policy=%s reason=no_eligible_delta_quote "
+                    "target_delta_bps=%d maximum_deviation_bps=%d "
+                    "protocol_fee_bps=%d",
+                    self.policy.policy_id,
+                    self.policy.target_put_delta_bps,
+                    self.policy.maximum_delta_deviation_bps,
+                    protocol_fee_bps,
                 )
-        strike_raw = int(Decimal(str(quote["strike_price"])) * OTOKEN_SCALE)
-        option_amount = min(
-            option_amount_for_collateral(target, strike_raw),
-            int(quote["max_amount"]),
+                raise RuntimeError(
+                    "No live signed quote matches the 0.09-delta 48h CSP policy"
+                )
+        evaluation = evaluate_csp_quote(
+            quote,
+            spot=spot,
+            iv=iv,
+            now=now,
+            policy=self.policy,
+            protocol_fee_bps=protocol_fee_bps,
+            collateral_target=target,
+            series_validator=(
+                self._is_compatible_put_series
+                if str(quote.get("deployment_status") or "ready").lower() == "ready"
+                else None
+            ),
+            deployment_statuses=frozenset(
+                {str(quote.get("deployment_status") or "ready").lower()}
+            ),
         )
-        collateral = required_collateral(option_amount, strike_raw)
+        if not evaluation.accepted:
+            raise RuntimeError(
+                f"Selected CSP quote failed revalidation: {evaluation.rejection_reason}"
+            )
+        option_amount = int(evaluation.option_amount or 0)
+        collateral = int(evaluation.collateral or 0)
         if option_amount <= 0 or collateral <= 0 or collateral > target:
             raise RuntimeError(
                 "Matching quote cannot fill the bounded collateral target"
@@ -887,14 +1284,29 @@ class CspFundAllocator:
         if str(quote.get("deployment_status") or "ready").lower() != "ready":
             result = api_client.ensure_fund_series(
                 adapter_address=self.adapter_address,
-                quote=quote,
+                quote={
+                    key: value
+                    for key, value in quote.items()
+                    if not key.startswith("_")
+                },
                 amount_raw=option_amount,
             )
             log.info(
-                "CSP allocator decision=materialize_series status=%s otoken=%s tx=%s",
+                "CSP allocator decision=materialize_series policy=%s status=%s "
+                "otoken=%s tx=%s target_delta_bps=%d realized_delta_bps=%d "
+                "deviation_bps=%d strike_distance_bps=%d gross_premium_bps=%d "
+                "net_premium_bps=%d protocol_fee_bps=%d rejection_reason=none",
+                self.policy.policy_id,
                 result["status"],
                 result["otoken_address"],
                 result.get("deployment_tx_hash"),
+                self.policy.target_put_delta_bps,
+                evaluation.realized_delta_bps,
+                evaluation.delta_deviation_bps,
+                evaluation.strike_distance_bps,
+                evaluation.gross_premium_bps,
+                evaluation.net_premium_bps,
+                protocol_fee_bps,
             )
             return
         signature = sign_fund_quote(
@@ -933,11 +1345,21 @@ class CspFundAllocator:
             )
         )
         log.info(
-            "CSP allocator decision=open strike=%s collateral_usdc=%.6f "
-            "option_amount=%.8f tx=%s",
+            "CSP allocator decision=open policy=%s strike=%s collateral_usdc=%.6f "
+            "option_amount=%.8f target_delta_bps=%d realized_delta_bps=%d "
+            "deviation_bps=%d strike_distance_bps=%d gross_premium_bps=%d "
+            "net_premium_bps=%d protocol_fee_bps=%d rejection_reason=none tx=%s",
+            self.policy.policy_id,
             quote["strike_price"],
             collateral / USDC_SCALE,
             option_amount / OTOKEN_SCALE,
+            self.policy.target_put_delta_bps,
+            evaluation.realized_delta_bps,
+            evaluation.delta_deviation_bps,
+            evaluation.strike_distance_bps,
+            evaluation.gross_premium_bps,
+            evaluation.net_premium_bps,
+            protocol_fee_bps,
             tx_hash,
         )
 
@@ -950,8 +1372,9 @@ class CspFundAllocator:
 
     def run_forever(self) -> None:
         log.info(
-            "CSP fund allocator enabled: address=%s policy=B1N-341 interval=%ds",
+            "CSP fund allocator enabled: address=%s policy=%s interval=%ds",
             self.account.address,
+            self.policy.policy_id,
             config.FUND_ALLOCATOR_INTERVAL_SECONDS,
         )
         while True:

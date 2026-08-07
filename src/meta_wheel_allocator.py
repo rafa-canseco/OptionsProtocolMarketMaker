@@ -23,6 +23,7 @@ from typing import Protocol, Sequence
 from eth_abi import encode
 
 from src import config
+from src.fund_allocator import premium_after_protocol_fee, premium_meets_floor
 from src.meta_wheel_policy import BPS, MetaWheelPolicy, load_meta_wheel_policy
 
 
@@ -302,6 +303,9 @@ class WheelQuote:
     maximum_collateral: int
     canonical_series: bool
     delta_bps: int | None = None
+    gross_premium: int = 0
+    net_premium: int = 0
+    collateral: int = 0
     execution_slippage_bps: int = 0
     open_data: bytes = b""
     lane: str = ""
@@ -396,6 +400,15 @@ class WheelAction:
     required_floor8: int | None = None
     open_data: bytes = b""
     pre_state: WheelActionPreState | None = None
+    policy_id: str | None = None
+    target_delta_bps: int | None = None
+    realized_delta_bps: int | None = None
+    delta_deviation_bps: int | None = None
+    strike_distance_bps: int | None = None
+    gross_premium_bps: int | None = None
+    net_premium_bps: int | None = None
+    protocol_fee_bps: int | None = None
+    rejection_reason: str | None = None
 
     @property
     def key(self) -> str:
@@ -618,6 +631,54 @@ def _quote_is_fresh(quote: WheelQuote, now: int, policy: MetaWheelPolicy) -> boo
     )
 
 
+def _csp_quote_rejection_reason(
+    quote: WheelQuote,
+    snapshot: WheelSnapshot,
+    policy: MetaWheelPolicy,
+    *,
+    lane: LaneSnapshot,
+    tranche: PendingCspTranche,
+) -> str | None:
+    if not quote.is_put:
+        return "wrong_option_type"
+    if quote.lane.lower() != lane.address.lower():
+        return "wrong_lane"
+    if quote.tranche_id != tranche.tranche_id or quote.lot_id != 0:
+        return "wrong_tranche"
+    if quote.allocation_amount != tranche.pending_usdc:
+        return "wrong_allocation_amount"
+    if not _quote_is_fresh(quote, snapshot.timestamp, policy):
+        return "stale_or_invalid_quote"
+    if quote.expiry - snapshot.timestamp > policy.csp_max_expiry_delay:
+        return "expiry_outside_csp_window"
+    if quote.strike8 <= 0 or quote.strike8 % policy.csp_strike_tick != 0:
+        return "invalid_strike_tick"
+    if quote.delta_bps is None or not 0 < quote.delta_bps < BPS:
+        return "missing_or_invalid_delta"
+    deviation = abs(abs(quote.delta_bps) - policy.target_put_delta_bps)
+    if deviation > policy.maximum_put_delta_deviation_bps:
+        return "delta_outside_tolerance"
+    if quote.gross_premium <= 0 or quote.collateral <= 0:
+        return "missing_or_invalid_premium"
+    try:
+        meets_floor = (
+            quote.net_premium * BPS
+            >= quote.collateral * policy.csp_minimum_net_premium_bps
+            if quote.net_premium > 0
+            else premium_meets_floor(
+                gross_premium=quote.gross_premium,
+                collateral=quote.collateral,
+                protocol_fee_bps=snapshot.protocol_premium_fee_bps,
+                minimum_net_premium_bps=policy.csp_minimum_net_premium_bps,
+            )
+        )
+        if not meets_floor:
+            return "net_premium_below_floor"
+    except ValueError:
+        return "invalid_protocol_fee"
+    return None
+
+
 def select_csp_quote(
     quotes: Sequence[WheelQuote],
     snapshot: WheelSnapshot,
@@ -626,21 +687,68 @@ def select_csp_quote(
     lane: LaneSnapshot,
     tranche: PendingCspTranche,
 ) -> WheelQuote | None:
-    discounted = snapshot.spot_price8 * (BPS - policy.csp_strike_otm_bps) // BPS
-    target = discounted // policy.csp_strike_tick * policy.csp_strike_tick
-    candidates = [
-        quote
-        for quote in quotes
-        if quote.is_put
-        and quote.lane.lower() == lane.address.lower()
-        and quote.tranche_id == tranche.tranche_id
-        and quote.lot_id == 0
-        and quote.allocation_amount == tranche.pending_usdc
-        and quote.strike8 == target
-        and _quote_is_fresh(quote, snapshot.timestamp, policy)
-    ]
-    return max(
-        candidates, key=lambda quote: (quote.deadline, quote.quote_id), default=None
+    candidates: list[WheelQuote] = []
+    for quote in quotes:
+        reason = _csp_quote_rejection_reason(
+            quote,
+            snapshot,
+            policy,
+            lane=lane,
+            tranche=tranche,
+        )
+        if reason is not None:
+            log.info(
+                "Meta Wheel decision=reject policy=%s quote_id=%s reason=%s "
+                "target_delta_bps=%d realized_delta_bps=%s deviation_bps=%s "
+                "strike_distance_bps=%s gross_premium_bps=%s net_premium_bps=%s "
+                "protocol_fee_bps=%d",
+                policy.policy_id,
+                quote.quote_id,
+                reason,
+                policy.target_put_delta_bps,
+                quote.delta_bps,
+                (
+                    None
+                    if quote.delta_bps is None
+                    else abs(abs(quote.delta_bps) - policy.target_put_delta_bps)
+                ),
+                (
+                    None
+                    if snapshot.spot_price8 <= 0
+                    else (snapshot.spot_price8 - quote.strike8)
+                    * BPS
+                    // snapshot.spot_price8
+                ),
+                quote.gross_premium_bps,
+                (
+                    None
+                    if quote.gross_premium <= 0 or quote.collateral <= 0
+                    else (
+                        quote.net_premium
+                        if quote.net_premium > 0
+                        else premium_after_protocol_fee(
+                            quote.gross_premium,
+                            snapshot.protocol_premium_fee_bps,
+                        )
+                    )
+                    * BPS
+                    // quote.collateral
+                ),
+                snapshot.protocol_premium_fee_bps,
+            )
+            continue
+        candidates.append(quote)
+    return min(
+        candidates,
+        key=lambda quote: (
+            abs(abs(quote.delta_bps or 0) - policy.target_put_delta_bps),
+            abs(quote.expiry - snapshot.timestamp - policy.target_duration_seconds),
+            abs(quote.delta_bps or 0),
+            quote.strike8,
+            -quote.deadline,
+            quote.quote_id,
+        ),
+        default=None,
     )
 
 
@@ -1121,6 +1229,28 @@ class MetaWheelPlanner:
                         lane=lane,
                         tranche=tranche,
                     ),
+                    policy_id=self.policy.policy_id,
+                    target_delta_bps=self.policy.target_put_delta_bps,
+                    realized_delta_bps=abs(quote.delta_bps or 0),
+                    delta_deviation_bps=abs(
+                        abs(quote.delta_bps or 0) - self.policy.target_put_delta_bps
+                    ),
+                    strike_distance_bps=(
+                        (snapshot.spot_price8 - quote.strike8)
+                        * BPS
+                        // snapshot.spot_price8
+                    ),
+                    gross_premium_bps=quote.gross_premium_bps,
+                    net_premium_bps=(
+                        premium_after_protocol_fee(
+                            quote.gross_premium,
+                            snapshot.protocol_premium_fee_bps,
+                        )
+                        * BPS
+                        // quote.collateral
+                    ),
+                    protocol_fee_bps=snapshot.protocol_premium_fee_bps,
+                    rejection_reason=None,
                 )
             )
             available_pending_csp -= amount
@@ -1220,6 +1350,23 @@ class MetaWheelAllocator:
     def _execute(self, action: WheelAction) -> None:
         if self._already_final(action):
             return
+        if action.kind == ActionKind.OPEN_CSP:
+            log.info(
+                "Meta Wheel decision=open_csp policy=%s quote_id=%s "
+                "target_delta_bps=%s realized_delta_bps=%s deviation_bps=%s "
+                "strike_distance_bps=%s gross_premium_bps=%s net_premium_bps=%s "
+                "protocol_fee_bps=%s rejection_reason=%s",
+                action.policy_id,
+                action.quote_id,
+                action.target_delta_bps,
+                action.realized_delta_bps,
+                action.delta_deviation_bps,
+                action.strike_distance_bps,
+                action.gross_premium_bps,
+                action.net_premium_bps,
+                action.protocol_fee_bps,
+                action.rejection_reason or "none",
+            )
         # Reload the file and authoritative state immediately before submission.
         policy = self._policy()
         fresh = self.chain.read_snapshot(policy)

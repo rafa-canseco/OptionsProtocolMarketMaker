@@ -25,7 +25,7 @@ def _clear_railway_environment(monkeypatch):
 
 
 def test_disabled_wheel_does_not_start_or_change_standalone_planning(monkeypatch):
-    csp = load_testnet_policy("policies/csp_fund_policy.v3.base-sepolia.json")
+    csp = load_testnet_policy("policies/csp_fund_policy.v4.base-sepolia.json")
     covered_call = load_covered_call_policy(
         "policies/covered_call_fund_policy.v5.base-sepolia.json"
     )
