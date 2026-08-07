@@ -41,9 +41,7 @@ def apply_current_fees(
         management_base * management_fee_bps_annual / 10_000 * window_days / 365
     )
     pre_performance = after_premium - management_fee
-    performance_fee = (
-        max(pre_performance - initial, 0.0) * performance_fee_bps / 10_000
-    )
+    performance_fee = max(pre_performance - initial, 0.0) * performance_fee_bps / 10_000
     final_after_fees = pre_performance - performance_fee
     return {
         "protocol_premium_fee_usdc": premium_fee,

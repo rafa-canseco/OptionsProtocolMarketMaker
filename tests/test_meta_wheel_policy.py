@@ -11,9 +11,7 @@ POLICY_PATH = Path("policies/meta_wheel_policy.v1.base-sepolia.json")
 
 
 def test_meta_wheel_policy_requires_exact_external_hash():
-    policy = load_meta_wheel_policy(
-        POLICY_PATH, approved_hash=sha256_file(POLICY_PATH)
-    )
+    policy = load_meta_wheel_policy(POLICY_PATH, approved_hash=sha256_file(POLICY_PATH))
 
     assert policy.activation_allowed is True
     assert policy.mainnet_authorized is False

@@ -161,7 +161,11 @@ def _positive_int(value: Any, *, label: str) -> int:
 
 def _bounded_bps(value: Any, *, label: str, allow_zero: bool = False) -> int:
     lower = 0 if allow_zero else 1
-    if isinstance(value, bool) or not isinstance(value, int) or not lower <= value <= BPS:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not lower <= value <= BPS
+    ):
         raise ValueError(f"Meta Wheel policy {label} must be in [{lower}, {BPS}]")
     return value
 
@@ -179,7 +183,9 @@ def load_meta_wheel_policy(
     try:
         raw = json.loads(policy_path.read_text())
     except (OSError, json.JSONDecodeError) as error:
-        raise ValueError(f"Unable to load Meta Wheel policy {policy_path}: {error}") from error
+        raise ValueError(
+            f"Unable to load Meta Wheel policy {policy_path}: {error}"
+        ) from error
 
     root = _exact_fields(raw, _ROOT_FIELDS, path=policy_path, label="root")
     scope = _exact_fields(root["scope"], _SCOPE_FIELDS, path=policy_path, label="scope")
@@ -323,9 +329,7 @@ def load_meta_wheel_policy(
             label="maximum_usdc_per_csp_lane",
         )
         * 10**6,
-        maximum_weth_per_cc_lane=_weth_amount(
-            tranches["maximum_weth_per_cc_lane"]
-        ),
+        maximum_weth_per_cc_lane=_weth_amount(tranches["maximum_weth_per_cc_lane"]),
         execution_cost_buffer=_positive_int(
             assignment["execution_cost_buffer_usd"],
             label="execution_cost_buffer_usd",

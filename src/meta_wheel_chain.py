@@ -309,10 +309,8 @@ def load_wheel_manifest_gate(
         raise RuntimeError("Meta Wheel deployment readiness is incomplete")
     verification_evidence = manifest.get("verificationEvidence")
     if not isinstance(verification_evidence, dict) or (
-        verification_evidence.get("method")
-        != "SOLC_STANDARD_JSON_RPC_EXACT_V2"
-        or verification_evidence.get("compilerVersion")
-        != "0.8.24+commit.e11b9ed9"
+        verification_evidence.get("method") != "SOLC_STANDARD_JSON_RPC_EXACT_V2"
+        or verification_evidence.get("compilerVersion") != "0.8.24+commit.e11b9ed9"
         or verification_evidence.get("addressCount") != 47
         or verification_evidence.get("artifactCount") != 25
     ):
