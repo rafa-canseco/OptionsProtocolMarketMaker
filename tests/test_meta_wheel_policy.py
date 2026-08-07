@@ -11,9 +11,7 @@ POLICY_PATH = Path("policies/meta_wheel_policy.v2.base-sepolia.json")
 
 
 def test_meta_wheel_policy_requires_exact_external_hash():
-    policy = load_meta_wheel_policy(
-        POLICY_PATH, approved_hash=sha256_file(POLICY_PATH)
-    )
+    policy = load_meta_wheel_policy(POLICY_PATH, approved_hash=sha256_file(POLICY_PATH))
 
     assert policy.activation_allowed is True
     assert policy.mainnet_authorized is False
@@ -32,9 +30,9 @@ def test_meta_wheel_policy_requires_exact_external_hash():
 
 
 def test_checked_in_meta_wheel_checksum_matches_active_policy():
-    checksum, filename = Path(
-        "policies/meta_wheel_policy.v2.base-sepolia.sha256"
-    ).read_text().split()
+    checksum, filename = (
+        Path("policies/meta_wheel_policy.v2.base-sepolia.sha256").read_text().split()
+    )
 
     assert filename == POLICY_PATH.name
     assert checksum == sha256_file(POLICY_PATH)
