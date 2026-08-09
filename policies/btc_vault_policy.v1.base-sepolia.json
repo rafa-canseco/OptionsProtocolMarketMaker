@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "policy_id": "btc_lbtc_test_vault_research_base_sepolia_v1",
+  "authority_issue": "B1N-440",
+  "decision": "no_go",
+  "activation_allowed": false,
+  "runtime_enabled_by_default": false,
+  "mainnet_authorized": false,
+  "research_cutoff": "2026-08-08T15:04:52Z",
+  "scope": {
+    "network": "Base Sepolia",
+    "chain_id": 84532,
+    "underlying": "BTC",
+    "collateral": "USDC",
+    "strategies": [
+      "standalone_csp",
+      "standalone_covered_call",
+      "wheel"
+    ],
+    "test_delivery_asset": "LBTC",
+    "test_asset_address": "0x39fA11EbBE82699Fd9F79C566D7384064571d2b4",
+    "test_asset_classification": "unrestricted_mint_mock_testnet_only",
+    "intended_production_delivery_asset": "cbBTC"
+  },
+  "bita_public_profile": {
+    "classification": "public_operating_analog_not_runtime_policy",
+    "option_underlying": "IBIT",
+    "gross_call_overwrite_nav_bounds_bps": {
+      "minimum": 2500,
+      "operational_center": 3000,
+      "maximum": 3500
+    },
+    "weekly_expiry_bucket_count": 4,
+    "gross_overwrite_per_bucket_bps_approximate": 750,
+    "strike_rule": "at_the_money_ibit_calls",
+    "calls_must_be_fully_covered_by_optionable_ibit": true,
+    "monitoring_cadence": "daily",
+    "distribution_intent": "monthly",
+    "distributions_guaranteed": false,
+    "target_delta": null,
+    "csp_leg": null,
+    "snapshot_2026_08_06": {
+      "contracts_per_row": [
+        1236,
+        1236,
+        1236,
+        1236
+      ],
+      "strikes_usd_in_official_csv_order": [
+        36.5,
+        37.5,
+        36.5,
+        35.5
+      ],
+      "user_approved_strike_multiset_sorted": [
+        35.5,
+        36.5,
+        36.5,
+        37.5
+      ],
+      "observed_weighted_delta": 0.5045764566432618,
+      "observed_weighted_delta_classification": "derived_observation_not_target",
+      "gross_call_overwrite_nav_ratio": 0.3013305741630233,
+      "calls_fully_covered": true
+    }
+  },
+  "prerequisites": {
+    "canonical_cbbtc_base_sepolia": {
+      "decision": "no_go",
+      "official_faucet_support_observed": true,
+      "canonical_token_address": null,
+      "official_address_provenance_observed": false,
+      "deployed_code_verified": false,
+      "symbol_verified": false,
+      "decimals_verified": false,
+      "mint_redeem_or_bridge_semantics_verified": false,
+      "fail_closed_reason": "CANONICAL_CBBTC_ADDRESS_NOT_OBTAINED_FROM_OFFICIAL_SOURCE",
+      "required_for_lbtc_functional_canary": false,
+      "required_for_production_backed_btc": true
+    },
+    "binary_lbtc_base_sepolia_test_asset": {
+      "decision": "functional_go",
+      "address": "0x39fA11EbBE82699Fd9F79C566D7384064571d2b4",
+      "name": "Loot BTC",
+      "symbol": "LBTC",
+      "decimals": 8,
+      "runtime_codehash_keccak256": "0x599a6b80cccf2c7082103129c3725529a49d37b569dc0ecc031f0444b0ce0fff",
+      "verified_contract": "MockERC20",
+      "verified_source": true,
+      "mint_signature": "mint(address,uint256)",
+      "unrestricted_mint": true,
+      "testnet_only": true,
+      "production_backed_btc": false,
+      "canonical_cbbtc": false,
+      "functional_scope": "token identity, decimals, ERC20 transfer/collateral plumbing, and test minting only",
+      "does_not_attest": [
+        "current_v2_oracle_binding",
+        "current_v2_whitelist_products",
+        "current_v2_router_and_pool",
+        "physical_settlement",
+        "executable_liquidity"
+      ]
+    },
+    "valuation_feeds": {
+      "decision": "no_go",
+      "btc_usd": {
+        "address": "0x0FB99723Aee6f420beAD13e6bBB79b7E6F034298",
+        "official_directory_verified": true,
+        "live_read_at_pinned_block_verified": true,
+        "decimals": 8,
+        "heartbeat_seconds": 1200,
+        "description": "BTC / USD"
+      },
+      "cbbtc_btc_peg_or_reserve": {
+        "address": null,
+        "official_directory_verified": false,
+        "live_read_at_pinned_block_verified": false
+      },
+      "fail_closed_reason": "CBBTC_PEG_OR_RESERVE_FEED_UNQUALIFIED"
+    },
+    "current_v2_oracle_binding": {
+      "decision": "no_go",
+      "oracle_address": null,
+      "lbtc_asset_binding_verified": false,
+      "btc_usd_feed_binding_verified": false,
+      "fail_closed_reason": "CURRENT_V2_ORACLE_LBTC_BINDING_NOT_ATTESTED"
+    },
+    "current_v2_whitelist_products": {
+      "decision": "no_go",
+      "csp_product_address": null,
+      "covered_call_product_address": null,
+      "expiry_calendar_verified": false,
+      "strike_tick_verified": false,
+      "exercise_style_verified": false,
+      "fail_closed_reason": "CURRENT_V2_WHITELIST_BTC_PRODUCTS_NOT_ATTESTED",
+      "whitelist_address": null,
+      "lbtc_csp_product_whitelisted": false,
+      "lbtc_covered_call_product_whitelisted": false,
+      "lbtc_collateral_or_delivery_path_verified": false
+    },
+    "current_v2_router_and_pool": {
+      "decision": "no_go",
+      "router_address": null,
+      "pool_address": null,
+      "lbtc_route_verified": false,
+      "lbtc_pool_custody_verified": false,
+      "fail_closed_reason": "CURRENT_V2_ROUTER_POOL_LBTC_PATH_NOT_ATTESTED"
+    },
+    "physical_settlement": {
+      "decision": "no_go",
+      "csp_physical_assignment_to_lbtc_observed": false,
+      "covered_call_physical_delivery_of_lbtc_observed": false,
+      "wheel_asset_transition_reconciliation_observed": false,
+      "custody_and_decimal_reconciliation_observed": false,
+      "fail_closed_reason": "BTC_SETTLEMENT_LIFECYCLE_NOT_OBSERVED"
+    },
+    "executable_liquidity": {
+      "decision": "no_go",
+      "executable_csp_quotes_observed": false,
+      "executable_covered_call_quotes_observed": false,
+      "executable_wheel_capacity_observed": false,
+      "testnet_premiums_are_executable_yield": false,
+      "fail_closed_reason": "EXECUTABLE_BTC_OPTION_LIQUIDITY_NOT_OBSERVED"
+    }
+  },
+  "strategy_decisions": {
+    "standalone_csp": {
+      "decision": "no_go",
+      "selected_activation_parameters": null,
+      "target_delta": null,
+      "target_dte": null,
+      "reason": "BITA has no CSP leg, no B1N-345 BTC CSP candidate passed activation evidence requirements, and current v2 LBTC products are unattested.",
+      "evaluated_matrix": "backtests/b1n_440/results/parameter_matrix.json#strategies/standalone_csp"
+    },
+    "standalone_covered_call": {
+      "decision": "no_go",
+      "selected_activation_parameters": null,
+      "research_analog": {
+        "gross_overwrite_nav_bounds_bps": [
+          2500,
+          3500
+        ],
+        "operational_center_bps": 3000,
+        "weekly_bucket_count": 4,
+        "approximate_bps_per_bucket": 750,
+        "strike_rule": "at_the_money",
+        "target_delta": null,
+        "target_dte": null
+      },
+      "reason": "BITA is an IBIT operating analog, not LBTC execution evidence; independent standalone BTC CC backtest and executable quotes are absent."
+    },
+    "wheel": {
+      "decision": "no_go",
+      "selected_activation_parameters": null,
+      "target_put_delta": null,
+      "target_call_delta": null,
+      "target_dte": null,
+      "reason": "Wheel cannot proceed until both standalone legs and the physical LBTC settlement transition independently qualify.",
+      "evaluated_matrix": "backtests/b1n_440/results/parameter_matrix.json#strategies/wheel"
+    }
+  },
+  "runtime_fail_closed_reasons": [
+    "BTC_RUNTIME_DISABLED",
+    "CURRENT_V2_ORACLE_LBTC_BINDING_NOT_ATTESTED",
+    "CURRENT_V2_WHITELIST_BTC_PRODUCTS_NOT_ATTESTED",
+    "CURRENT_V2_ROUTER_POOL_LBTC_PATH_NOT_ATTESTED",
+    "BTC_SETTLEMENT_LIFECYCLE_NOT_OBSERVED",
+    "EXECUTABLE_BTC_OPTION_LIQUIDITY_NOT_OBSERVED",
+    "MISSING_OR_STALE_CAUSAL_OBSERVATION",
+    "POLICY_HASH_MISMATCH"
+  ],
+  "unknowns": [
+    "Current v2 Oracle address and exact LBTC/BTC-USD asset binding.",
+    "Current v2 Whitelist BTC PUT/CALL product identities, expiry calendar, strike ticks, and exercise semantics.",
+    "Current v2 router and pool identities plus an attested LBTC custody and transfer path.",
+    "Physical LBTC assignment, delivery, custody, decimal, and Wheel transition reconciliation behavior.",
+    "Observed executable bid size, spread, premium, slippage, and repeatable capacity for each strategy.",
+    "Independent standalone BTC Covered Call outcome distribution.",
+    "BITA exact expiries and DTEs in the 2026-08-06 public CSV.",
+    "Any approved numeric BTC target delta or DTE.",
+    "Canonical production-backed BTC asset identity, peg, reserve, and redemption evidence; LBTC cannot satisfy this."
+  ],
+  "test_asset_functional_go": true,
+  "strategy_activation_go": false
+}

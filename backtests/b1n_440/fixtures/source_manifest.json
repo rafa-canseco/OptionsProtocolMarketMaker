@@ -1,0 +1,128 @@
+{
+  "schema_version": 1,
+  "authority_issue": "B1N-440",
+  "research_cutoff": "2026-08-08T15:04:52Z",
+  "sources": [
+    {
+      "id": "blackrock_bita_holdings_2026_08_06",
+      "publisher": "iShares / BlackRock",
+      "source_class": "official_holdings_observed",
+      "url": "https://www.ishares.com/us/products/350678/ishares-bitcoin-premium-income-etf/latest-holdings.csv?asOfDate=20260806",
+      "retrieved_at": "2026-08-07T18:59:18Z",
+      "as_of": "2026-08-06",
+      "local_path": "fixtures/BITA_holdings_2026-08-06.csv",
+      "sha256": "e46d6418f37884f9a0997872ad274cf21aefb28fab71c72602977d482a8137d6"
+    },
+    {
+      "id": "blackrock_bita_operating_profile",
+      "publisher": "iShares / BlackRock",
+      "source_class": "official_product_explanation",
+      "url": "https://www.ishares.com/us/insights/portfolio-insights/bita-bitcoin-premium-income-strategy",
+      "retrieved_at": "2026-08-07T18:59:00Z",
+      "response_sha256": "64678414e3200d4d61861496a3973e4ae20da60cee1133ebe91f473991254c51",
+      "claims_used": [
+        "approximately 25-35% overwrite",
+        "operational center approximately 30%",
+        "approximately 7.5% across four weekly expiries",
+        "at-the-money IBIT calls",
+        "monthly distributions based on premiums collected"
+      ]
+    },
+    {
+      "id": "blackrock_bita_prospectus_2026_06_12",
+      "publisher": "iShares / BlackRock",
+      "source_class": "official_prospectus",
+      "url": "https://www.ishares.com/us/literature/prospectus/p-ishares-bitcoin-premium-income-etf-12-31.pdf",
+      "retrieved_at": "2026-08-07T18:59:00Z",
+      "document_date": "2026-06-12",
+      "response_sha256": "709c40e9400f2d8113e199a0334ba7f7d3f975f9e25ea16f957c6b5636b3db11",
+      "claims_used": [
+        "daily collateral and liquidity monitoring",
+        "25-35% notional NAV range",
+        "IBIT calls covered by long IBIT collateral",
+        "distributions are discretionary and not guaranteed"
+      ]
+    },
+    {
+      "id": "coinbase_cdp_faucet",
+      "publisher": "Coinbase Developer Platform",
+      "source_class": "official_network_support_documentation",
+      "url": "https://docs.cdp.coinbase.com/api-reference/v2/rest-api/faucets/faucets",
+      "retrieved_at": "2026-08-07T19:00:00Z",
+      "response_sha256": "6bace137190720537bf56104812e4612f0e08efbca64ee0cf454b05a46d958ec",
+      "claims_used": [
+        "cbBTC faucet availability is documented for Base Sepolia"
+      ],
+      "claims_not_available": [
+        "canonical cbBTC Base Sepolia token address"
+      ]
+    },
+    {
+      "id": "binary_lbtc_verified_contract",
+      "publisher": "Base Sepolia Blockscout",
+      "source_class": "verified_contract_source",
+      "url": "https://base-sepolia.blockscout.com/api/v2/smart-contracts/0x39fA11EbBE82699Fd9F79C566D7384064571d2b4",
+      "retrieved_at": "2026-08-08T15:04:52Z",
+      "local_path": "fixtures/binary_lbtc_verified_contract.json",
+      "sha256": "b56bda7d0ad8c8cd7519779294d53af692da257ea41b31769d19a5826b012cec",
+      "claims_used": [
+        "verified MockERC20 source",
+        "Loot BTC / LBTC / 8 constructor arguments",
+        "external mint(address,uint256) has no access control"
+      ]
+    },
+    {
+      "id": "binary_lbtc_rpc_observation",
+      "publisher": "Base public RPC",
+      "source_class": "observed_read_only_chain_state",
+      "url": "https://sepolia.base.org",
+      "chain_id": 84532,
+      "address": "0x39fA11EbBE82699Fd9F79C566D7384064571d2b4",
+      "as_of_block": 45216602,
+      "as_of_block_hash": "0x0975c10ab5feb466284f29c2d34a38cc3131024c3d5417446ad029076b285598",
+      "as_of": "2026-08-08T15:04:52Z",
+      "runtime_codehash_keccak256": "0x599a6b80cccf2c7082103129c3725529a49d37b569dc0ecc031f0444b0ce0fff",
+      "local_path": "fixtures/binary_lbtc_identity_observation.json",
+      "sha256": "2e088d18bd59038984e4595bcf3e6ea885003832013a2f8044b7dcfcbee99072"
+    },
+    {
+      "id": "chainlink_base_sepolia_feed_directory",
+      "publisher": "Chainlink",
+      "source_class": "official_feed_directory",
+      "url": "https://reference-data-directory.vercel.app/feeds-ethereum-testnet-sepolia-base-1.json",
+      "retrieved_at": "2026-08-07T18:59:00Z",
+      "response_sha256": "ae7ca0cf5599fa3d09ef1283d63472c9f1116ab58d831e5b3995ff24f66fa6a4",
+      "normalized_local_path": "fixtures/chainlink_base_sepolia_feeds.json"
+    },
+    {
+      "id": "base_sepolia_feed_rpc_observation",
+      "publisher": "Base public RPC",
+      "source_class": "observed_read_only_chain_state",
+      "url": "https://sepolia.base.org",
+      "as_of_block": 45180459,
+      "as_of_block_hash": "0x1f641d55b7fb27eab500346db35488ca8476dd97605b427a9f2261e8625f08e7",
+      "feed_proxy_code_sha256": "53ca1c4d67c7b092f36c66e575874226de7e8eaada554f445f43fe2779743ec1",
+      "as_of": "2026-08-07T19:00:06Z",
+      "local_path": "fixtures/base_sepolia_btc_usd_feed_observation.json"
+    },
+    {
+      "id": "b1n_345_btc_backtest",
+      "publisher": "B1N-345 repository artifact",
+      "source_class": "observed_spot_iv_modeled_options",
+      "historical_cutoff": "2026-07-15T08:00:00+00:00",
+      "rows_path": "../b1n_345/production_results/results.jsonl.gz",
+      "rows_sha256": "f6bd926a43fe94c557b380b062d15438bf98d706bb218f6b33231c9d020bc5c4",
+      "config_path": "../b1n_345/config.json",
+      "config_sha256": "5edd6f6ef6b33fb5f3e2fe4deafe2b2110bbd917426e04137e3f16472a582912",
+      "btc_market_sha256": "d8b783d13e6c83235ee05c9122ad52149a020b1bdf184e1cec6ba352ca830edc"
+    }
+  ],
+  "causal_observation_rules": [
+    "Historical spot becomes usable only after the hourly candle end and must meet B1N-345 age gates.",
+    "Historical IV must be timestamped no later than the decision and meet B1N-345 age gates.",
+    "Chain reads are pinned to one block; feed updatedAt must be no later than the block and within heartbeat.",
+    "LBTC identity and mint eth_call evidence is pinned to one Base Sepolia block and proves test-token functionality only; no transaction was broadcast.",
+    "Holdings facts are valid only for the stated 2026-08-06 snapshot and are not forward-filled.",
+    "No modeled premium, hedge, capacity, or testnet transfer is classified as executable yield or liquidity."
+  ]
+}

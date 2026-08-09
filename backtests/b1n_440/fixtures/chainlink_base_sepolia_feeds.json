@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "retrieved_at": "2026-08-07T18:59:00Z",
+  "source_url": "https://reference-data-directory.vercel.app/feeds-ethereum-testnet-sepolia-base-1.json",
+  "source_sha256": "ae7ca0cf5599fa3d09ef1283d63472c9f1116ab58d831e5b3995ff24f66fa6a4",
+  "network": "Base Sepolia testnet",
+  "selected_official_entry": {
+    "name": "BTC / USD",
+    "pair": [
+      "BTC",
+      "USD"
+    ],
+    "path": "btc-usd",
+    "proxyAddress": "0x0FB99723Aee6f420beAD13e6bBB79b7E6F034298",
+    "contractAddress": "0x961AD289351459A45fC90884eF3AB0278ea95DDE",
+    "heartbeat": 1200,
+    "threshold": 0.1,
+    "decimals": 8,
+    "ens": "btc-usd"
+  },
+  "cbbtc_specific_entry_present": false
+}

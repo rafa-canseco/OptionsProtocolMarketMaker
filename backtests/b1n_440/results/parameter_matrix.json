@@ -1,0 +1,681 @@
+{
+  "authority_issue": "B1N-440",
+  "historical_cutoff": "2026-07-15T08:00:00+00:00",
+  "mainnet_authorized": false,
+  "observation_rules": {
+    "iv": "observed hourly Deribit BTC DVOL",
+    "liquidity": "modeled sensitivity; never an observed order-book limit",
+    "premium": "modeled by Binary pricing functions; never an executable fill",
+    "spot": "observed hourly Deribit BTC-PERPETUAL close, causal after candle end"
+  },
+  "schema_version": 1,
+  "source_issue": "B1N-345",
+  "standalone_covered_call": {
+    "backtest_available": false,
+    "decision": "no_go",
+    "reason": "B1N-345 has no independent BTC covered-call cohort; Wheel call rows are contingent on CSP assignment and cannot be relabeled standalone.",
+    "selected_activation_parameters": null
+  },
+  "strategies": {
+    "standalone_csp": {
+      "decision": "no_go",
+      "evaluated_parameters": {
+        "cadence_hours": 48,
+        "minimum_premium_bps": 0,
+        "target_deltas": [
+          0.1,
+          0.2,
+          0.3,
+          0.4
+        ],
+        "utilization": 1.0,
+        "wheel_call_margin_usd": null
+      },
+      "matrix": [
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 36,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": true
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.26641651031894936,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.01225502905111159,
+          "median_return": 0.020381744558748194,
+          "p05_return": -0.07654615546737195,
+          "sample_count": 533,
+          "target_delta": 0.1,
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.1904633882445489
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 36,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": true
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.2570356472795497,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.02252513581555395,
+          "median_return": 0.034852071376823224,
+          "p05_return": -0.09787128758588864,
+          "sample_count": 533,
+          "target_delta": 0.2,
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.2179134642654137
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 36,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": true
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.26454033771106944,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.032693033799431635,
+          "median_return": 0.04693257788000915,
+          "p05_return": -0.11901945675403379,
+          "sample_count": 533,
+          "target_delta": 0.3,
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.23743986654213523
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 36,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": true
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.2701688555347092,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.04018237874537186,
+          "median_return": 0.05777390185941411,
+          "p05_return": -0.13134268427876394,
+          "sample_count": 533,
+          "target_delta": 0.4,
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.2504253945863044
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 12,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": true
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.3717693836978131,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.020507452671503088,
+          "median_return": 0.03721605994109334,
+          "p05_return": -0.14252661303466932,
+          "sample_count": 503,
+          "target_delta": 0.1,
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.2082817481686321
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 12,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": true
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.3061630218687873,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.05432466766303867,
+          "median_return": 0.0694310652082415,
+          "p05_return": -0.1619095923416002,
+          "sample_count": 503,
+          "target_delta": 0.2,
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.251915962845801
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 12,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": true
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.27037773359840955,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.09485046514517129,
+          "median_return": 0.11303459201625765,
+          "p05_return": -0.1705795150225186,
+          "sample_count": 503,
+          "target_delta": 0.3,
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.2793203474633209
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 12,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": true
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.2624254473161034,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.12412159069575071,
+          "median_return": 0.1498836612509835,
+          "p05_return": -0.17031075011959013,
+          "sample_count": 503,
+          "target_delta": 0.4,
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.28800028686912005
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 6,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": true,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": true
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.31004366812227074,
+          "maximum_modeled_jointly_viable_aum_usdc": 2500000,
+          "median_mm_hedged_return": 0.02276272162951784,
+          "median_return": 0.06255114262221484,
+          "p05_return": -0.22503894591901497,
+          "sample_count": 458,
+          "target_delta": 0.1,
+          "window_days": 180,
+          "worst_maximum_drawdown": -0.26734585190099003
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 6,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.2663755458515284,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.07211888832117161,
+          "median_return": 0.17257946839691107,
+          "p05_return": -0.26967595592275884,
+          "sample_count": 458,
+          "target_delta": 0.2,
+          "window_days": 180,
+          "worst_maximum_drawdown": -0.3241254614126944
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 6,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.26200873362445415,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.18444059796521062,
+          "median_return": 0.31399115535003586,
+          "p05_return": -0.2821612781840077,
+          "sample_count": 458,
+          "target_delta": 0.3,
+          "window_days": 180,
+          "worst_maximum_drawdown": -0.3523796981727092
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 6,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.2576419213973799,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.2628787294371441,
+          "median_return": 0.40715353111393304,
+          "p05_return": -0.2867578821763586,
+          "sample_count": 458,
+          "target_delta": 0.4,
+          "window_days": 180,
+          "worst_maximum_drawdown": -0.36589223613541144
+        }
+      ],
+      "selected_activation_parameters": null
+    },
+    "wheel": {
+      "decision": "no_go",
+      "evaluated_parameters": {
+        "cadence_hours": 48,
+        "minimum_premium_bps": 0,
+        "target_deltas": [
+          0.1,
+          0.2,
+          0.3,
+          0.4
+        ],
+        "utilization": 1.0,
+        "wheel_call_margin_usd": 0.0
+      },
+      "matrix": [
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 36,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": true,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": true
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.1669793621013133,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.014258897989147031,
+          "median_return": 0.030914749734355818,
+          "p05_return": -0.10542697790741365,
+          "sample_count": 533,
+          "target_delta": 0.1,
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.2581392617935778
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 36,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.26454033771106944,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.02601211544668255,
+          "median_return": 0.05678343003537334,
+          "p05_return": -0.14147293108673034,
+          "sample_count": 533,
+          "target_delta": 0.2,
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.31506073384368727
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 36,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.28142589118198874,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.031294054314138814,
+          "median_return": 0.06230778949568028,
+          "p05_return": -0.1641201344391427,
+          "sample_count": 533,
+          "target_delta": 0.3,
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.33529837954682584
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 36,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.29831144465290804,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.031150449614219596,
+          "median_return": 0.057524779379846125,
+          "p05_return": -0.16728754137185053,
+          "sample_count": 533,
+          "target_delta": 0.4,
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.33891376437661613
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 12,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": true,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.22266401590457258,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.028652063056224114,
+          "median_return": 0.10055383309916155,
+          "p05_return": -0.18853012055151294,
+          "sample_count": 503,
+          "target_delta": 0.1,
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.35049321504072184
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 12,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.2524850894632207,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.07207635785407002,
+          "median_return": 0.14291726136883343,
+          "p05_return": -0.21370554084160967,
+          "sample_count": 503,
+          "target_delta": 0.2,
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.3876244704559958
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 12,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.3121272365805169,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.08075771128331723,
+          "median_return": 0.14771851239051714,
+          "p05_return": -0.22515755368672347,
+          "sample_count": 503,
+          "target_delta": 0.3,
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.39303720931964614
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 12,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.3359840954274354,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.0807390207557134,
+          "median_return": 0.1451826053187244,
+          "p05_return": -0.23064534538433662,
+          "sample_count": 503,
+          "target_delta": 0.4,
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.39880968345840995
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 6,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.2554585152838428,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.03189920005044694,
+          "median_return": 0.23164783013174695,
+          "p05_return": -0.37596661501961653,
+          "sample_count": 458,
+          "target_delta": 0.1,
+          "window_days": 180,
+          "worst_maximum_drawdown": -0.4546710880784465
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 6,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.2576419213973799,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.1794719496334386,
+          "median_return": 0.33983801952715464,
+          "p05_return": -0.3707980109513439,
+          "sample_count": 458,
+          "target_delta": 0.2,
+          "window_days": 180,
+          "worst_maximum_drawdown": -0.4668143314030836
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 6,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.26419213973799127,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.1809230596481307,
+          "median_return": 0.30215848502636156,
+          "p05_return": -0.3723867336057816,
+          "sample_count": 458,
+          "target_delta": 0.3,
+          "window_days": 180,
+          "worst_maximum_drawdown": -0.4808006289366896
+        },
+        {
+          "activation_blockers": [
+            "PREMIUMS_AND_LIQUIDITY_MODELED_NOT_EXECUTABLE",
+            "BASE_SEPOLIA_BTC_PRODUCT_UNQUALIFIED",
+            "CURRENT_V2_LBTC_PRODUCT_UNATTESTED"
+          ],
+          "activation_decision": "no_go",
+          "effective_sample_count": 6,
+          "historical_gate_checks": {
+            "all_regimes_sufficient": false,
+            "loss_probability_within_limit": false,
+            "median_mm_hedged_return_nonnegative": false,
+            "median_return_above_hurdle": true,
+            "worst_drawdown_within_limit": false
+          },
+          "historical_gate_pass": false,
+          "loss_probability": 0.27292576419213976,
+          "maximum_modeled_jointly_viable_aum_usdc": 0,
+          "median_mm_hedged_return": -0.14439414997662164,
+          "median_return": 0.2868977436279596,
+          "p05_return": -0.3753495792789751,
+          "sample_count": 458,
+          "target_delta": 0.4,
+          "window_days": 180,
+          "worst_maximum_drawdown": -0.48733754933460227
+        }
+      ],
+      "selected_activation_parameters": null
+    }
+  }
+}

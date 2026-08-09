@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "authority_issue": "B1N-440",
+  "observation_class": "observed_read_only_public_rpc",
+  "rpc_url": "https://sepolia.base.org",
+  "chain_id": 84532,
+  "block": {
+    "number": 45180459,
+    "hash": "0x1f641d55b7fb27eab500346db35488ca8476dd97605b427a9f2261e8625f08e7",
+    "timestamp": "2026-08-07T19:00:06Z"
+  },
+  "causal_rule": "All eth_getCode and eth_call reads use the recorded block number; updatedAt must be positive, no later than the block timestamp, and within the official heartbeat.",
+  "feed": {
+    "address": "0x0FB99723Aee6f420beAD13e6bBB79b7E6F034298",
+    "official_directory_pair": "BTC / USD",
+    "official_heartbeat_seconds": 1200,
+    "code_bytes": 9571,
+    "code_sha256": "53ca1c4d67c7b092f36c66e575874226de7e8eaada554f445f43fe2779743ec1",
+    "decimals": 8,
+    "description": "BTC / USD",
+    "latest_round_data": {
+      "round_id": 18446744073709846714,
+      "answer": 6464074427975,
+      "started_at": "2026-08-07T18:52:40Z",
+      "updated_at": "2026-08-07T18:52:40Z",
+      "answered_in_round": 18446744073709846714
+    },
+    "age_at_observation_seconds": 446,
+    "positive_answer": true,
+    "fresh_within_official_heartbeat": true,
+    "btc_usd_feed_qualified_at_observation": true,
+    "cbbtc_peg_or_reserve_feed_qualified": false
+  },
+  "rpc_methods": [
+    "eth_chainId",
+    "eth_blockNumber",
+    "eth_getBlockByNumber",
+    "eth_getCode",
+    "eth_call decimals() at 0x313ce567",
+    "eth_call description() at 0x7284e416",
+    "eth_call latestRoundData() at 0xfeaf968c"
+  ],
+  "limitations": [
+    "This qualifies only the official BTC/USD feed at one causal observation.",
+    "The official Base Sepolia feed directory had no cbBTC-specific peg or reserve entry.",
+    "No token, product, settlement, premium, or executable-liquidity claim follows from this observation."
+  ]
+}
