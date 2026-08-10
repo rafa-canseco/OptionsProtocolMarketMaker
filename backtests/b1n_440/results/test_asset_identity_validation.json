@@ -1,0 +1,12 @@
+{
+  "address": "0x39fA11EbBE82699Fd9F79C566D7384064571d2b4",
+  "block_number": 45216602,
+  "chain_id": 84532,
+  "decimals": 8,
+  "name": "Loot BTC",
+  "runtime_codehash_keccak256": "0x599a6b80cccf2c7082103129c3725529a49d37b569dc0ecc031f0444b0ce0fff",
+  "strategy_activation_go": false,
+  "symbol": "LBTC",
+  "test_asset_functional_go": true,
+  "unrestricted_mint": true
+}
