@@ -1,0 +1,31 @@
+{
+  "attestation_scope": "content_integrity_only_not_signer_authentication",
+  "attested_at": "2026-08-07T18:54:30+00:00",
+  "confidence": "low_to_moderate",
+  "confidence_limitations": [
+    "Premiums and capacity are modeled rather than executable observations.",
+    "The redemption metric is an unencumbered-USDC proxy without subscriptions or queued redemptions.",
+    "Non-overlapping samples are limited: four 90-day validation windows make CVaR10 equal the single worst observation.",
+    "Historical Deribit perpetual/DVOL inputs may not represent Base execution or future regimes."
+  ],
+  "content_attestation_method": "sha256_canonical_json",
+  "content_attestation_sha256": "59358acae0e4c4562a79a5b79b44754deddbb5a5a1d07cc8ac4be90d66177ccf",
+  "decision": "keep",
+  "decision_gate": {
+    "change_gate_passed": false,
+    "observed_executable_rows": 0,
+    "observed_executable_rows_required_for_change": true
+  },
+  "evidence_digest_sha256": "25762f01f34982bce3e386dccab3316b8b58b5e6ebc12db83c572b195e0cdb71",
+  "issue": "B1N-450",
+  "live_policy_action": "none_keep_b1n_438_unchanged",
+  "reasons": [
+    "No observed executable Binary premium or fill evidence exists for any arm.",
+    "The 30% weekly ladder improved 90-day worst drawdown and redemption liquidity but had -0.46% median return versus 8.00% for current.",
+    "The staggered 48h arm improved 90-day worst drawdown but reduced median return to 2.37% and raised modeled operational load to 53.8 actions/30d versus 12.8.",
+    "The hybrid completed 0 full assignment-lot Wheel cycles and did not dominate current 90-day return (7.67% versus 8.00%); it also increased turnover/operations.",
+    "ATM is a high-assignment stress/control, not a candidate and not a rule attributed to BlackRock."
+  ],
+  "recommended_follow_up": "If product owners choose to pursue laddering after independent review and executable-premium collection, create a new implementation ticket; any candidate must remain disabled by default until separately approved.",
+  "schema_version": 1
+}

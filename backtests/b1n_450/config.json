@@ -1,0 +1,140 @@
+{
+  "schema_version": 1,
+  "issue": "B1N-450",
+  "generated_at": "2026-08-07T18:54:30+00:00",
+  "initial_usdc": 100000.0,
+  "window_days": [30, 60, 90],
+  "cost_scenarios": ["base", "stressed"],
+  "sources": {
+    "settings": {
+      "path": "backtests/b1n_345/config.json",
+      "sha256": "5edd6f6ef6b33fb5f3e2fe4deafe2b2110bbd917426e04137e3f16472a582912"
+    },
+    "market": {
+      "path": "backtests/b1n_345/production_data/ETH/market.json",
+      "sha256": "2313ba17f1466fb92f7863e74476e18b6e9c62bd443094487dcf5116812814c1"
+    },
+    "current_policy_snapshot": {
+      "path": "backtests/b1n_450/inputs/csp_fund_policy.v4.base-sepolia.snapshot.json",
+      "sha256": "1d69d567a02b5b2911504c4efdee374481ae8c0b639bf97b3ad249ebe7f67299",
+      "source_commit": "67554cb69eed0d5d7777f32ccf140fa60b9e1bfc",
+      "source_path": "policies/csp_fund_policy.v4.base-sepolia.json"
+    }
+  },
+  "splits": {
+    "development": {
+      "start": "2023-08-15T08:00:00+00:00",
+      "end": "2025-07-15T08:00:00+00:00"
+    },
+    "validation": {
+      "start": "2025-07-15T08:00:00+00:00",
+      "end": "2026-07-15T08:00:00+00:00"
+    }
+  },
+  "fees": {
+    "protocol_premium_fee_bps": 1000,
+    "management_fee_bps_annual": 200,
+    "performance_fee_bps": 1000,
+    "source": "B1N-413 current-fee semantics"
+  },
+  "market_regime_thresholds": {
+    "30": 0.05,
+    "60": 0.08,
+    "90": 0.1,
+    "crash_drawdown": -0.2,
+    "crash_iv_spike": 0.15
+  },
+  "covered_call": {
+    "lanes": 4,
+    "lane_offsets_hours": [0, 42, 84, 126],
+    "tenor_hours": 168,
+    "target_delta": 0.05,
+    "minimum_net_premium_bps": 10,
+    "assignment_buffer_usd": 0,
+    "strike_tick_usd": 5,
+    "floor_semantics": "strictly_above_each_literal_put_assignment_strike"
+  },
+  "policies": [
+    {
+      "policy_id": "current_48h",
+      "description": "B1N-438 current policy: one 48h 0.09-delta put, 20 bps post-protocol-fee premium floor, 80% utilization/20% reserve and $25 ticks.",
+      "put_delta": 0.09,
+      "put_tenor_hours": 48,
+      "put_lane_offsets_hours": [0],
+      "aggregate_utilization": 0.8,
+      "minimum_net_premium_bps": 20,
+      "strike_tick_usd": 25,
+      "hold_assigned_eth": true
+    },
+    {
+      "policy_id": "current_48h_staggered_4",
+      "description": "Current delta/floor/utilization divided into four bounded 20%-of-current-idle-USDC 48h lanes staggered every 12h.",
+      "put_delta": 0.09,
+      "put_tenor_hours": 48,
+      "put_lane_offsets_hours": [0, 12, 24, 36],
+      "aggregate_utilization": 0.8,
+      "minimum_net_premium_bps": 20,
+      "strike_tick_usd": 25,
+      "hold_assigned_eth": true
+    },
+    {
+      "policy_id": "weekly_4_low_30pct",
+      "description": "Four seven-day put lanes staggered every 42h at 30% aggregate utilization (inside the predeclared 25-35% band).",
+      "put_delta": 0.09,
+      "put_tenor_hours": 168,
+      "put_lane_offsets_hours": [0, 42, 84, 126],
+      "aggregate_utilization": 0.3,
+      "minimum_net_premium_bps": 20,
+      "strike_tick_usd": 25,
+      "hold_assigned_eth": true
+    },
+    {
+      "policy_id": "weekly_4_high_60pct",
+      "description": "Four seven-day put lanes staggered every 42h at a higher bounded 60% aggregate risk budget/40% reserve.",
+      "put_delta": 0.09,
+      "put_tenor_hours": 168,
+      "put_lane_offsets_hours": [0, 42, 84, 126],
+      "aggregate_utilization": 0.6,
+      "minimum_net_premium_bps": 20,
+      "strike_tick_usd": 25,
+      "hold_assigned_eth": true
+    },
+    {
+      "policy_id": "atm_48h_control",
+      "description": "One 48h approximately 50-delta ATM CSP at current utilization, used only as a high-assignment stress/control.",
+      "put_delta": 0.5,
+      "put_tenor_hours": 48,
+      "put_lane_offsets_hours": [0],
+      "aggregate_utilization": 0.8,
+      "minimum_net_premium_bps": 20,
+      "strike_tick_usd": 25,
+      "hold_assigned_eth": true
+    },
+    {
+      "policy_id": "hybrid_current_csp_weekly_cc",
+      "description": "Current conservative CSP remains unchanged; assigned ETH is divided across four staggered seven-day 0.05-delta covered-call lanes with a strict literal assignment-strike floor.",
+      "put_delta": 0.09,
+      "put_tenor_hours": 48,
+      "put_lane_offsets_hours": [0],
+      "aggregate_utilization": 0.8,
+      "minimum_net_premium_bps": 20,
+      "strike_tick_usd": 25,
+      "hold_assigned_eth": true,
+      "laddered_covered_calls": true
+    }
+  ],
+  "recommendation_rule": {
+    "live_change_requires_observed_executable_premium_evidence": true,
+    "validation_may_not_reselect_or_mutate_an_arm": true,
+    "unmet_change_gate_result": "keep",
+    "met_change_gate_result": "review_candidates"
+  },
+  "authority": {
+    "research_only": true,
+    "live_policy_change_authorized": false,
+    "deployment_authorized": false,
+    "activation_authorized": false,
+    "future_change_requires_new_implementation_ticket": true,
+    "future_candidate_default_enabled": false
+  }
+}
