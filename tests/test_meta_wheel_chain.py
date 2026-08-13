@@ -2,7 +2,7 @@ import hashlib
 import json
 from dataclasses import replace
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 import pytest
 from eth_account import Account
@@ -581,3 +581,17 @@ def test_runtime_anchors_manifest_receipts_proxies_and_codehashes(tmp_path):
     implementation_by_proxy[first.proxy] = b"\0" * 32
     with pytest.raises(RuntimeError, match="proxy implementation changed"):
         runtime._verify_manifest_chain()
+
+
+def test_runtime_pages_historical_pause_logs() -> None:
+    event = MagicMock()
+    event.get_logs.side_effect = [[{"block": 1}], [{"block": 2}], []]
+
+    logs = BaseSepoliaMetaWheelRuntime._event_logs(event, 5, 20_005)
+
+    assert logs == [{"block": 1}, {"block": 2}]
+    assert event.get_logs.call_args_list == [
+        call(from_block=5, to_block=10_004),
+        call(from_block=10_005, to_block=20_004),
+        call(from_block=20_005, to_block=20_005),
+    ]
