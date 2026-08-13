@@ -128,6 +128,8 @@ _NAV_COMPONENTS = [
     {"name": "fundFlowNonce", "type": "uint64"},
     {"name": "idleStateHash", "type": "bytes32"},
 ]
+
+_EVENT_LOG_BLOCK_CHUNK = 10_000
 _FEE_COMPONENTS = [
     {"name": "managementFeeWad", "type": "uint64"},
     {"name": "performanceFeeBps", "type": "uint16"},
@@ -752,9 +754,10 @@ class BaseSepoliaMetaWheelRuntime:
     def _paused_at(self, block: int) -> bool:
         if block <= self._pause_cursor:
             return self._paused
-        logs = self.coordinator.events.WheelAllocationPauseSet().get_logs(
-            from_block=self._pause_cursor + 1,
-            to_block=block,
+        logs = self._event_logs(
+            self.coordinator.events.WheelAllocationPauseSet(),
+            self._pause_cursor + 1,
+            block,
         )
         for event in logs:
             self._paused = bool(event["args"]["paused"])
@@ -769,15 +772,22 @@ class BaseSepoliaMetaWheelRuntime:
         paused = self._lane_paused.get(address, False)
         if block <= cursor:
             return paused
-        logs = lane.events.LaneAllocationPauseSet().get_logs(
-            from_block=cursor + 1,
-            to_block=block,
-        )
+        logs = self._event_logs(lane.events.LaneAllocationPauseSet(), cursor + 1, block)
         for event in logs:
             paused = bool(event["args"]["paused"])
         self._lane_pause_cursors[address] = block
         self._lane_paused[address] = paused
         return paused
+
+    @staticmethod
+    def _event_logs(event: Any, from_block: int, to_block: int) -> list[Any]:
+        logs: list[Any] = []
+        cursor = from_block
+        while cursor <= to_block:
+            end = min(cursor + _EVENT_LOG_BLOCK_CHUNK - 1, to_block)
+            logs.extend(event.get_logs(from_block=cursor, to_block=end))
+            cursor = end + 1
+        return logs
 
     def _lane_snapshot(
         self,
