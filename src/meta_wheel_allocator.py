@@ -810,11 +810,8 @@ class MetaWheelPlanner:
             raise RuntimeError("Meta Wheel snapshot is from the wrong chain")
         if not snapshot.parent or not snapshot.coordinator:
             raise RuntimeError("Meta Wheel parent/coordinator is not configured")
-        if (
-            snapshot.onchain_policy_hash != policy.policy_hash
-            or snapshot.nav_policy_hash != policy.policy_hash
-        ):
-            raise RuntimeError("Meta Wheel policy hash differs from on-chain state")
+        if snapshot.onchain_policy_hash != snapshot.nav_policy_hash:
+            raise RuntimeError("Meta Wheel policy hash differs from NAV state")
         if (
             snapshot.onchain_floor_buffer8 != policy.execution_cost_buffer
             or snapshot.onchain_max_csp_lanes != policy.maximum_csp_lanes
