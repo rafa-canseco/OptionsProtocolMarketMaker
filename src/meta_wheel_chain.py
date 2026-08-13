@@ -770,11 +770,6 @@ def load_runtime_gate_and_signers() -> tuple[WheelManifestGate, WheelRoleSigners
         configured_coordinator=config.META_WHEEL_COORDINATOR_ADDRESS or "",
         configured_usdc=config.USDC_ADDRESS,
     )
-    approved_policy_hash = (
-        (config.META_WHEEL_APPROVED_POLICY_SHA256 or "").removeprefix("0x").lower()
-    )
-    if approved_policy_hash != manifest.policy_hash:
-        raise RuntimeError("Meta Wheel approved policy differs from final manifest")
     configured_runtime_addresses = {
         "COVERED_CALL_WETH_ADDRESS": (
             _address(config.COVERED_CALL_WETH_ADDRESS, "configured WETH"),

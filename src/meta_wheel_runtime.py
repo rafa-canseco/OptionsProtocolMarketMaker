@@ -988,8 +988,7 @@ class BaseSepoliaMetaWheelRuntime:
 
     def read_snapshot(self, policy: MetaWheelPolicy) -> WheelSnapshot:
         if (
-            policy.policy_hash != self.manifest.policy_hash
-            or policy.protocol_gross_premium_fee_bps != self.manifest.premium_fee_bps
+            policy.protocol_gross_premium_fee_bps != self.manifest.premium_fee_bps
             or policy.parent_management_fee_bps
             != self.manifest.management_fee_wad * BPS // WAD
             or policy.parent_performance_fee_bps != self.manifest.performance_fee_bps

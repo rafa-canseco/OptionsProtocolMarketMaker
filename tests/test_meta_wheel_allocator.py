@@ -924,6 +924,23 @@ def test_wrong_fee_hash_stale_nav_or_standalone_lane_fails_closed(policy):
         planner.plan(snapshot(policy, child_management_fee_bps=1), ())
 
 
+def test_policy_file_digest_and_onchain_policy_hash_are_separate_domains(policy):
+    onchain_policy_hash = (
+        "db47fcd1f4f96b656fe462956c85194b1f5e25d0c1d8c8862864b256d38fa93c"
+    )
+
+    actions = MetaWheelPlanner(policy).plan(
+        snapshot(
+            policy,
+            onchain_policy_hash=onchain_policy_hash,
+            nav_policy_hash=onchain_policy_hash,
+        ),
+        (),
+    )
+
+    assert actions
+
+
 def test_execution_and_nav_hash_domains_are_reconciled_separately(policy):
     active = lane(
         "0xcsp1",
