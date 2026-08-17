@@ -368,7 +368,7 @@ class PositionTracker:
         target_size = -net_d
         diff = target_size - current_size
 
-        if abs(diff) < HEDGE_REBALANCE_THRESHOLD:
+        if abs(diff) <= HEDGE_REBALANCE_THRESHOLD:
             return None
 
         is_buy = bool(diff > 0)
