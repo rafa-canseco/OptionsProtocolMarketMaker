@@ -3,6 +3,8 @@
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import pytest
+
 from src import main as mm_main
 
 
@@ -96,6 +98,37 @@ def test_exposure_failure_never_fabricates_snapshot_or_bypasses_capacity_gate(
 
     calculate_capacity.assert_called_once()
     submit_quotes.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "exposure",
+    [
+        {},
+        {"total_premium_earned": None},
+        {"total_premium_earned": ""},
+        {"total_premium_earned": "not-a-number"},
+        {"total_premium_earned": float("nan")},
+        {"total_premium_earned": float("inf")},
+        {"total_premium_earned": "-inf"},
+        {"total_premium_earned": True},
+        [],
+    ],
+)
+def test_malformed_exposure_is_rejected(monkeypatch, exposure):
+    assets = _configure_cycle(monkeypatch, ("eth", "btc"))
+    get_exposure = Mock(return_value=exposure)
+    run_asset = Mock()
+    monkeypatch.setattr(mm_main.api_client, "get_exposure", get_exposure)
+    monkeypatch.setattr(mm_main, "_run_asset_cycle", run_asset)
+
+    result = mm_main.run_cycle(Mock(), {}, "0xmaker")
+
+    assert result is None
+    get_exposure.assert_called_once_with()
+    assert run_asset.call_count == len(assets)
+    assert all(
+        call.kwargs["exposure_snapshot"] is None for call in run_asset.call_args_list
+    )
 
 
 def test_missing_exposure_skips_capacity_telemetry(monkeypatch):
