@@ -61,6 +61,26 @@ def test_solana_quotes_default_to_legacy_enabled_outside_production():
     assert [chain.name for chain in config.CHAINS] == ["base", "solana"]
 
 
+def test_supabase_recovery_is_enabled_by_default():
+    config = _reload_config(_base_env())
+
+    assert config.SUPABASE_RECOVERY_ENABLED is True
+
+
+def test_supabase_recovery_can_be_disabled_without_clearing_persistence_config():
+    env = _base_env() | {
+        "SUPABASE_RECOVERY_ENABLED": "false",
+        "SUPABASE_URL": "https://supabase.example.com",
+        "SUPABASE_KEY": "test-supabase-key",
+    }
+
+    config = _reload_config(env)
+
+    assert config.SUPABASE_RECOVERY_ENABLED is False
+    assert config.SUPABASE_URL == env["SUPABASE_URL"]
+    assert config.SUPABASE_KEY == env["SUPABASE_KEY"]
+
+
 def test_solana_quotes_enable_only_with_explicit_flag():
     env = _base_env() | {
         "SOLANA_QUOTE_PUBLISHING_ENABLED": "true",
