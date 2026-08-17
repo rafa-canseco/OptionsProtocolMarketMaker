@@ -138,6 +138,7 @@ MARGIN_POOL_ADDRESS: str = os.getenv(
 TRADE_LOG_PATH: str = os.getenv("TRADE_LOG_PATH", "data/trade_history.jsonl")
 SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
+SUPABASE_RECOVERY_ENABLED: bool = _env_flag("SUPABASE_RECOVERY_ENABLED", default=True)
 
 
 # --- Multi-asset configuration ---
