@@ -19,6 +19,7 @@ def _clean_log(tmp_path, monkeypatch):
     monkeypatch.setattr("src.config.TRADE_LOG_PATH", log_path)
     monkeypatch.setattr("src.config.SUPABASE_URL", "")
     monkeypatch.setattr("src.config.SUPABASE_KEY", "")
+    monkeypatch.setattr("src.config.SUPABASE_RECOVERY_ENABLED", True)
     monkeypatch.setattr("src.config.HEDGE_MODE", "simulate")
     trade_logger._supabase_client = None
     trade_logger._supabase_missing_columns.clear()
@@ -33,6 +34,34 @@ def _read_events(path: str) -> list[dict]:
 
 
 class TestTradeLogger:
+    def test_disabled_recovery_does_not_disable_runtime_supabase_writes(
+        self, _clean_log, monkeypatch
+    ):
+        inserted: list[dict] = []
+
+        class _FakeQuery:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def execute(self):
+                inserted.append(self.payload)
+
+        class _FakeTable:
+            def insert(self, payload):
+                return _FakeQuery(payload)
+
+        class _FakeClient:
+            def table(self, _name):
+                return _FakeTable()
+
+        monkeypatch.setattr("src.config.SUPABASE_RECOVERY_ENABLED", False)
+        monkeypatch.setattr(trade_logger, "_get_supabase", lambda: _FakeClient())
+
+        trade_logger.log_capacity_snapshot(1.0, 2.0, 3.0, 0.1, "active")
+
+        assert len(inserted) == 1
+        assert inserted[0]["event"] == "capacity_snapshot"
+
     def test_log_position_opened_retries_without_chain_for_legacy_supabase_schema(
         self, _clean_log, monkeypatch
     ):
@@ -217,6 +246,26 @@ class TestStartupRecovery:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, "a") as f:
             f.write(json.dumps(event) + "\n")
+
+    @patch("src.startup_recovery.trade_logger")
+    @patch("src.startup_recovery.api_client")
+    @patch("src.startup_recovery.hedge_executor")
+    def test_disabled_supabase_recovery_skips_both_startup_reads(
+        self, mock_hedge, _mock_api, mock_trade_logger, _clean_log
+    ):
+        mock_hedge.get_positions.return_value = []
+        mock_trade_logger.read_events.return_value = []
+
+        with (
+            patch("src.startup_recovery.config.SUPABASE_RECOVERY_ENABLED", False),
+            patch("src.startup_recovery.config.HEDGE_MODE", "live"),
+        ):
+            restored = recover_positions(PositionTracker())
+
+        assert restored == 0
+        mock_trade_logger.read_events_from_supabase.assert_not_called()
+        mock_trade_logger.read_open_order_events_from_supabase.assert_not_called()
+        mock_trade_logger.read_events.assert_called_once_with()
 
     @patch("src.startup_recovery.hedge_executor")
     def test_recover_open_position(self, mock_hedge, _clean_log):
