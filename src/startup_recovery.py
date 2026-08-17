@@ -55,11 +55,18 @@ def _signed_hedge_size(event: dict[str, Any], hedge_size: float) -> float:
 def recover_positions(tracker: PositionTracker) -> int:
     """Restore open positions from persisted events.
 
-    Reads from Supabase first (production), falls back to JSONL (local).
+    Reads from Supabase first when recovery is enabled, then falls back to
+    JSONL. Disabling Supabase recovery does not disable runtime persistence.
     Returns number of positions restored.
     """
-    events = trade_logger.read_events_from_supabase()
-    source = "supabase"
+    events = []
+    source = "jsonl"
+    if config.SUPABASE_RECOVERY_ENABLED:
+        events = trade_logger.read_events_from_supabase()
+        source = "supabase"
+    else:
+        log.info("Supabase startup recovery disabled by configuration")
+
     if not events:
         events = trade_logger.read_events()
         source = "jsonl"
@@ -171,7 +178,7 @@ def _market_snapshot(
 
 def _recover_missing_order_events(tracker: PositionTracker) -> int:
     """Backfill open order_events that are missing from trade history."""
-    if config.HEDGE_MODE != "live":
+    if not config.SUPABASE_RECOVERY_ENABLED or config.HEDGE_MODE != "live":
         return 0
 
     tracked_tx_hashes = {p.tx_hash for p in tracker.open_positions() if p.tx_hash}

@@ -177,6 +177,7 @@ BASE_SEPOLIA_OTOKEN_FACTORY: str = _env_first(
 TRADE_LOG_PATH: str = os.getenv("TRADE_LOG_PATH", "data/trade_history.jsonl")
 SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
+SUPABASE_RECOVERY_ENABLED: bool = _env_flag("SUPABASE_RECOVERY_ENABLED", default=True)
 
 # --- Base Sepolia tokenized CSP fund allocator (explicit opt-in) ---
 FUND_ALLOCATOR_ENABLED: bool = _env_flag("FUND_ALLOCATOR_ENABLED", default=False)

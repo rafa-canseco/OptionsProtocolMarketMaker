@@ -5,6 +5,7 @@ Usage: uv run python -m src.main
 
 import json
 import logging
+import math
 import sys
 import threading
 import time
@@ -149,7 +150,9 @@ def run_cycle(
                 )
 
     # 4. Fetch exposure once for cycle-scoped telemetry. Exposure is deliberately
-    # not cached across cycles or used as a quote/capacity risk input.
+    # not cached across cycles or used as a quote/capacity risk input. Because this
+    # remains between stale-quote deletion and publication, active_quotes_count is
+    # transitional telemetry; post-publication semantics are deferred.
     exposure_snapshot = _fetch_cycle_exposure()
 
     # 5. Per-chain, per-asset: fetch market data, quote, sign, submit
@@ -181,6 +184,17 @@ def _fetch_cycle_exposure() -> dict | None:
         exposure = api_client.get_exposure()
         if not isinstance(exposure, dict):
             raise TypeError("Exposure response must be an object")
+
+        premium = exposure.get("total_premium_earned")
+        if isinstance(premium, bool):
+            raise TypeError("Exposure total_premium_earned must be numeric")
+        try:
+            premium_value = float(premium)
+        except (TypeError, ValueError) as exc:
+            raise TypeError("Exposure total_premium_earned must be numeric") from exc
+        if not math.isfinite(premium_value):
+            raise ValueError("Exposure total_premium_earned must be finite")
+
         return exposure
     except Exception:
         log.warning(
@@ -521,7 +535,7 @@ def _log_capacity_snapshot(
         if asset_pos:
             hedge_usd = abs(asset_pos["size"]) * asset_pos["entry_price"]
 
-        premium_usd = float(exposure_snapshot.get("total_premium_earned", 0))
+        premium_usd = float(exposure_snapshot["total_premium_earned"])
         has_positions = bool(_tracker.open_positions(underlying=asset_cfg.name))
         status = "active" if has_positions else "idle"
         spot = mkt.spot or 1.0
