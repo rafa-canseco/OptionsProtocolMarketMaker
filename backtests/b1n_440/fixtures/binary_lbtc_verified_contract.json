@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "contract_name": "MockERC20",
+  "address": "0x39fA11EbBE82699Fd9F79C566D7384064571d2b4",
+  "network": "Base Sepolia",
+  "chain_id": 84532,
+  "blockscout": {
+    "is_verified": true,
+    "is_fully_verified": true,
+    "file_path": "src/mocks/MockERC20.sol",
+    "compiler_version": "v0.8.24+commit.e11b9ed9",
+    "optimization_enabled": true,
+    "optimization_runs": 200,
+    "verified_at": "2026-03-17T22:46:46.885828Z",
+    "creation_transaction_hash": "0x840289b3d7c49de8d281e1ed09d0f31d5a42ae57601537fc632f27f02b216a61",
+    "creator_address": "0x9386365F8c1aF88B4A7Bfb3DB71E5Fa6d1f20382",
+    "decoded_constructor_args": {
+      "name": "Loot BTC",
+      "symbol": "LBTC",
+      "decimals": 8
+    }
+  },
+  "security_classification": {
+    "testnet_only": true,
+    "production_backed_btc": false,
+    "canonical_cbbtc": false,
+    "mint_access_control": "none",
+    "unrestricted_external_mint": true
+  },
+  "source_code": "// SPDX-License-Identifier: MIT\npragma solidity 0.8.24;\n\nimport \"@openzeppelin/contracts/token/ERC20/ERC20.sol\";\n\n/**\n * @title MockERC20\n * @notice Simple mintable ERC20 for testing and beta deployments.\n *         Anyone can call mint() — no access control by design.\n */\ncontract MockERC20 is ERC20 {\n    uint8 private _dec;\n\n    constructor(string memory name_, string memory symbol_, uint8 dec_) ERC20(name_, symbol_) {\n        _dec = dec_;\n    }\n\n    function mint(address to, uint256 amount) external {\n        _mint(to, amount);\n    }\n\n    function decimals() public view override returns (uint8) {\n        return _dec;\n    }\n}\n"
+}

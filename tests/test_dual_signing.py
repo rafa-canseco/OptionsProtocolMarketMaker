@@ -13,12 +13,16 @@ import struct
 import time
 from unittest.mock import patch
 
+from eth_account import Account
+from eth_account.messages import encode_typed_data
 from solders.keypair import Keypair  # type: ignore[import-untyped]
 from solders.pubkey import Pubkey  # type: ignore[import-untyped]
+from web3 import Web3
 
 from src.quote_builder import build_quotes, to_api_payload, to_solana_api_payload
 from src.signer import (
     MAKER_STATE_DISCRIMINATOR,
+    QUOTE_TYPES,
     _derive_maker_state_pda,
     build_domain,
     build_solana_quote_message,
@@ -376,6 +380,49 @@ def test_read_maker_nonce_solana_wrong_discriminator():
 
 
 # --- 7. Base ECDSA regression ---
+
+
+def test_base_eip712_binds_predicted_undeployed_create2_address():
+    """A CREATE2 target needs no bytecode to be signed and remains message-bound."""
+    test_key = "0x" + "ab" * 32
+    factory = bytes.fromhex("0701b7de84ec23a3cada763bca7a9e324486f6d7")
+    params_hash = Web3.keccak(text="eth-usdc-put-1900-1800604800")
+    init_code_hash = Web3.keccak(text="OToken creation code fixture")
+    predicted = Web3.to_checksum_address(
+        Web3.keccak(b"\xff" + factory + params_hash + init_code_hash)[12:]
+    )
+    domain = build_domain(8453, "0xd281ADdB8b5574360Fd6BFC245B811ad5C582a3B")
+    quote_data = {
+        "oToken": predicted,
+        "bidPrice": 5_000000,
+        "deadline": 1_800_000_300,
+        "quoteId": 77,
+        "maxAmount": 100_000000,
+        "makerNonce": 4,
+    }
+
+    signature = sign_quote(test_key, domain, quote_data)
+    signable = encode_typed_data(
+        domain_data=domain,
+        message_types=QUOTE_TYPES,
+        message_data=quote_data,
+    )
+    expected_signer = Account.from_key(test_key).address
+
+    assert Account.recover_message(signable, signature=signature) == expected_signer
+
+    changed_quote = quote_data | {
+        "oToken": "0x0000000000000000000000000000000000000001"
+    }
+    changed_signable = encode_typed_data(
+        domain_data=domain,
+        message_types=QUOTE_TYPES,
+        message_data=changed_quote,
+    )
+    assert (
+        Account.recover_message(changed_signable, signature=signature)
+        != expected_signer
+    )
 
 
 def test_base_eip712_signing_unchanged():

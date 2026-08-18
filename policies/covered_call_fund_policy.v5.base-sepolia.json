@@ -1,0 +1,95 @@
+{
+  "schema_version": 5,
+  "policy_id": "eth_weth_covered_call_precise_delta_v5",
+  "authority_issue": "B1N-394",
+  "decision": "go_testnet_only",
+  "activation_allowed": true,
+  "mainnet_authorized": false,
+  "supersedes": "covered_call_fund_policy.v4.base-sepolia.json",
+  "change_summary": "Use a targeted $5 strike tick so the 5-delta policy remains live without widening its 150 bps risk tolerance.",
+  "scope": {
+    "accounting_asset": "WETH",
+    "chain_id": 84532,
+    "environment": "base_sepolia",
+    "strategy": "covered_call",
+    "transient_asset": "USDC",
+    "underlying": "ETH"
+  },
+  "selection": {
+    "called_away_action": "normalize_all_usdc_to_weth_then_reopen",
+    "continuous_operation": "reopen_while_free_weth_and_no_pending_redemptions",
+    "maximum_delta_deviation_bps": 150,
+    "maximum_open_positions": 1,
+    "minimum_net_premium_bps": 10,
+    "premium_action": "normalize_all_usdc_to_weth_after_settlement",
+    "position_sizing_basis": "current_idle_assets",
+    "reopen_cadence_hours": 48,
+    "strike_parameter": 0.05,
+    "strike_rule": "target_call_delta",
+    "strike_tick_usd": 5,
+    "target_duration_hours": 48,
+    "target_utilization_bps": 8000
+  },
+  "base_sepolia_bounds": {
+    "allocator_enabled": true,
+    "chain_id": 84532,
+    "mainnet_authorized": false,
+    "maximum_call_aways_before_review": 1,
+    "maximum_collateral_per_position_weth": null,
+    "maximum_expiry_delay_seconds": 219600,
+    "maximum_normalizations_before_review": 10,
+    "maximum_opened_positions_before_review": 10,
+    "maximum_positions": 1,
+    "maximum_strike_usd": 10000,
+    "maximum_swap_slippage_bps": 500,
+    "maximum_usdc_per_swap": 32,
+    "maximum_vault_aum_weth": null,
+    "minimum_expiry_delay_seconds": 129600,
+    "minimum_strike_usd": 1000,
+    "mock_assets_only": true,
+    "onchain_minimum_idle_bps": 0,
+    "settlement_default_delay_seconds": 3600,
+    "strategy_maximum_loss_bps": 10000,
+    "swap_fee_tier": 3000
+  },
+  "valuation": {
+    "accounting_asset": "WETH",
+    "approved_observers": [
+      "0x3b7f3e42eaCB2E0361aE41e426ea65C6f7896D1e",
+      "0x62A7e8c11E4eFc8ed696b2A08D9ccfC339424754"
+    ],
+    "exercise_style": "european",
+    "implied_volatility": {
+      "bps": 4200,
+      "scope": "covered_call_testnet_fair_nav",
+      "source": "deribit-eth-atm-snapshot-2026-07-26T18:30:49Z-b1n358-covered-call-v2-approved"
+    },
+    "interface_version": 1,
+    "liability_buffer_bps": 0,
+    "liability_formula": "ceil(call_price_usd8 * option_amount_8 * 1e10 / spot_price_8), capped_at_collateral_weth",
+    "max_observation_divergence_bps": 500,
+    "maximum_observation_window_blocks": 120,
+    "methodology": "european_black_scholes",
+    "model_name": "b1nary-european-bs-call-v1",
+    "model_version": 1,
+    "nonce": {
+      "model_version_bits": 64,
+      "sequence_bits": 192,
+      "sequence_must_be_nonzero": true
+    },
+    "observation_quorum": 2,
+    "risk_free_rate_bps": 500,
+    "settlement_cost_bps": 0,
+    "source_quality": "single_model_multi_signer",
+    "spot": {
+      "asset_pair": "ETH/USD",
+      "feed_address": "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1",
+      "feed_address_source": "B1N-360-versioned-deployment-manifest",
+      "feed_decimals": 8,
+      "feed_type": "valuator_configured_chainlink",
+      "maximum_staleness_seconds": 3600
+    },
+    "stress_liability": "full_collateral_weth_api_telemetry_only",
+    "valuation_policy_version": 2
+  }
+}

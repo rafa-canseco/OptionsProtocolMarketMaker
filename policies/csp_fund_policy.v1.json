@@ -1,0 +1,120 @@
+{
+  "activation_allowed": false,
+  "allocator_actions": {
+    "open_new_positions": false,
+    "reason": "No validated CSP configuration passed every decision gate."
+  },
+  "base_sepolia_overrides": {
+    "allocator_enabled": false,
+    "label": "testnet_only_non_authorizing",
+    "maximum_collateral_per_position_usdc": 0,
+    "maximum_utilization": 0.0,
+    "maximum_vault_aum_usdc": 0
+  },
+  "curator_bounds": {
+    "maximum_deallocation_loss_bps": null,
+    "maximum_per_window_outflow_usdc": null,
+    "maximum_rolling_outflow_usdc": null,
+    "maximum_utilization": null,
+    "maximum_weth_inventory": null,
+    "nav_reporter_max_age_seconds": null,
+    "option_liability_haircut_bps": null
+  },
+  "decision": "no_go",
+  "decision_gates": {
+    "assignment": {
+      "criterion": "physical_weth_assignment_validated",
+      "evidence_present": false,
+      "passed": false,
+      "required": true
+    },
+    "maximum_loss_probability": 0.25,
+    "maximum_worst_drawdown": -0.3,
+    "minimum_period_return": {
+      "30": 0.006498656494542621,
+      "90": 0.01962294154707611,
+      "180": 0.03963094292911218
+    },
+    "quote_liquidity": {
+      "criterion": "observed_executable_quote_liquidity_validated",
+      "evidence_present": false,
+      "passed": false,
+      "required": true
+    }
+  },
+  "evidence": {
+    "decision_issue": "B1N-346",
+    "evidence_issue": "B1N-345",
+    "market_maker_staging_commit": "7b8ffbd6bef1cd754c111c7679adde37b39cfa35",
+    "paths": [
+      "backtests/b1n_345/config.json",
+      "backtests/b1n_345/production_results/results.jsonl.gz",
+      "backtests/b1n_345/production_results/coverage_probe.json",
+      "backtests/b1n_345/production_results/checksums.sha256"
+    ]
+  },
+  "observed_metrics": [
+    {
+      "expected_shortfall_5": -0.20676,
+      "loss_probability": 0.36585,
+      "median_return": 0.00906,
+      "premium_observation_class": "modeled",
+      "strategy": "csp_only",
+      "target_delta": 0.1,
+      "window_days": 30,
+      "worst_drawdown": -0.29426
+    },
+    {
+      "expected_shortfall_5": -0.2629,
+      "loss_probability": 0.52286,
+      "median_return": -0.00225,
+      "premium_observation_class": "modeled",
+      "strategy": "csp_only",
+      "target_delta": 0.1,
+      "window_days": 90,
+      "worst_drawdown": -0.36767
+    },
+    {
+      "expected_shortfall_5": -0.30293,
+      "loss_probability": 0.67686,
+      "median_return": -0.03421,
+      "premium_observation_class": "modeled",
+      "strategy": "csp_only",
+      "target_delta": 0.1,
+      "window_days": 180,
+      "worst_drawdown": -0.36767
+    }
+  ],
+  "policy_id": "eth_usdc_standalone_csp_fund",
+  "schema_version": 1,
+  "scope": {
+    "chain": "base",
+    "collateral": "USDC",
+    "milestone": "Hito 1",
+    "strategy": "cash_secured_put",
+    "underlying": "ETH"
+  },
+  "selection": {
+    "maximum_collateral_per_position_usdc": null,
+    "maximum_utilization": null,
+    "minimum_net_premium_bps": null,
+    "quote_liquidity_minimum_usdc": null,
+    "reopen_cadence_hours": null,
+    "target_duration_hours": null,
+    "target_put_delta": null
+  },
+  "tested_policy": {
+    "cost_scenario": "base",
+    "minimum_premium_bps": 0,
+    "premium_observation_class": "modeled",
+    "reopen_cadence_hours": 48,
+    "strategy": "csp_only",
+    "target_deltas": [
+      0.1,
+      0.2,
+      0.3,
+      0.4
+    ],
+    "utilization": 1.0
+  }
+}
