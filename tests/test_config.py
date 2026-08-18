@@ -371,3 +371,40 @@ def test_generic_contract_env_vars_take_precedence_over_base_sepolia_aliases():
     assert config.BATCH_SETTLER == env["BATCH_SETTLER"]
     assert config.USDC_ADDRESS == env["USDC_ADDRESS"]
     assert config.MARGIN_POOL_ADDRESS == env["MARGIN_POOL_ADDRESS"]
+
+
+def test_mainnet_chain_defaults_use_base_mainnet_addresses():
+    env = _base_env() | {"CHAIN_ID": "8453"}
+
+    config = _reload_config(env)
+
+    assert config.CHAIN_ID == 8453
+    assert config.BATCH_SETTLER == "0xd281ADDb8b5574360Fd6BFC245B811ad5C582a3B"
+    assert config.USDC_ADDRESS == "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    assert config.MARGIN_POOL_ADDRESS == "0xa1e04873F6d112d84824C88c9D6937bE38811657"
+
+
+def test_sepolia_chain_defaults_use_base_sepolia_addresses():
+    env = _base_env() | {"CHAIN_ID": "84532"}
+
+    config = _reload_config(env)
+
+    assert config.CHAIN_ID == 84532
+    assert config.BATCH_SETTLER == "0x494E4F5b56Ed30bddB8D2d20300f3977623EB7bF"
+    assert config.USDC_ADDRESS == "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+    assert config.MARGIN_POOL_ADDRESS == "0xF3E58e6fed228179dD86fdd3a1A9Fe23A4980DA3"
+
+
+def test_explicit_env_overrides_chain_defaults_on_mainnet():
+    env = _base_env() | {
+        "CHAIN_ID": "8453",
+        "BATCH_SETTLER": "0x00000000000000000000000000000000000000aa",
+        "USDC_ADDRESS": "0x00000000000000000000000000000000000000aa",
+        "MARGIN_POOL_ADDRESS": "0x00000000000000000000000000000000000000bb",
+    }
+
+    config = _reload_config(env)
+
+    assert config.BATCH_SETTLER == "0x00000000000000000000000000000000000000aa"
+    assert config.USDC_ADDRESS == "0x00000000000000000000000000000000000000aa"
+    assert config.MARGIN_POOL_ADDRESS == "0x00000000000000000000000000000000000000bb"

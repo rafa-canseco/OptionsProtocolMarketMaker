@@ -129,10 +129,20 @@ if DEADLINE_SECONDS < MIN_LAZY_QUOTE_TTL_SECONDS:
     )
     sys.exit(1)
 CHAIN_ID: int = int(os.getenv("CHAIN_ID", "84532"))
+
+
+def _chain_default(*, mainnet: str, sepolia: str) -> str:
+    """Pick a chain-qualified fallback so a 8453 build never uses testnet addresses."""
+    return mainnet if CHAIN_ID == 8453 else sepolia
+
+
 BATCH_SETTLER: str = _env_first(
     "BATCH_SETTLER",
     "BASE_SEPOLIA_BATCH_SETTLER",
-    default="0x494E4F5b56Ed30bddB8D2d20300f3977623EB7bF",
+    default=_chain_default(
+        mainnet="0xd281ADDb8b5574360Fd6BFC245B811ad5C582a3B",
+        sepolia="0x494E4F5b56Ed30bddB8D2d20300f3977623EB7bF",
+    ),
 )
 RISK_FREE_RATE: float = float(os.getenv("RISK_FREE_RATE", "0.05"))
 
@@ -157,12 +167,18 @@ CAPACITY_AVG_DELTA: float = float(os.getenv("CAPACITY_AVG_DELTA", "0.3"))
 USDC_ADDRESS: str = _env_first(
     "USDC_ADDRESS",
     "BASE_SEPOLIA_USDC",
-    default="0x036CbD53842c5426634e7929541eC2318f3dCF7e",  # Base Sepolia Circle USDC
+    default=_chain_default(
+        mainnet="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  # Base mainnet USDC
+        sepolia="0x036CbD53842c5426634e7929541eC2318f3dCF7e",  # Base Sepolia Circle USDC
+    ),
 )
 MARGIN_POOL_ADDRESS: str = _env_first(
     "MARGIN_POOL_ADDRESS",
     "BASE_SEPOLIA_MARGIN_POOL",
-    default="0xF3E58e6fed228179dD86fdd3a1A9Fe23A4980DA3",  # Base Sepolia MarginPool
+    default=_chain_default(
+        mainnet="0xa1e04873F6d112d84824C88c9D6937bE38811657",  # Base mainnet MarginPool
+        sepolia="0xF3E58e6fed228179dD86fdd3a1A9Fe23A4980DA3",  # Base Sepolia MarginPool
+    ),
 )
 BASE_SEPOLIA_VAULT_ADAPTER: str = _env_first(
     "BASE_SEPOLIA_VAULT_ADAPTER",
