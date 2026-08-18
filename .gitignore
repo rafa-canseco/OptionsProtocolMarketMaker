@@ -20,3 +20,4 @@ dist/
 .ruff_cache/
 .worktrees/
 data/
+graphify-out/
