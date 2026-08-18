@@ -1,18 +1,20 @@
-# Graphify Balanced
+# Graphify Automatic
 
-Pinned hardened derivative of `@wwjd/pi-graphify@0.4.3` for passive context only.
+Pinned hardened derivative of `@wwjd/pi-graphify@0.4.3` that lets Pi use a local AST graph without user-written Graphify commands.
 
-Runtime allowlist:
+Runtime behavior:
 
-- read an existing `graphify-out/graph.json` of at most 10 MiB;
-- require Graphify's expected boolean/array schema;
-- inject only array counts and boolean graph flags into Pi's system prompt.
+- injects a bounded graph-presence summary;
+- registers exactly one read-only `graphify_lookup` tool that Pi is instructed to call automatically for architecture, dependency, caller, flow, path, module, and impact questions;
+- computes a debounced SHA-256 content digest over relevant tracked and untracked source files before lookup;
+- performs one serialized `graphify update .` only when the digest changed or the graph is unavailable;
+- resolves the audited `graphifyy==0.9.46` uv-tool executable by absolute path outside the repository and runs it with an empty environment, isolated HOME, timeout, and no inherited PATH or provider credentials;
+- returns only bounded identifiers, code paths, source locations, and allowlisted relations that matched strict grammars;
+- falls back to Pi's normal search/read tools without blocking or asking the user to run commands.
 
-Node labels, report text, and all other repository-controlled strings are excluded from the prompt. The extension registers no tools or commands and performs no subprocess, network, write, watcher, build, extraction, installation, or upgrade operation.
+It has no permanent watcher, semantic extraction, upgrade, auto-install, MCP, global settings, network integration, report injection, or committed graph artifacts.
 
-`provenance.json` pins the reviewed npm tarball and entrypoint hashes; `patches/passive-context-only.patch.gz` records the exact entrypoint derivation.
-
-Run the local check with:
+`provenance.json` pins the reviewed npm tarball and entrypoint hashes. The deterministic gzip patch records the exact derivation.
 
 ```bash
 node --test .pi/packages/graphify-balanced/test/index.check.ts

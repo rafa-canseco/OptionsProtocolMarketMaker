@@ -1,4 +1,5 @@
 graphify-out/
+.pi/
 .venv/
 dist/
 build/

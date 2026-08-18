@@ -7,9 +7,9 @@
     "entrypointSha256": "f34cfde75bb27552da5a4f25d89ae7032339e9c4d2c82f6192fdad0a3c32dd64"
   },
   "derivation": {
-    "patch": "patches/passive-context-only.patch.gz",
-    "patchSha256": "53652d5f3396ec15439aa2fa696b2617376b34057cc3c72432c046013b10e684",
-    "entrypointSha256": "892cb0b0d1f35c712bca93f00b57723bec48bb6e08eaa908519be450ce0e95e3",
+    "patch": "patches/automatic-lookup.patch.gz",
+    "patchSha256": "ed1eb1465d98a433c11022056dd0a0ee1b9ee60c598fea971d78c4cf42742985",
+    "entrypointSha256": "fd672319f42caab8c0507afdda4ec67df1016e0e795aa9dfdba16d02faa3b96f",
     "patchEncoding": "gzip"
   }
 }

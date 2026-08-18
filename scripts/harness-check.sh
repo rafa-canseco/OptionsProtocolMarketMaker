@@ -151,6 +151,15 @@ if [[ "$MODE" == "doctor" ]]; then
   exit 0
 fi
 
+graphify_check="$REPO_ROOT/.pi/packages/graphify-balanced/test/index.check.ts"
+if [[ -f "$graphify_check" ]]; then
+  if ! command -v node >/dev/null 2>&1; then
+    printf 'marketMaker harness: node is required for Graphify extension checks\n' >&2
+    exit 1
+  fi
+  run_clean "$(command -v node)" --test "$graphify_check"
+fi
+
 runtime_artifact="$REPO_ROOT/data/trade_history.jsonl"
 if [[ -e "$runtime_artifact" ]]; then
   printf 'marketMaker harness: unexpected runtime artifact: %s\n' \
