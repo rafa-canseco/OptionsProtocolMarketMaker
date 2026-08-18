@@ -1,0 +1,11 @@
+{
+  "packages": [
+    {
+      "source": "./packages/graphify-balanced",
+      "extensions": ["+extensions/index.ts"],
+      "skills": [],
+      "prompts": [],
+      "themes": []
+    }
+  ]
+}
