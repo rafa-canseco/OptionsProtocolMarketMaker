@@ -1,0 +1,9 @@
+{
+  "name": "@b1nary/pi-graphify-balanced",
+  "version": "0.4.3-b1n.1",
+  "private": true,
+  "type": "module",
+  "pi": {
+    "extensions": ["./extensions/index.ts"]
+  }
+}
