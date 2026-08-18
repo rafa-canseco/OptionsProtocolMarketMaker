@@ -5,7 +5,9 @@ description = "Standalone market maker client for the b1nary options protocol"
 requires-python = ">=3.12"
 dependencies = [
     "eth-account>=0.13",
+    "eth-abi>=5",
     "web3>=7",
+    "numpy>=2.0",
     "scipy>=1.14",
     "requests>=2.32",
     "python-dotenv>=1.0",
@@ -15,6 +17,7 @@ dependencies = [
     "solders>=0.21",
     "base58>=2.1",
     "pynacl>=1.5",
+    "websockets>=13,<14",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -23,7 +26,19 @@ packages = ["src"]
 [tool.uv]
 dev-dependencies = [
     "pytest>=9.0.2",
+    "ruff==0.15.2",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [".git", ".venv", ".worktrees", "dist"]
+markers = [
+    "integration: requires a controlled external service or process",
+    "network: requires explicit network access and credentials",
+]
+
+[tool.ruff]
+extend-exclude = [".worktrees", ".venv", "data"]
 
 [build-system]
 requires = ["hatchling"]

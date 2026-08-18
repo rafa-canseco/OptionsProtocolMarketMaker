@@ -1,0 +1,379 @@
+{
+  "asset": "ETH",
+  "created_at": "2026-07-21T00:14:51.589629+00:00",
+  "cutoff": "2026-07-15T08:00:00+00:00",
+  "normalized": {
+    "iv_rows": 26292,
+    "path": "market.json",
+    "sha256": "2313ba17f1466fb92f7863e74476e18b6e9c62bd443094487dcf5116812814c1",
+    "spot_rows": 26292
+  },
+  "playbook_context_gap": "playbook/CONTEXT.md absent in staging checkout",
+  "schema_version": 2,
+  "sources": [
+    {
+      "method": "get_tradingview_chart_data",
+      "params": {
+        "end_timestamp": 1784102400000,
+        "instrument_name": "ETH-PERPETUAL",
+        "resolution": "60",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 5001,
+      "sha256": "46a507a7873ffd5239ea98f786f24341e53ef47e4226e7d9f960652473945bb3"
+    },
+    {
+      "method": "get_tradingview_chart_data",
+      "params": {
+        "end_timestamp": 1766102399999,
+        "instrument_name": "ETH-PERPETUAL",
+        "resolution": "60",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 5001,
+      "sha256": "9bfaef9409175ba1230863b0462321c172046f5da3fcec74848b3917ba2c6d12"
+    },
+    {
+      "method": "get_tradingview_chart_data",
+      "params": {
+        "end_timestamp": 1748098799999,
+        "instrument_name": "ETH-PERPETUAL",
+        "resolution": "60",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 5001,
+      "sha256": "ad593aefea4f3adc5379aea0fb47a8860c149dc168a183a6d9a1a13b118642bf"
+    },
+    {
+      "method": "get_tradingview_chart_data",
+      "params": {
+        "end_timestamp": 1730095199999,
+        "instrument_name": "ETH-PERPETUAL",
+        "resolution": "60",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 5001,
+      "sha256": "f260e4a344132ccdc5f33f21e1aa6383518053513e57d249222890924ada261a"
+    },
+    {
+      "method": "get_tradingview_chart_data",
+      "params": {
+        "end_timestamp": 1712091599999,
+        "instrument_name": "ETH-PERPETUAL",
+        "resolution": "60",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 5001,
+      "sha256": "4bf91128bca64d528fcf4b2d5dcb076a14025d7296760c45c0d69de09f29ae93"
+    },
+    {
+      "method": "get_tradingview_chart_data",
+      "params": {
+        "end_timestamp": 1694087999999,
+        "instrument_name": "ETH-PERPETUAL",
+        "resolution": "60",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1288,
+      "sha256": "69273b510be3f9cd2584a3fd37a98e6cf2116d724ba14bb7ff004ecb43f3ccba"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1784102400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "93cb58bbf3c9d4ed284e20dbbee0bc2c5ef0703ba90c73cf620662cd8f856ef2"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1780502400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "9592437464dce797ba7cf9b3d61fdebd44e64fa64973c1f13def9fa02f8d715b"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1776902400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "5db1c312fe0fd70783c43e0fee53764b3f48e874c0d108f2d260a645f4abe33a"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1773302400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "9c126f3cfebdade4d13a5a45362c80864f8583668c35a29631ca4c054fd023be"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1769702400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "092ce0948e260ca890203796ea1a460a09a14bc57ce2116f4d0b508abca7f908"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1766102400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "e829c2ad5b5ac9c459e4839399b72834eea818b7a72274fb2b0d9c781572234c"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1762502400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "2383938fc4a1ea1fd51f626485bf097d517a79dce8a5a0a5dee4fb29c3c3fa65"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1758902400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "b34f5e2cb12df779f1566fbf6687688707569db2006e7069064928cf884c3e9d"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1755302400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "71a5b970f1f6694a0612cf0ecb7d4e73dde3b3c7222bddf3b1a397b613e88d71"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1751702400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "08ef920cfd421436c055cb8040fa52756832985621a997f3384b8ca8faae9e3e"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1748102400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "350a6df4dff972099992d53af9c3169e6a40625ef5ca49a74a54ca437c90923c"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1744502400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "35bdce16899125704f40d2037e2820553d00b272de4af7ad6622815b7992b297"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1740902400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "0ff28e0cfc4dbdf2c56af3d25c86f2275c75aec6421165551292f474174e4bb3"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1737302400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "3835cb8007dfb99b113320fc532858f1922c051a1fd4a576362089923e1d540d"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1733702400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "c4f4e0a33d698c0553e9b210fd1404c37fb8a2acf7d4cf7ff2d65e2f14d1efe2"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1730102400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "ee2e4c6bc153ee313b4cdf112163bc6ba12394a84da2ae3fd35a2c4c85c35b24"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1726502400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "ae4678cc254046352312b9c2f5d50f4c5ed14fe3972b7b78b7da471208fed926"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1722902400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "31db824daaa695d8cc1f446ba0571a038b9e19d64f746893a83a1002138148a6"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1719302400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "b3bb3a41d7378a4d252de26e7587e934be18d65aeed7e40d4418a25b9f7d5f09"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1715702400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "25735c17e645fee558ae730e3a1a37b016603a4f742736f5842d4538889e4b6f"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1712102400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "55bb167844b402d0e6634aa4db45b4f7d47cea341b1b1d682234d1993a2fdf96"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1708502400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "6cdb34609316c23411475545083230a8296f83a58b35170492d289318443c3af"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1704902400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "83c1f7d4e4cba377786db742b328a5df88a9139a28878d86739f5f5e873d802d"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1701302400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "4eee357095f5534a1d8865b7fd8caa4b0f59eb08dfe719ece77537269e021dcd"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1697702400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "3a53d21b89d74e9ac196068e8f00eac14fa12a6472e5c522c996e359de10adeb"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1694102400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 1000,
+      "sha256": "cf8d348d8c19e8f9d8595947c32c30c1ac90c14ac8b6d45b37ec9ddf8bf9a414"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1690502400000,
+        "resolution": "3600",
+        "start_timestamp": 1689451200000
+      },
+      "rows": 293,
+      "sha256": "84c4a4303598176b1a85067705ced5d32e15c3ee8d6e877a19920e0d74a915b3"
+    }
+  ],
+  "start": "2023-07-15T20:00:00+00:00"
+}

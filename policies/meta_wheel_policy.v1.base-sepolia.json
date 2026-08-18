@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "policy_id": "eth_usdc_meta_wheel_base_sepolia_v1",
+  "authority_issue": "B1N-413",
+  "decision": "go_testnet_only",
+  "activation_allowed": true,
+  "runtime_enabled_by_default": false,
+  "mainnet_authorized": false,
+  "scope": {
+    "accounting_asset": "USDC",
+    "chain_id": 84532,
+    "child_isolation": "dedicated_wheel_lanes_only",
+    "environment": "base_sepolia",
+    "redemption_asset": "USDC",
+    "strategy": "meta_wheel",
+    "underlying": "ETH"
+  },
+  "cadence": {
+    "target_duration_hours": 48,
+    "minimum_expiry_delay_seconds": 129600,
+    "maximum_expiry_delay_seconds": 219600,
+    "quote_maximum_age_seconds": 60,
+    "quote_minimum_ttl_seconds": 30,
+    "settlement_maximum_delay_seconds": 21600
+  },
+  "tranches": {
+    "maximum_csp_lanes": 4,
+    "maximum_cc_lanes": 4,
+    "maximum_active_option_per_lane": 1,
+    "maximum_parent_aum_usdc": 20000,
+    "maximum_usdc_per_csp_lane": 5000,
+    "maximum_weth_per_cc_lane": 2.0
+  },
+  "assignment": {
+    "below_floor_emergency_action": "none_pause_and_wait_for_safe_usdc",
+    "floor_basis": "maximum_literal_csp_assignment_strike",
+    "execution_cost_buffer_usd": 10,
+    "call_strike_rule": "at_or_above_literal_floor_plus_buffer",
+    "strike_tick_usd": 5,
+    "premiums_may_reduce_floor": false,
+    "no_quote_action": "hold_weth_idle_and_retry"
+  },
+  "selection": {
+    "csp_strike_otm_bps": 1500,
+    "csp_strike_tick_usd": 25,
+    "target_call_delta_bps": 500,
+    "maximum_call_delta_deviation_bps": 150,
+    "minimum_net_premium_bps": 10,
+    "maximum_execution_slippage_bps": 100
+  },
+  "liquidity": {
+    "csp_target_utilization_bps": 8000,
+    "parent_liquid_reserve_bps": 2000,
+    "redemption_reserve_rule": "max_pending_claims_and_base_reserve",
+    "redemption_priority": "before_new_csp_allocation",
+    "maximum_idle_duration_hours": 168
+  },
+  "fees": {
+    "protocol_gross_premium_fee_bps": 1000,
+    "parent_management_fee_bps_annual": 200,
+    "parent_performance_fee_bps_hwm": 1000,
+    "child_management_fee_bps": 0,
+    "child_performance_fee_bps": 0
+  },
+  "evidence": {
+    "research_issue": "B1N-345",
+    "economic_observation_class": "modeled",
+    "production_ready_fixed_policies": 0,
+    "mainnet_production_ready": false,
+    "testnet_scope": "functional_validation_only"
+  }
+}

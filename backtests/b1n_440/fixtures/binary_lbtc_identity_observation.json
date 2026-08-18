@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "authority_issue": "B1N-440",
+  "source_class": "observed_read_only_chain_state",
+  "network": "Base Sepolia",
+  "chain_id": 84532,
+  "block": {
+    "number": 45216602,
+    "hash": "0x0975c10ab5feb466284f29c2d34a38cc3131024c3d5417446ad029076b285598",
+    "timestamp": "2026-08-08T15:04:52Z"
+  },
+  "token": {
+    "address": "0x39fA11EbBE82699Fd9F79C566D7384064571d2b4",
+    "name": "Loot BTC",
+    "symbol": "LBTC",
+    "decimals": 8,
+    "total_supply_base_units": 22000000000,
+    "runtime_code_bytes": 1848,
+    "runtime_codehash_keccak256": "0x599a6b80cccf2c7082103129c3725529a49d37b569dc0ecc031f0444b0ce0fff"
+  },
+  "mint_eth_call": {
+    "signature": "mint(address,uint256)",
+    "caller": "0x000000000000000000000000000000000000bEEF",
+    "recipient": "0x000000000000000000000000000000000000dEaD",
+    "amount_base_units": 1,
+    "result": "0x",
+    "success": true,
+    "state_change_broadcast": false
+  },
+  "classification": {
+    "test_asset_functional_go": true,
+    "testnet_only": true,
+    "production_backed_btc": false,
+    "canonical_cbbtc": false,
+    "unrestricted_mint": true
+  }
+}

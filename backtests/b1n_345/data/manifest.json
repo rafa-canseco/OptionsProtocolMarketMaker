@@ -1,0 +1,79 @@
+{
+  "created_at": "2026-07-21T01:53:26.352502+00:00",
+  "cutoff": "2026-07-15T08:00:00+00:00",
+  "normalized": {
+    "iv_rows": 4332,
+    "path": "market.json",
+    "sha256": "dea76330865193d2065a8ba7e53f465ec88e5be290d2048770dccfad6b934540",
+    "spot_rows": 722
+  },
+  "playbook_context_gap": "playbook/CONTEXT.md absent in staging checkout",
+  "schema_version": 1,
+  "sources": [
+    {
+      "method": "get_index_chart_data",
+      "params": {
+        "index_name": "eth_usd",
+        "range": "1y"
+      },
+      "rows": 722,
+      "sha256": "1935a0a553ed389ef23973732065a746376c91d3d0efedc05921e00386b7b48b"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1784102400000,
+        "resolution": "3600",
+        "start_timestamp": 1768507200000
+      },
+      "rows": 1000,
+      "sha256": "2107cf89a8355e06df587e5cbbb16aab16a328f16c80a71d721ee6ad3d933435"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1780502400000,
+        "resolution": "3600",
+        "start_timestamp": 1768507200000
+      },
+      "rows": 1000,
+      "sha256": "b8dbc9d9f085cbc5b1fdb2ac7b75ed67fa6e47976b4a23469b6d4bd6edc533f6"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1776902400000,
+        "resolution": "3600",
+        "start_timestamp": 1768507200000
+      },
+      "rows": 1000,
+      "sha256": "03328072ecc0ffbdedcb8d1bc8832b0a0b427c49535e0127926182407e9d235b"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1773302400000,
+        "resolution": "3600",
+        "start_timestamp": 1768507200000
+      },
+      "rows": 1000,
+      "sha256": "4d04afa4fafdc0bfdb394096713a8bcb484243e8dbdf3ea71b569e9757feb6b1"
+    },
+    {
+      "method": "get_volatility_index_data",
+      "params": {
+        "currency": "ETH",
+        "end_timestamp": 1769702400000,
+        "resolution": "3600",
+        "start_timestamp": 1768507200000
+      },
+      "rows": 333,
+      "sha256": "16ff37d6eb49d881924510f846dc835231a1d614e82338b3d5c2763f3a09b4e8"
+    }
+  ],
+  "start": "2026-01-15T20:00:00+00:00"
+}

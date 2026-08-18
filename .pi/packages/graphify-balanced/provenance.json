@@ -1,0 +1,15 @@
+{
+  "upstream": {
+    "source": "npm:@wwjd/pi-graphify@0.4.3",
+    "tarball": "https://registry.npmjs.org/@wwjd/pi-graphify/-/pi-graphify-0.4.3.tgz",
+    "integrity": "sha512-xmNs1bofdoJP/D6MOVta1bUOfH+IDaX5DryQX677ASjAmWRSOyXqgJQB6BWROFV8RDT0/0ffEAtnWrt2rWnq5w==",
+    "shasum": "5f76bcc279f14b81b136055b6c7c5b819ddf9e4b",
+    "entrypointSha256": "f34cfde75bb27552da5a4f25d89ae7032339e9c4d2c82f6192fdad0a3c32dd64"
+  },
+  "derivation": {
+    "patch": "patches/automatic-lookup.patch.gz",
+    "patchSha256": "ed1eb1465d98a433c11022056dd0a0ee1b9ee60c598fea971d78c4cf42742985",
+    "entrypointSha256": "fd672319f42caab8c0507afdda4ec67df1016e0e795aa9dfdba16d02faa3b96f",
+    "patchEncoding": "gzip"
+  }
+}

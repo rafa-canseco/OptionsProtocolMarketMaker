@@ -1,0 +1,332 @@
+{
+  "activation_allowed": true,
+  "allocator_actions": {
+    "network": "base_sepolia",
+    "open_new_positions": true,
+    "purpose": "collect_observed_operational_evidence"
+  },
+  "authorization_scope": "base_sepolia_low_cap_validation",
+  "base_sepolia_overrides": {
+    "allocator_enabled": true,
+    "chain_id": 84532,
+    "mainnet_authorized": false,
+    "maximum_assignments_before_review": 1,
+    "maximum_collateral_per_position_usdc": 6.25,
+    "maximum_opened_positions_before_review": 10,
+    "maximum_positions": 1,
+    "maximum_utilization": 0.25,
+    "maximum_vault_aum_usdc": 25.0,
+    "maximum_weth_nav_fraction": 0.25,
+    "mock_assets_only": true
+  },
+  "decision": "base_sepolia_validation_go",
+  "economic_decision": "no_go",
+  "economic_gate_results": {
+    "development": {
+      "all_activity_gates_pass": true,
+      "all_economic_gates_pass": false,
+      "candidate": {
+        "costs": "base",
+        "minimum_net_premium_bps": 0,
+        "strike_parameter": 0.15,
+        "strike_rule": "fixed_moneyness_below_spot",
+        "utilization": 0.25
+      },
+      "candidate_id": "m0.15-u0.25-p0-base",
+      "economic_gate_count": 7,
+      "economic_gate_total": 10,
+      "minimum_median_excess_return": -0.019594497922875265,
+      "windows": [
+        {
+          "aggregate_assignment_frequency": 0.008695652173913044,
+          "checks": {
+            "loss_probability_within_limit": true,
+            "market_coverage_within_limit": true,
+            "median_return_above_hurdle": false,
+            "minimum_open_rate_met": true,
+            "worst_drawdown_within_limit": true
+          },
+          "expected_shortfall_5": -0.01191192358380666,
+          "hurdle_return": 0.006498656494542621,
+          "loss_probability": 0.08695652173913043,
+          "maximum_missing_market_fraction": 0.0,
+          "maximum_opened_strike_distance_below_spot": 0.1529311030243723,
+          "median_assignment_frequency": 0.0,
+          "median_open_rate": 1.0,
+          "median_opened_absolute_put_delta": 0.00027031588871895273,
+          "median_opened_strike_distance_below_spot": 0.15085158150851585,
+          "minimum_opened_strike_distance_below_spot": 0.15000000000000002,
+          "passed": false,
+          "return_distribution": {
+            "mean": -0.00042420755169780833,
+            "p25": 1.927017290292987e-06,
+            "p5": -0.0019684368607272517,
+            "p50": 2.9944688460181723e-05,
+            "p75": 5.993369551282601e-05,
+            "p95": 0.0001737622773319901,
+            "worst": -0.021636694797962264
+          },
+          "sample_count": 23,
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.051822089885798284
+        },
+        {
+          "aggregate_assignment_frequency": 0.009523809523809525,
+          "checks": {
+            "loss_probability_within_limit": false,
+            "market_coverage_within_limit": true,
+            "median_return_above_hurdle": false,
+            "minimum_open_rate_met": true,
+            "worst_drawdown_within_limit": true
+          },
+          "expected_shortfall_5": -0.06183742170869866,
+          "hurdle_return": 0.01962294154707611,
+          "loss_probability": 0.2857142857142857,
+          "maximum_missing_market_fraction": 0.0,
+          "maximum_opened_strike_distance_below_spot": 0.1529311030243723,
+          "median_assignment_frequency": 0.0,
+          "median_open_rate": 1.0,
+          "median_opened_absolute_put_delta": 0.00023388159103376882,
+          "median_opened_strike_distance_below_spot": 0.15078840122047488,
+          "minimum_opened_strike_distance_below_spot": 0.15000000000000002,
+          "passed": false,
+          "return_distribution": {
+            "mean": -0.007169544762521264,
+            "p25": -0.0010239331679834929,
+            "p5": -0.04390104742800949,
+            "p50": 2.8443624200846784e-05,
+            "p75": 0.00018005057780456912,
+            "p95": 0.009406982421595713,
+            "worst": -0.06183742170869866
+          },
+          "sample_count": 7,
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.12575642243853213
+        }
+      ],
+      "worst_drawdown": -0.12575642243853213,
+      "worst_loss_probability": 0.2857142857142857
+    },
+    "validation_base": {
+      "all_activity_gates_pass": true,
+      "all_economic_gates_pass": false,
+      "candidate": {
+        "costs": "base",
+        "minimum_net_premium_bps": 0,
+        "strike_parameter": 0.15,
+        "strike_rule": "fixed_moneyness_below_spot",
+        "utilization": 0.25
+      },
+      "candidate_id": "m0.15-u0.25-p0-base",
+      "economic_gate_count": 8,
+      "economic_gate_total": 10,
+      "minimum_median_excess_return": -0.01947235515877932,
+      "windows": [
+        {
+          "aggregate_assignment_frequency": 0.002785515320334262,
+          "checks": {
+            "loss_probability_within_limit": true,
+            "market_coverage_within_limit": true,
+            "median_return_above_hurdle": false,
+            "minimum_open_rate_met": true,
+            "worst_drawdown_within_limit": true
+          },
+          "expected_shortfall_5": -0.019022432275143664,
+          "hurdle_return": 0.006498656494542621,
+          "loss_probability": 0.041666666666666664,
+          "maximum_missing_market_fraction": 0.0,
+          "maximum_opened_strike_distance_below_spot": 0.15305313243457574,
+          "median_assignment_frequency": 0.0,
+          "median_open_rate": 1.0,
+          "median_opened_absolute_put_delta": 0.0004988655114054885,
+          "median_opened_strike_distance_below_spot": 0.1507990059740303,
+          "minimum_opened_strike_distance_below_spot": 0.15000712284533935,
+          "passed": false,
+          "return_distribution": {
+            "mean": -0.0011436364594814494,
+            "p25": 7.528397281963972e-06,
+            "p5": 7.964156256923261e-07,
+            "p50": 4.066811595715425e-05,
+            "p75": 7.406740130549982e-05,
+            "p95": 0.0001073220731820479,
+            "worst": -0.033298923333248576
+          },
+          "sample_count": 48,
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.06040646147199691
+        },
+        {
+          "aggregate_assignment_frequency": 0.00392156862745098,
+          "checks": {
+            "loss_probability_within_limit": true,
+            "market_coverage_within_limit": true,
+            "median_return_above_hurdle": false,
+            "minimum_open_rate_met": true,
+            "worst_drawdown_within_limit": true
+          },
+          "expected_shortfall_5": -0.03449017987091457,
+          "hurdle_return": 0.01962294154707611,
+          "loss_probability": 0.15,
+          "maximum_missing_market_fraction": 0.0,
+          "maximum_opened_strike_distance_below_spot": 0.15305313243457574,
+          "median_assignment_frequency": 0.0,
+          "median_open_rate": 1.0,
+          "median_opened_absolute_put_delta": 0.0005713209550861076,
+          "median_opened_strike_distance_below_spot": 0.15084024328435364,
+          "minimum_opened_strike_distance_below_spot": 0.15000712284533935,
+          "passed": false,
+          "return_distribution": {
+            "mean": -0.0024318337646073497,
+            "p25": 8.946125879760736e-05,
+            "p5": -0.023271096895743817,
+            "p50": 0.00015058638829679172,
+            "p75": 0.00018693832692467938,
+            "p95": 0.00023258542923603186,
+            "worst": -0.03611871239917219
+          },
+          "sample_count": 40,
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.06040646147199691
+        }
+      ],
+      "worst_drawdown": -0.06040646147199691,
+      "worst_loss_probability": 0.15
+    },
+    "validation_stressed": {
+      "all_activity_gates_pass": true,
+      "all_economic_gates_pass": false,
+      "candidate": {
+        "costs": "stressed",
+        "minimum_net_premium_bps": 0,
+        "strike_parameter": 0.15,
+        "strike_rule": "fixed_moneyness_below_spot",
+        "utilization": 0.25
+      },
+      "candidate_id": "m0.15-u0.25-p0-stressed",
+      "economic_gate_count": 8,
+      "economic_gate_total": 10,
+      "minimum_median_excess_return": -0.019476887263445763,
+      "windows": [
+        {
+          "aggregate_assignment_frequency": 0.002785515320334262,
+          "checks": {
+            "loss_probability_within_limit": true,
+            "market_coverage_within_limit": true,
+            "median_return_above_hurdle": false,
+            "minimum_open_rate_met": true,
+            "worst_drawdown_within_limit": true
+          },
+          "expected_shortfall_5": -0.01902343063856223,
+          "hurdle_return": 0.006498656494542621,
+          "loss_probability": 0.041666666666666664,
+          "maximum_missing_market_fraction": 0.0,
+          "maximum_opened_strike_distance_below_spot": 0.15305313243457574,
+          "median_assignment_frequency": 0.0,
+          "median_open_rate": 1.0,
+          "median_opened_absolute_put_delta": 0.000488969285140195,
+          "median_opened_strike_distance_below_spot": 0.1507990059740303,
+          "minimum_opened_strike_distance_below_spot": 0.15000712284533935,
+          "passed": false,
+          "return_distribution": {
+            "mean": -0.0011450621504828506,
+            "p25": 7.262751705983117e-06,
+            "p5": 7.629937967434942e-07,
+            "p50": 3.9392605292509764e-05,
+            "p75": 7.183666425858437e-05,
+            "p95": 0.00010421094559041054,
+            "worst": -0.03330010519394244
+          },
+          "sample_count": 48,
+          "window_days": 30,
+          "worst_maximum_drawdown": -0.06040809298745076
+        },
+        {
+          "aggregate_assignment_frequency": 0.00392156862745098,
+          "checks": {
+            "loss_probability_within_limit": true,
+            "market_coverage_within_limit": true,
+            "median_return_above_hurdle": false,
+            "minimum_open_rate_met": true,
+            "worst_drawdown_within_limit": true
+          },
+          "expected_shortfall_5": -0.034494073027147465,
+          "hurdle_return": 0.01962294154707611,
+          "loss_probability": 0.15,
+          "maximum_missing_market_fraction": 0.0,
+          "maximum_opened_strike_distance_below_spot": 0.15305313243457574,
+          "median_assignment_frequency": 0.0,
+          "median_open_rate": 1.0,
+          "median_opened_absolute_put_delta": 0.0005602334842134682,
+          "median_opened_strike_distance_below_spot": 0.15084024328435364,
+          "minimum_opened_strike_distance_below_spot": 0.15000712284533935,
+          "passed": false,
+          "return_distribution": {
+            "mean": -0.0024363511601185606,
+            "p25": 8.675950522085696e-05,
+            "p5": -0.023275621669428127,
+            "p50": 0.000146054283630348,
+            "p75": 0.00018134561487087586,
+            "p95": 0.00022578827194879024,
+            "worst": -0.03612211658057263
+          },
+          "sample_count": 40,
+          "window_days": 90,
+          "worst_maximum_drawdown": -0.06040809298745109
+        }
+      ],
+      "worst_drawdown": -0.06040809298745109,
+      "worst_loss_probability": 0.15
+    }
+  },
+  "evidence": {
+    "config_path": "backtests/b1n_356/config.json",
+    "issue": "B1N-356",
+    "report_path": "backtests/b1n_356/results/REPORT.md",
+    "source_market_sha256": "2313ba17f1466fb92f7863e74476e18b6e9c62bd443094487dcf5116812814c1",
+    "summary_path": "backtests/b1n_356/results/summary.json"
+  },
+  "evidence_gates": {
+    "observed_executable_quote_liquidity": false,
+    "observed_fund_flow_reconciliation": false,
+    "observed_nav_liability_reconciliation": false,
+    "observed_onchain_physical_assignment": false
+  },
+  "mainnet_authorized": false,
+  "notes": "Modeled premiums cannot establish economic or mainnet readiness. A Base Sepolia validation authorization, when present, exists only with mock test assets to collect observed quote, assignment, fund-flow and NAV evidence. Failing return or loss-probability gates remain an economic no-go and are not waived by testnet authorization.",
+  "policy_id": "eth_usdc_standalone_csp_fund",
+  "runtime_fail_closed_reasons": [
+    "NETWORK_SCOPE_MISMATCH",
+    "STALE_NAV",
+    "MISSING_OR_UNAPPROVED_QUOTE",
+    "CONFIG_MISMATCH",
+    "CAP_BREACH",
+    "AUM_CAP_BREACH",
+    "MAXIMUM_POSITIONS_REACHED",
+    "VALIDATION_CYCLE_LIMIT_REACHED",
+    "VALIDATION_ASSIGNMENT_LIMIT_REACHED",
+    "WETH_INVENTORY_LIMIT",
+    "INSUFFICIENT_DEPLOYABLE_USDC",
+    "UNTRUSTED_REPORT",
+    "POLICY_VERSION_MISMATCH"
+  ],
+  "schema_version": 2,
+  "selection": {
+    "covered_calls_enabled": false,
+    "deallocation_enabled": false,
+    "maximum_utilization": 0.25,
+    "maximum_weth_nav_fraction": 0.25,
+    "minimum_net_premium_bps": 0,
+    "reopen_cadence_hours": 48,
+    "strike_parameter": 0.15,
+    "strike_rounding": "down_to_exchange_increment",
+    "strike_rule": "fixed_moneyness_below_spot",
+    "target_duration_hours": 48
+  },
+  "testnet_validation_decision": "go",
+  "unresolved_evidence": [
+    "observed_executable_quote_liquidity",
+    "observed_onchain_physical_assignment",
+    "observed_fund_flow_reconciliation",
+    "observed_nav_liability_reconciliation"
+  ]
+}

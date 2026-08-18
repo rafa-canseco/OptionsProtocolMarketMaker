@@ -47,6 +47,14 @@ def _optional_env(name: str) -> str | None:
     return value or None
 
 
+def _env_first(*names: str, default: str = "") -> str:
+    for name in names:
+        value = _optional_env(name)
+        if value is not None:
+            return value
+    return default
+
+
 def _current_environment() -> str:
     for name in (
         "APP_ENV",
@@ -103,10 +111,38 @@ FAST_REFRESH_HOURS: int = max(int(os.getenv("FAST_REFRESH_HOURS", "6")), 1)
 SPREAD_BPS: int = int(os.getenv("SPREAD_BPS", "200"))
 MAX_AMOUNT: int = int(os.getenv("MAX_AMOUNT", "500000000"))
 DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "300"))
+# Keep enough quote lifetime for the backend's 120s creation timeout plus
+# its 30s execution reserve, with an additional handoff margin.
+MIN_LAZY_QUOTE_TTL_SECONDS: int = int(os.getenv("MIN_LAZY_QUOTE_TTL_SECONDS", "180"))
+if MIN_LAZY_QUOTE_TTL_SECONDS < 1:
+    print(
+        "FATAL: MIN_LAZY_QUOTE_TTL_SECONDS must be >= 1, "
+        f"got {MIN_LAZY_QUOTE_TTL_SECONDS}",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+if DEADLINE_SECONDS < MIN_LAZY_QUOTE_TTL_SECONDS:
+    print(
+        "FATAL: DEADLINE_SECONDS must be >= MIN_LAZY_QUOTE_TTL_SECONDS "
+        f"({DEADLINE_SECONDS} < {MIN_LAZY_QUOTE_TTL_SECONDS})",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 CHAIN_ID: int = int(os.getenv("CHAIN_ID", "84532"))
-BATCH_SETTLER: str = os.getenv(
+
+
+def _chain_default(*, mainnet: str, sepolia: str) -> str:
+    """Pick a chain-qualified fallback so a 8453 build never uses testnet addresses."""
+    return mainnet if CHAIN_ID == 8453 else sepolia
+
+
+BATCH_SETTLER: str = _env_first(
     "BATCH_SETTLER",
-    "0x3B5d4640233E14cc330A749926838ba2C540054f",
+    "BASE_SEPOLIA_BATCH_SETTLER",
+    default=_chain_default(
+        mainnet="0xd281ADDb8b5574360Fd6BFC245B811ad5C582a3B",
+        sepolia="0x494E4F5b56Ed30bddB8D2d20300f3977623EB7bF",
+    ),
 )
 RISK_FREE_RATE: float = float(os.getenv("RISK_FREE_RATE", "0.05"))
 
@@ -122,16 +158,35 @@ HYPERLIQUID_ACCOUNT_MODE: str = os.getenv("HYPERLIQUID_ACCOUNT_MODE", "auto")
 
 # --- Capacity ---
 MM_TYPE: str = os.getenv("MM_TYPE", "internal")  # internal | external
+CAPACITY_FULL_THRESHOLD_USD: float = float(
+    os.getenv("CAPACITY_FULL_THRESHOLD_USD", "10.0")
+)
 CAPACITY_RESERVE_RATIO: float = float(os.getenv("CAPACITY_RESERVE_RATIO", "0.25"))
 CAPACITY_PREMIUM_RATIO: float = float(os.getenv("CAPACITY_PREMIUM_RATIO", "0.03"))
 CAPACITY_AVG_DELTA: float = float(os.getenv("CAPACITY_AVG_DELTA", "0.3"))
-USDC_ADDRESS: str = os.getenv(
+USDC_ADDRESS: str = _env_first(
     "USDC_ADDRESS",
-    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  # Base mainnet USDC
+    "BASE_SEPOLIA_USDC",
+    default=_chain_default(
+        mainnet="0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",  # Base mainnet USDC
+        sepolia="0x036CbD53842c5426634e7929541eC2318f3dCF7e",  # Base Sepolia Circle USDC
+    ),
 )
-MARGIN_POOL_ADDRESS: str = os.getenv(
+MARGIN_POOL_ADDRESS: str = _env_first(
     "MARGIN_POOL_ADDRESS",
-    "0xa1e04873F6d112d84824C88c9D6937bE38811657",  # Base mainnet MarginPool
+    "BASE_SEPOLIA_MARGIN_POOL",
+    default=_chain_default(
+        mainnet="0xa1e04873F6d112d84824C88c9D6937bE38811657",  # Base mainnet MarginPool
+        sepolia="0xF3E58e6fed228179dD86fdd3a1A9Fe23A4980DA3",  # Base Sepolia MarginPool
+    ),
+)
+BASE_SEPOLIA_VAULT_ADAPTER: str = _env_first(
+    "BASE_SEPOLIA_VAULT_ADAPTER",
+    default="0x28B953496815AF6404320522E2CB7b9A2b0a5F90",
+)
+BASE_SEPOLIA_OTOKEN_FACTORY: str = _env_first(
+    "BASE_SEPOLIA_OTOKEN_FACTORY",
+    default="0x9aD4a3824Ac9Dfb0983EC58a044b1D833B930144",
 )
 
 # --- Trade history persistence ---
@@ -139,6 +194,146 @@ TRADE_LOG_PATH: str = os.getenv("TRADE_LOG_PATH", "data/trade_history.jsonl")
 SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
 SUPABASE_RECOVERY_ENABLED: bool = _env_flag("SUPABASE_RECOVERY_ENABLED", default=True)
+
+# --- Base Sepolia tokenized CSP fund allocator (explicit opt-in) ---
+FUND_ALLOCATOR_ENABLED: bool = _env_flag("FUND_ALLOCATOR_ENABLED", default=False)
+FUND_ALLOCATOR_PRIVATE_KEY: str | None = _optional_env("FUND_ALLOCATOR_PRIVATE_KEY")
+FUND_ALLOCATOR_POLICY_PATH: str = os.getenv(
+    "FUND_ALLOCATOR_POLICY_PATH",
+    "policies/csp_fund_policy.v4.base-sepolia.json",
+)
+FUND_ALLOCATOR_INTERVAL_SECONDS: int = max(
+    int(os.getenv("FUND_ALLOCATOR_INTERVAL_SECONDS", "30")),
+    10,
+)
+FUND_ALLOCATOR_CONFIRMATIONS: int = max(
+    int(os.getenv("FUND_ALLOCATOR_CONFIRMATIONS", "2")),
+    1,
+)
+FUND_OPERATIONS_KEEPER_ENABLED: bool = _env_flag(
+    "FUND_OPERATIONS_KEEPER_ENABLED",
+    default=False,
+)
+FUND_PROCESSOR_PRIVATE_KEY: str | None = _optional_env(
+    "FUND_PROCESSOR_PRIVATE_KEY"
+) or _optional_env(
+    # Backward-compatible alias for any pre-release local configuration.
+    "FUND_OPERATIONS_KEEPER_PRIVATE_KEY"
+)
+FUND_OPERATIONS_KEEPER_INTERVAL_SECONDS: int = max(
+    int(os.getenv("FUND_OPERATIONS_KEEPER_INTERVAL_SECONDS", "30")),
+    10,
+)
+FUND_OPERATIONS_KEEPER_PAGE_SIZE: int = min(
+    max(int(os.getenv("FUND_OPERATIONS_KEEPER_PAGE_SIZE", "16")), 1),
+    16,
+)
+FUND_VAULT_ADDRESS: str | None = _optional_env("FUND_VAULT_ADDRESS")
+FUND_FLOW_MANAGER_ADDRESS: str | None = _optional_env("FUND_FLOW_MANAGER_ADDRESS")
+FUND_STRATEGY_MANAGER_ADDRESS: str | None = _optional_env(
+    "FUND_STRATEGY_MANAGER_ADDRESS"
+)
+FUND_CSP_ADAPTER_ADDRESS: str | None = _optional_env("FUND_CSP_ADAPTER_ADDRESS")
+FUND_CSP_VALUATOR_ADDRESS: str | None = _optional_env("FUND_CSP_VALUATOR_ADDRESS")
+
+# --- Base Sepolia tokenized Covered Call fund (explicit opt-in) ---
+COVERED_CALL_ALLOCATOR_ENABLED: bool = _env_flag(
+    "COVERED_CALL_ALLOCATOR_ENABLED",
+    default=False,
+)
+COVERED_CALL_ALLOCATOR_PRIVATE_KEY: str | None = _optional_env(
+    "COVERED_CALL_ALLOCATOR_PRIVATE_KEY"
+)
+COVERED_CALL_ALLOCATOR_POLICY_PATH: str = os.getenv(
+    "COVERED_CALL_ALLOCATOR_POLICY_PATH",
+    "policies/covered_call_fund_policy.v5.base-sepolia.json",
+)
+COVERED_CALL_ALLOCATOR_INTERVAL_SECONDS: int = max(
+    int(os.getenv("COVERED_CALL_ALLOCATOR_INTERVAL_SECONDS", "30")),
+    10,
+)
+COVERED_CALL_ALLOCATOR_CONFIRMATIONS: int = max(
+    int(os.getenv("COVERED_CALL_ALLOCATOR_CONFIRMATIONS", "2")),
+    1,
+)
+COVERED_CALL_OPERATIONS_KEEPER_ENABLED: bool = _env_flag(
+    "COVERED_CALL_OPERATIONS_KEEPER_ENABLED",
+    default=False,
+)
+COVERED_CALL_PROCESSOR_PRIVATE_KEY: str | None = _optional_env(
+    "COVERED_CALL_PROCESSOR_PRIVATE_KEY"
+)
+COVERED_CALL_OPERATIONS_KEEPER_INTERVAL_SECONDS: int = max(
+    int(os.getenv("COVERED_CALL_OPERATIONS_KEEPER_INTERVAL_SECONDS", "30")),
+    10,
+)
+COVERED_CALL_OPERATIONS_KEEPER_PAGE_SIZE: int = min(
+    max(int(os.getenv("COVERED_CALL_OPERATIONS_KEEPER_PAGE_SIZE", "16")), 1),
+    16,
+)
+COVERED_CALL_VAULT_ADDRESS: str | None = _optional_env("COVERED_CALL_VAULT_ADDRESS")
+COVERED_CALL_FLOW_MANAGER_ADDRESS: str | None = _optional_env(
+    "COVERED_CALL_FLOW_MANAGER_ADDRESS"
+)
+COVERED_CALL_STRATEGY_MANAGER_ADDRESS: str | None = _optional_env(
+    "COVERED_CALL_STRATEGY_MANAGER_ADDRESS"
+)
+COVERED_CALL_ADAPTER_ADDRESS: str | None = _optional_env("COVERED_CALL_ADAPTER_ADDRESS")
+COVERED_CALL_VALUATOR_ADDRESS: str | None = _optional_env(
+    "COVERED_CALL_VALUATOR_ADDRESS"
+)
+COVERED_CALL_WETH_ADDRESS: str | None = _optional_env("COVERED_CALL_WETH_ADDRESS")
+
+# --- Base Sepolia Meta Wheel (separate, explicit opt-in; dedicated children only) ---
+META_WHEEL_ALLOCATOR_ENABLED: bool = _env_flag(
+    "META_WHEEL_ALLOCATOR_ENABLED", default=False
+)
+META_WHEEL_ALLOCATOR_PRIVATE_KEY: str | None = _optional_env(
+    "META_WHEEL_ALLOCATOR_PRIVATE_KEY"
+)
+META_WHEEL_PROCESSOR_PRIVATE_KEY: str | None = _optional_env(
+    "META_WHEEL_PROCESSOR_PRIVATE_KEY"
+)
+META_WHEEL_ALLOCATOR_ADDRESS: str | None = _optional_env("META_WHEEL_ALLOCATOR_ADDRESS")
+META_WHEEL_PROCESSOR_ADDRESS: str | None = _optional_env("META_WHEEL_PROCESSOR_ADDRESS")
+META_WHEEL_ALLOCATOR_POLICY_PATH: str = os.getenv(
+    "META_WHEEL_ALLOCATOR_POLICY_PATH",
+    "policies/meta_wheel_policy.v2.base-sepolia.json",
+)
+META_WHEEL_APPROVED_POLICY_SHA256: str | None = _optional_env(
+    "META_WHEEL_APPROVED_POLICY_SHA256"
+)
+META_WHEEL_ALLOCATOR_INTERVAL_SECONDS: int = max(
+    int(os.getenv("META_WHEEL_ALLOCATOR_INTERVAL_SECONDS", "30")), 10
+)
+META_WHEEL_ALLOCATOR_CONFIRMATIONS: int = max(
+    int(os.getenv("META_WHEEL_ALLOCATOR_CONFIRMATIONS", "2")), 2
+)
+META_WHEEL_PERSISTENT_ROOT: str | None = _optional_env("META_WHEEL_PERSISTENT_ROOT")
+META_WHEEL_ACTION_JOURNAL_PATH: str | None = _optional_env(
+    "META_WHEEL_ACTION_JOURNAL_PATH"
+)
+META_WHEEL_DEPLOYMENT_MANIFEST_PATH: str | None = _optional_env(
+    "META_WHEEL_DEPLOYMENT_MANIFEST_PATH"
+)
+META_WHEEL_DEPLOYMENT_MANIFEST_SHA256: str | None = _optional_env(
+    "META_WHEEL_DEPLOYMENT_MANIFEST_SHA256"
+)
+META_WHEEL_PARENT_ADDRESS: str | None = _optional_env("META_WHEEL_PARENT_ADDRESS")
+META_WHEEL_STRATEGY_MANAGER_ADDRESS: str | None = _optional_env(
+    "META_WHEEL_STRATEGY_MANAGER_ADDRESS"
+)
+META_WHEEL_COORDINATOR_ADDRESS: str | None = _optional_env(
+    "META_WHEEL_COORDINATOR_ADDRESS"
+)
+META_WHEEL_VALUATOR_ADDRESS: str | None = _optional_env("META_WHEEL_VALUATOR_ADDRESS")
+META_WHEEL_CSP_LANE_ADDRESSES: str | None = _optional_env(
+    "META_WHEEL_CSP_LANE_ADDRESSES"
+)
+META_WHEEL_CALL_LANE_ADDRESSES: str | None = _optional_env(
+    "META_WHEEL_CALL_LANE_ADDRESSES"
+)
+META_WHEEL_FUND_KEY: str | None = _optional_env("META_WHEEL_FUND_KEY")
 
 
 # --- Multi-asset configuration ---

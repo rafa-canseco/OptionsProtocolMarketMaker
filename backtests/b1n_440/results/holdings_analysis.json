@@ -1,0 +1,96 @@
+{
+  "authority_issue": "B1N-440",
+  "calculation_rules": {
+    "covered_share_ratio": "sum(abs(contracts) * 100) / optionable IBIT shares",
+    "gross_call_overwrite": "sum(abs(contracts) * 100 * strike) / derived holdings NAV",
+    "nav": "sum displayed Market Value across all holdings",
+    "notional_note": "BlackRock states option Notional Value is delta-adjusted; the result is not a target delta",
+    "observed_weighted_delta": "sum(abs(option Notional Value)) / (total covered IBIT shares * IBIT unit value)"
+  },
+  "cutoff": "2026-08-06",
+  "derived": {
+    "calls_fully_covered": true,
+    "covered_share_ratio": 0.9456988301185184,
+    "equal_contract_buckets": true,
+    "gross_call_overwrite_nav_ratio": 0.30133057416302333,
+    "gross_strike_notional_usd": 18045600.0,
+    "holdings_nav_usd": 59886389.06,
+    "ibit_unit_value_usd": 36.49,
+    "observed_weighted_delta": 0.5045764566432618,
+    "observed_weighted_delta_classification": "derived_observation_not_target",
+    "optionable_ibit_shares": 522788.0,
+    "strikes_usd_in_source_order": [
+      36.5,
+      37.5,
+      36.5,
+      35.5
+    ],
+    "total_call_contracts": 4944.0,
+    "total_covered_ibit_shares": 494400.0,
+    "weekly_bucket_count": 4
+  },
+  "option_rows": [
+    {
+      "bucket_id": "weekly_bucket_1",
+      "contract_multiplier_shares": 100,
+      "contracts": 1236.0,
+      "covered_shares": 123600.0,
+      "delta_classification": "derived_observation_not_target",
+      "dte": null,
+      "exact_expiry": null,
+      "observed_delta": 0.4991553167467968,
+      "official_delta_adjusted_notional_usd": 2251272.34,
+      "official_name": "AUG26 IBIT C @ 36.500000",
+      "strike_usd": 36.5,
+      "ticker": "IBIT"
+    },
+    {
+      "bucket_id": "weekly_bucket_2",
+      "contract_multiplier_shares": 100,
+      "contracts": 1236.0,
+      "covered_shares": 123600.0,
+      "delta_classification": "derived_observation_not_target",
+      "dte": null,
+      "exact_expiry": null,
+      "observed_delta": 0.34803359478724055,
+      "official_delta_adjusted_notional_usd": 1569688.59,
+      "official_name": "AUG26 IBIT C @ 37.500000",
+      "strike_usd": 37.5,
+      "ticker": "IBIT"
+    },
+    {
+      "bucket_id": "weekly_bucket_3",
+      "contract_multiplier_shares": 100,
+      "contracts": 1236.0,
+      "covered_shares": 123600.0,
+      "delta_classification": "derived_observation_not_target",
+      "dte": null,
+      "exact_expiry": null,
+      "observed_delta": 0.5136382158165423,
+      "official_delta_adjusted_notional_usd": 2316592.59,
+      "official_name": "AUG26 IBIT C @ 36.500000",
+      "strike_usd": 36.5,
+      "ticker": "IBIT"
+    },
+    {
+      "bucket_id": "weekly_bucket_4",
+      "contract_multiplier_shares": 100,
+      "contracts": 1236.0,
+      "covered_shares": 123600.0,
+      "delta_classification": "derived_observation_not_target",
+      "dte": null,
+      "exact_expiry": null,
+      "observed_delta": 0.6574786992224673,
+      "official_delta_adjusted_notional_usd": 2965336.76,
+      "official_name": "AUG26 IBIT C @ 35.500000",
+      "strike_usd": 35.5,
+      "ticker": "IBIT"
+    }
+  ],
+  "schema_version": 1,
+  "source_class": "official_ishares_holdings_observed",
+  "unknowns": [
+    "The CSV names only AUG26 and does not expose each exact expiry or DTE.",
+    "The official holdings snapshot does not define a target delta."
+  ]
+}

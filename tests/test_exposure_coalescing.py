@@ -114,7 +114,7 @@ def test_exposure_failure_never_fabricates_snapshot_or_bypasses_capacity_gate(
         [],
     ],
 )
-def test_malformed_exposure_skips_capacity_telemetry(monkeypatch, exposure):
+def test_malformed_exposure_is_rejected(monkeypatch, exposure):
     assets = _configure_cycle(monkeypatch, ("eth", "btc"))
     get_exposure = Mock(return_value=exposure)
     run_asset = Mock()
@@ -130,13 +130,15 @@ def test_malformed_exposure_skips_capacity_telemetry(monkeypatch, exposure):
         call.kwargs["exposure_snapshot"] is None for call in run_asset.call_args_list
     )
 
+
+def test_missing_exposure_skips_capacity_telemetry(monkeypatch):
     asset = SimpleNamespace(name="eth", hedge_symbol="ETH")
     account_value = Mock()
     log_snapshot = Mock()
     monkeypatch.setattr(mm_main.hedge_executor, "get_account_value", account_value)
     monkeypatch.setattr(mm_main.trade_logger, "log_capacity_snapshot", log_snapshot)
 
-    mm_main._log_capacity_snapshot(asset, "base", result)
+    mm_main._log_capacity_snapshot(asset, "base", None)
 
     account_value.assert_not_called()
     log_snapshot.assert_not_called()

@@ -31,6 +31,7 @@ def _base_env() -> dict[str, str]:
         "MM_API_KEY": "test-api-key",
         "BACKEND_URL": "https://backend.example.com",
         "RPC_URL": "https://base-rpc.example.com",
+        "PYTHON_DOTENV_DISABLED": "1",
     }
 
 
@@ -39,6 +40,7 @@ def _reload_config(env: dict[str, str]):
     try:
         os.environ.clear()
         os.environ.update(env)
+        os.environ.setdefault("PYTHON_DOTENV_DISABLED", "1")
         return importlib.reload(config_module)
     finally:
         os.environ.clear()
@@ -61,6 +63,66 @@ def test_solana_quotes_default_to_legacy_enabled_outside_production():
     assert [chain.name for chain in config.CHAINS] == ["base", "solana"]
 
 
+def test_covered_call_workers_are_disabled_by_default():
+    config = _reload_config(_base_env())
+
+    assert config.COVERED_CALL_ALLOCATOR_ENABLED is False
+    assert config.COVERED_CALL_OPERATIONS_KEEPER_ENABLED is False
+    assert config.COVERED_CALL_ALLOCATOR_CONFIRMATIONS == 2
+    assert config.COVERED_CALL_ALLOCATOR_POLICY_PATH.endswith(
+        "covered_call_fund_policy.v5.base-sepolia.json"
+    )
+
+
+def test_meta_wheel_flag_is_isolated_from_standalone_workers():
+    config = _reload_config(
+        _base_env()
+        | {
+            "FUND_ALLOCATOR_ENABLED": "true",
+            "COVERED_CALL_ALLOCATOR_ENABLED": "true",
+            "META_WHEEL_ALLOCATOR_ENABLED": "false",
+        }
+    )
+
+    assert config.FUND_ALLOCATOR_ENABLED is True
+    assert config.COVERED_CALL_ALLOCATOR_ENABLED is True
+    assert config.META_WHEEL_ALLOCATOR_ENABLED is False
+    assert config.FUND_ALLOCATOR_POLICY_PATH.endswith(
+        "csp_fund_policy.v4.base-sepolia.json"
+    )
+    assert config.COVERED_CALL_ALLOCATOR_POLICY_PATH.endswith(
+        "covered_call_fund_policy.v5.base-sepolia.json"
+    )
+    assert config.META_WHEEL_ALLOCATOR_POLICY_PATH.endswith(
+        "meta_wheel_policy.v2.base-sepolia.json"
+    )
+
+
+def test_meta_wheel_automated_signers_and_manifest_are_separate_configuration():
+    config = _reload_config(
+        _base_env()
+        | {
+            "META_WHEEL_ALLOCATOR_PRIVATE_KEY": "allocator-key",
+            "META_WHEEL_PROCESSOR_PRIVATE_KEY": "processor-key",
+            "META_WHEEL_ALLOCATOR_ADDRESS": "allocator-address",
+            "META_WHEEL_PROCESSOR_ADDRESS": "processor-address",
+            "META_WHEEL_GUARDIAN_PRIVATE_KEY": "must-not-load",
+            "META_WHEEL_CURATOR_PRIVATE_KEY": "must-not-load",
+            "META_WHEEL_DEPLOYMENT_MANIFEST_PATH": "/manifest.json",
+            "META_WHEEL_DEPLOYMENT_MANIFEST_SHA256": "ab" * 32,
+        }
+    )
+
+    assert config.META_WHEEL_ALLOCATOR_PRIVATE_KEY == "allocator-key"
+    assert config.META_WHEEL_PROCESSOR_PRIVATE_KEY == "processor-key"
+    assert config.META_WHEEL_ALLOCATOR_ADDRESS == "allocator-address"
+    assert config.META_WHEEL_PROCESSOR_ADDRESS == "processor-address"
+    assert not hasattr(config, "META_WHEEL_GUARDIAN_PRIVATE_KEY")
+    assert not hasattr(config, "META_WHEEL_CURATOR_PRIVATE_KEY")
+    assert config.META_WHEEL_DEPLOYMENT_MANIFEST_PATH == "/manifest.json"
+    assert config.META_WHEEL_DEPLOYMENT_MANIFEST_SHA256 == "ab" * 32
+
+
 def test_supabase_recovery_is_enabled_by_default():
     config = _reload_config(_base_env())
 
@@ -79,6 +141,42 @@ def test_supabase_recovery_can_be_disabled_without_clearing_persistence_config()
     assert config.SUPABASE_RECOVERY_ENABLED is False
     assert config.SUPABASE_URL == env["SUPABASE_URL"]
     assert config.SUPABASE_KEY == env["SUPABASE_KEY"]
+
+
+def test_lazy_quote_ttl_defaults_leave_creation_budget_without_extending_deadline():
+    config = _reload_config(_base_env())
+
+    assert config.DEADLINE_SECONDS == 300
+    assert config.MIN_LAZY_QUOTE_TTL_SECONDS == 180
+
+
+def test_lazy_quote_ttl_accepts_deadline_at_backend_minimum():
+    config = _reload_config(
+        _base_env()
+        | {
+            "DEADLINE_SECONDS": "180",
+            "MIN_LAZY_QUOTE_TTL_SECONDS": "180",
+        }
+    )
+
+    assert config.DEADLINE_SECONDS == config.MIN_LAZY_QUOTE_TTL_SECONDS
+
+
+def test_lazy_quote_ttl_rejects_deadline_below_backend_minimum():
+    env = _base_env() | {
+        "DEADLINE_SECONDS": "179",
+        "MIN_LAZY_QUOTE_TTL_SECONDS": "180",
+    }
+
+    with pytest.raises(SystemExit):
+        _reload_config(env)
+
+
+def test_lazy_quote_ttl_rejects_non_positive_minimum():
+    env = _base_env() | {"MIN_LAZY_QUOTE_TTL_SECONDS": "0"}
+
+    with pytest.raises(SystemExit):
+        _reload_config(env)
 
 
 def test_solana_quotes_enable_only_with_explicit_flag():
@@ -202,3 +300,111 @@ def test_solana_quotes_flag_rejects_garbage_value():
 
     with pytest.raises(SystemExit):
         _reload_config(env)
+
+
+def test_fund_processor_uses_existing_canonical_secret_name():
+    config = _reload_config(
+        _base_env()
+        | {
+            "FUND_PROCESSOR_PRIVATE_KEY": "0x" + "22" * 32,
+            "FUND_OPERATIONS_KEEPER_PRIVATE_KEY": "0x" + "33" * 32,
+        }
+    )
+
+    assert config.FUND_PROCESSOR_PRIVATE_KEY == "0x" + "22" * 32
+
+
+def test_fund_processor_accepts_pre_release_keeper_secret_alias():
+    config = _reload_config(
+        _base_env() | {"FUND_OPERATIONS_KEEPER_PRIVATE_KEY": "0x" + "33" * 32}
+    )
+
+    assert config.FUND_PROCESSOR_PRIVATE_KEY == "0x" + "33" * 32
+
+
+def test_base_sepolia_circle_usdc_defaults():
+    config = _reload_config(_base_env())
+
+    assert config.BATCH_SETTLER == "0x494E4F5b56Ed30bddB8D2d20300f3977623EB7bF"
+    assert config.USDC_ADDRESS == "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+    assert config.MARGIN_POOL_ADDRESS == "0xF3E58e6fed228179dD86fdd3a1A9Fe23A4980DA3"
+    assert (
+        config.BASE_SEPOLIA_VAULT_ADAPTER
+        == "0x28B953496815AF6404320522E2CB7b9A2b0a5F90"
+    )
+    assert (
+        config.BASE_SEPOLIA_OTOKEN_FACTORY
+        == "0x9aD4a3824Ac9Dfb0983EC58a044b1D833B930144"
+    )
+
+
+def test_base_sepolia_alias_env_vars_are_supported():
+    env = _base_env() | {
+        "BASE_SEPOLIA_BATCH_SETTLER": "0x0000000000000000000000000000000000000001",
+        "BASE_SEPOLIA_USDC": "0x0000000000000000000000000000000000000002",
+        "BASE_SEPOLIA_MARGIN_POOL": "0x0000000000000000000000000000000000000003",
+        "BASE_SEPOLIA_VAULT_ADAPTER": "0x0000000000000000000000000000000000000004",
+        "BASE_SEPOLIA_OTOKEN_FACTORY": "0x0000000000000000000000000000000000000005",
+    }
+
+    config = _reload_config(env)
+
+    assert config.BATCH_SETTLER == env["BASE_SEPOLIA_BATCH_SETTLER"]
+    assert config.USDC_ADDRESS == env["BASE_SEPOLIA_USDC"]
+    assert config.MARGIN_POOL_ADDRESS == env["BASE_SEPOLIA_MARGIN_POOL"]
+    assert config.BASE_SEPOLIA_VAULT_ADAPTER == env["BASE_SEPOLIA_VAULT_ADAPTER"]
+    assert config.BASE_SEPOLIA_OTOKEN_FACTORY == env["BASE_SEPOLIA_OTOKEN_FACTORY"]
+
+
+def test_generic_contract_env_vars_take_precedence_over_base_sepolia_aliases():
+    env = _base_env() | {
+        "BATCH_SETTLER": "0x0000000000000000000000000000000000000011",
+        "BASE_SEPOLIA_BATCH_SETTLER": "0x0000000000000000000000000000000000000021",
+        "USDC_ADDRESS": "0x0000000000000000000000000000000000000012",
+        "BASE_SEPOLIA_USDC": "0x0000000000000000000000000000000000000022",
+        "MARGIN_POOL_ADDRESS": "0x0000000000000000000000000000000000000013",
+        "BASE_SEPOLIA_MARGIN_POOL": "0x0000000000000000000000000000000000000023",
+    }
+
+    config = _reload_config(env)
+
+    assert config.BATCH_SETTLER == env["BATCH_SETTLER"]
+    assert config.USDC_ADDRESS == env["USDC_ADDRESS"]
+    assert config.MARGIN_POOL_ADDRESS == env["MARGIN_POOL_ADDRESS"]
+
+
+def test_mainnet_chain_defaults_use_base_mainnet_addresses():
+    env = _base_env() | {"CHAIN_ID": "8453"}
+
+    config = _reload_config(env)
+
+    assert config.CHAIN_ID == 8453
+    assert config.BATCH_SETTLER == "0xd281ADDb8b5574360Fd6BFC245B811ad5C582a3B"
+    assert config.USDC_ADDRESS == "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    assert config.MARGIN_POOL_ADDRESS == "0xa1e04873F6d112d84824C88c9D6937bE38811657"
+
+
+def test_sepolia_chain_defaults_use_base_sepolia_addresses():
+    env = _base_env() | {"CHAIN_ID": "84532"}
+
+    config = _reload_config(env)
+
+    assert config.CHAIN_ID == 84532
+    assert config.BATCH_SETTLER == "0x494E4F5b56Ed30bddB8D2d20300f3977623EB7bF"
+    assert config.USDC_ADDRESS == "0x036CbD53842c5426634e7929541eC2318f3dCF7e"
+    assert config.MARGIN_POOL_ADDRESS == "0xF3E58e6fed228179dD86fdd3a1A9Fe23A4980DA3"
+
+
+def test_explicit_env_overrides_chain_defaults_on_mainnet():
+    env = _base_env() | {
+        "CHAIN_ID": "8453",
+        "BATCH_SETTLER": "0x00000000000000000000000000000000000000aa",
+        "USDC_ADDRESS": "0x00000000000000000000000000000000000000aa",
+        "MARGIN_POOL_ADDRESS": "0x00000000000000000000000000000000000000bb",
+    }
+
+    config = _reload_config(env)
+
+    assert config.BATCH_SETTLER == "0x00000000000000000000000000000000000000aa"
+    assert config.USDC_ADDRESS == "0x00000000000000000000000000000000000000aa"
+    assert config.MARGIN_POOL_ADDRESS == "0x00000000000000000000000000000000000000bb"
