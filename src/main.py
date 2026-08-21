@@ -10,6 +10,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from eth_account import Account
 from web3 import Web3
@@ -45,11 +46,49 @@ from src.startup_recovery import recover_positions
 
 OTOKEN_DECIMALS = 8
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
+_LOG_FORMAT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
+
+class _RpcEndpointRedactingFormatter(logging.Formatter):
+    def __init__(self, *args, endpoints: tuple[str | None, ...], **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        sensitive_parts = []
+        for endpoint in endpoints:
+            if not endpoint:
+                continue
+            parsed = urlsplit(endpoint)
+            sensitive_parts.append(endpoint)
+            if parsed.netloc:
+                sensitive_parts.append(parsed.netloc)
+            if parsed.hostname:
+                sensitive_parts.append(parsed.hostname)
+            if parsed.path not in ("", "/"):
+                sensitive_parts.append(parsed.path)
+            if parsed.query:
+                sensitive_parts.append(f"?{parsed.query}")
+        self.sensitive_parts = tuple(
+            sorted(set(sensitive_parts), key=len, reverse=True)
+        )
+
+    def format(self, record: logging.LogRecord) -> str:
+        rendered = super().format(record)
+        for endpoint in self.sensitive_parts:
+            rendered = rendered.replace(endpoint, "[REDACTED_RPC_ENDPOINT]")
+        return rendered
+
+
+def _configure_logging() -> None:
+    logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT, datefmt="%H:%M:%S")
+    formatter = _RpcEndpointRedactingFormatter(
+        _LOG_FORMAT,
+        datefmt="%H:%M:%S",
+        endpoints=(config.RPC_URL, config.SOLANA_RPC_URL),
+    )
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(formatter)
+
+
+_configure_logging()
 log = logging.getLogger("mm")
 
 # Solana runtime state (populated in main() if configured)
@@ -683,7 +722,7 @@ def main() -> None:
     log.info("b1nary Market Maker starting")
     log.info("  MM address:  %s", mm_address)
     log.info("  Backend:     %s", config.BACKEND_URL)
-    log.info("  RPC:         %s", config.RPC_URL)
+    log.info("  Base RPC:    configured")
     log.info("  Chains:      %s", [c.name for c in config.CHAINS])
     log.info("  Base assets: %s", [a.name for a in config.ASSETS])
     log.info(
@@ -692,7 +731,7 @@ def main() -> None:
     )
     if config.SOLANA_QUOTE_PUBLISHING_ENABLED:
         log.info("  Solana MM:   %s", _solana_maker_pubkey)
-        log.info("  Solana RPC:  %s", config.SOLANA_RPC_URL)
+        log.info("  Solana RPC:  configured")
         log.info("  Solana assets: %s", [a.name for a in config.SOLANA_ASSETS])
     log.info("  Spread:      %d bps", config.SPREAD_BPS)
     log.info(
