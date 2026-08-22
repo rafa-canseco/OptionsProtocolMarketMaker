@@ -20,19 +20,19 @@ from src.fund_operations_keeper import (
     marginal_exit_cost,
 )
 from src.fund_tx import ConfirmedTransaction, send_confirmed_transaction
+from src.snapshot_consumer import SnapshotBundle, SnapshotConsumer, supervise_worker
 
 log = logging.getLogger(__name__)
 
 
 class CoveredCallFundOperationsKeeper:
-    def __init__(self) -> None:
+    def __init__(self, snapshots: SnapshotConsumer, transaction_w3: Web3) -> None:
         policy_path = Path(config.COVERED_CALL_ALLOCATOR_POLICY_PATH)
         load_covered_call_policy(policy_path)
         self.policy_hash = hashlib.sha256(policy_path.read_bytes()).hexdigest()
         self._validate_runtime_config()
-        self.w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
-        if self.w3.eth.chain_id != 84532:
-            raise RuntimeError("Covered-call operations keeper requires Base Sepolia")
+        self.snapshots = snapshots
+        self.w3 = transaction_w3
         self.account = Account.from_key(config.COVERED_CALL_PROCESSOR_PRIVATE_KEY)
         self.vault = self.w3.eth.contract(
             address=Web3.to_checksum_address(config.COVERED_CALL_VAULT_ADDRESS),
@@ -42,11 +42,6 @@ class CoveredCallFundOperationsKeeper:
             address=Web3.to_checksum_address(config.COVERED_CALL_FLOW_MANAGER_ADDRESS),
             abi=_FLOW_ABI,
         )
-        for address in (self.vault.address, self.flow.address):
-            if not self.w3.eth.get_code(address):
-                raise RuntimeError(
-                    f"Configured covered-call fund address has no code: {address}"
-                )
 
     @staticmethod
     def _validate_runtime_config() -> None:
@@ -79,35 +74,40 @@ class CoveredCallFundOperationsKeeper:
                 "Covered-call allocator and processor require separate keys"
             )
 
-    def _safe_block(self) -> tuple[int, int]:
-        latest = self.w3.eth.block_number
-        safe = max(
-            latest - config.COVERED_CALL_ALLOCATOR_CONFIRMATIONS,
-            0,
-        )
-        return safe, latest
-
-    def _send(self, function) -> ConfirmedTransaction:
-        return send_confirmed_transaction(
+    def _send(self, function, bundle: SnapshotBundle) -> ConfirmedTransaction:
+        self.snapshots.require(bundle)
+        tx = send_confirmed_transaction(
             w3=self.w3,
             account=self.account,
             function=function,
             chain_id=84532,
             confirmations=config.COVERED_CALL_ALLOCATOR_CONFIRMATIONS,
+            decision_validator=lambda: self.snapshots.require(bundle),
         )
+        self.snapshots.wait_after_receipt(
+            pre_send_generation=bundle.generation,
+            receipt_block=tx.block_number,
+            receipt_block_hash=tx.block_hash,
+        )
+        return tx
 
     def run_once(self) -> None:
-        safe_block, latest_block = self._safe_block()
-        batch_id = self.flow.functions.nextProcessBatchId().call(
-            block_identifier=safe_block
+        bundle = self.snapshots.current()
+        state = bundle.fund(
+            "covered_call",
+            "operations",
+            expected_address=config.COVERED_CALL_VAULT_ADDRESS,
         )
-        batch = self.flow.functions.batch(batch_id).call(block_identifier=safe_block)
+        latest_block = int(state["latest_block"])
+        batch_id = int(state["batch_id"])
+        batch = state["batch"]
         if batch[19]:
             tx = self._send(
                 self.flow.functions.processRedeemBatch(
                     batch_id,
                     config.COVERED_CALL_OPERATIONS_KEEPER_PAGE_SIZE,
-                )
+                ),
+                bundle,
             )
             log.info(
                 "Covered-call operations decision=process batch_id=%d "
@@ -124,12 +124,10 @@ class CoveredCallFundOperationsKeeper:
         if pending_shares == 0:
             return
         if not batch[18]:
-            open_batch_id = self.flow.functions.openBatchId().call(
-                block_identifier=safe_block
-            )
+            open_batch_id = int(state["open_batch_id"])
             if open_batch_id != batch_id:
                 raise RuntimeError("Next redemption batch is neither sealed nor open")
-            tx = self._send(self.flow.functions.sealRedeemBatch(batch_id))
+            tx = self._send(self.flow.functions.sealRedeemBatch(batch_id), bundle)
             log.info(
                 "Covered-call operations decision=seal batch_id=%d shares=%d "
                 "policy_hash=%s tx=%s tx_nonce=%d replaced=%s",
@@ -142,7 +140,7 @@ class CoveredCallFundOperationsKeeper:
             )
             return
 
-        nav = self.vault.functions.activeNavWindow().call(block_identifier=safe_block)
+        nav = state["nav"]
         if not nav[6] <= latest_block <= nav[7]:
             log.info(
                 "Covered-call operations decision=skip reason=nav_not_active "
@@ -151,21 +149,12 @@ class CoveredCallFundOperationsKeeper:
                 nav[9],
             )
             return
-        eligible_supply = self.vault.functions.shareSupply().call(
-            block_identifier=safe_block
-        )
-        idle_weth = self.vault.functions.accountedIdleAssets().call(
-            block_identifier=safe_block
-        )
-        virtual_shares = self.vault.functions.virtualShares().call(
-            block_identifier=safe_block
-        )
-        _, max_window_outflow_bps = self.flow.functions.exitPolicy().call(
-            block_identifier=safe_block
-        )
-        window_eligible_supply, window_processed = self.flow.functions.windowOutflow(
-            nav[9]
-        ).call(block_identifier=safe_block)
+        eligible_supply = int(state["eligible_supply"])
+        idle_weth = int(state["idle_assets"])
+        virtual_shares = int(state["virtual_shares"])
+        max_window_outflow_bps = int(state["max_window_outflow_bps"])
+        window_eligible_supply = int(state["window_eligible_supply"])
+        window_processed = int(state["window_processed_shares"])
         shares = bounded_redeem_shares(
             pending_shares=pending_shares,
             idle_assets=idle_weth,
@@ -186,7 +175,7 @@ class CoveredCallFundOperationsKeeper:
             return
         exit_cost = marginal_exit_cost(nav[4], shares, eligible_supply)
         tx = self._send(
-            self.flow.functions.startRedeemBatch(batch_id, shares, exit_cost)
+            self.flow.functions.startRedeemBatch(batch_id, shares, exit_cost), bundle
         )
         log.info(
             "Covered-call operations decision=start batch_id=%d shares=%d "
@@ -220,13 +209,16 @@ class CoveredCallFundOperationsKeeper:
             time.sleep(config.COVERED_CALL_OPERATIONS_KEEPER_INTERVAL_SECONDS)
 
 
-def start() -> threading.Thread | None:
+def start(snapshots: SnapshotConsumer, transaction_w3: Web3) -> threading.Thread | None:
     if not config.COVERED_CALL_OPERATIONS_KEEPER_ENABLED:
         log.info("Covered-call operations keeper disabled")
         return None
-    keeper = CoveredCallFundOperationsKeeper()
     thread = threading.Thread(
-        target=keeper.run_forever,
+        target=supervise_worker,
+        args=(
+            "covered-call-fund-operations-keeper",
+            lambda: CoveredCallFundOperationsKeeper(snapshots, transaction_w3),
+        ),
         name="covered-call-fund-operations-keeper",
         daemon=True,
     )

@@ -11,6 +11,8 @@ from eth_account import Account
 from web3 import Web3
 
 from src import config
+from src.fund_tx import ConfirmedTransaction, send_confirmed_transaction
+from src.snapshot_consumer import SnapshotBundle, SnapshotConsumer, supervise_worker
 
 log = logging.getLogger(__name__)
 
@@ -226,11 +228,10 @@ def marginal_exit_cost(base_exit_cost: int, shares: int, eligible_supply: int) -
 
 
 class CspFundOperationsKeeper:
-    def __init__(self) -> None:
+    def __init__(self, snapshots: SnapshotConsumer, transaction_w3: Web3) -> None:
         self._validate_runtime_config()
-        self.w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
-        if self.w3.eth.chain_id != 84532:
-            raise RuntimeError("Fund operations keeper is locked to Base Sepolia")
+        self.snapshots = snapshots
+        self.w3 = transaction_w3
         self.account = Account.from_key(config.FUND_PROCESSOR_PRIVATE_KEY)
         self.vault = self.w3.eth.contract(
             address=Web3.to_checksum_address(config.FUND_VAULT_ADDRESS),
@@ -240,9 +241,6 @@ class CspFundOperationsKeeper:
             address=Web3.to_checksum_address(config.FUND_FLOW_MANAGER_ADDRESS),
             abi=_FLOW_ABI,
         )
-        for address in (self.vault.address, self.flow.address):
-            if not self.w3.eth.get_code(address):
-                raise RuntimeError(f"Configured fund address has no code: {address}")
 
     @staticmethod
     def _validate_runtime_config() -> None:
@@ -271,48 +269,46 @@ class CspFundOperationsKeeper:
                 "Allocator and fund operations keeper require separate configured keys"
             )
 
-    def _safe_block(self) -> tuple[int, int]:
-        latest = self.w3.eth.block_number
-        safe = max(latest - config.FUND_ALLOCATOR_CONFIRMATIONS, 0)
-        return safe, latest
-
-    def _send(self, function: Any) -> str:
-        nonce = self.w3.eth.get_transaction_count(self.account.address, "pending")
-        tx = function.build_transaction(
-            {
-                "from": self.account.address,
-                "chainId": 84532,
-                "nonce": nonce,
-                "gasPrice": self.w3.eth.gas_price,
-            }
+    def _send(self, function: Any, bundle: SnapshotBundle) -> ConfirmedTransaction:
+        self.snapshots.require(bundle)
+        tx = send_confirmed_transaction(
+            w3=self.w3,
+            account=self.account,
+            function=function,
+            chain_id=84532,
+            confirmations=config.FUND_ALLOCATOR_CONFIRMATIONS,
+            decision_validator=lambda: self.snapshots.require(bundle),
         )
-        estimate = self.w3.eth.estimate_gas(tx)
-        tx["gas"] = estimate * 120 // 100
-        signed = self.account.sign_transaction(tx)
-        tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
-        receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
-        if receipt.status != 1:
-            raise RuntimeError(f"Fund operations transaction reverted: {tx_hash.hex()}")
-        return tx_hash.hex()
+        self.snapshots.wait_after_receipt(
+            pre_send_generation=bundle.generation,
+            receipt_block=tx.block_number,
+            receipt_block_hash=tx.block_hash,
+        )
+        return tx
 
     def run_once(self) -> None:
-        safe_block, latest_block = self._safe_block()
-        batch_id = self.flow.functions.nextProcessBatchId().call(
-            block_identifier=safe_block
+        bundle = self.snapshots.current()
+        state = bundle.fund(
+            "csp",
+            "operations",
+            expected_address=config.FUND_VAULT_ADDRESS,
         )
-        batch = self.flow.functions.batch(batch_id).call(block_identifier=safe_block)
+        latest_block = int(state["latest_block"])
+        batch_id = int(state["batch_id"])
+        batch = state["batch"]
 
         if batch[19]:
-            tx_hash = self._send(
+            tx = self._send(
                 self.flow.functions.processRedeemBatch(
                     batch_id,
                     config.FUND_OPERATIONS_KEEPER_PAGE_SIZE,
-                )
+                ),
+                bundle,
             )
             log.info(
                 "Fund operations decision=process batch_id=%d tx=%s",
                 batch_id,
-                tx_hash,
+                tx.tx_hash,
             )
             return
 
@@ -321,21 +317,19 @@ class CspFundOperationsKeeper:
             return
 
         if not batch[18]:
-            open_batch_id = self.flow.functions.openBatchId().call(
-                block_identifier=safe_block
-            )
+            open_batch_id = int(state["open_batch_id"])
             if open_batch_id != batch_id:
                 raise RuntimeError("Next redemption batch is neither sealed nor open")
-            tx_hash = self._send(self.flow.functions.sealRedeemBatch(batch_id))
+            tx = self._send(self.flow.functions.sealRedeemBatch(batch_id), bundle)
             log.info(
                 "Fund operations decision=seal batch_id=%d shares=%d tx=%s",
                 batch_id,
                 pending_shares,
-                tx_hash,
+                tx.tx_hash,
             )
             return
 
-        nav = self.vault.functions.activeNavWindow().call(block_identifier=safe_block)
+        nav = state["nav"]
         if not nav[6] <= latest_block <= nav[7]:
             log.info(
                 "Fund operations decision=skip reason=nav_not_active "
@@ -345,21 +339,12 @@ class CspFundOperationsKeeper:
             )
             return
 
-        eligible_supply = self.vault.functions.shareSupply().call(
-            block_identifier=safe_block
-        )
-        idle_assets = self.vault.functions.accountedIdleAssets().call(
-            block_identifier=safe_block
-        )
-        virtual_shares = self.vault.functions.virtualShares().call(
-            block_identifier=safe_block
-        )
-        _, max_window_outflow_bps = self.flow.functions.exitPolicy().call(
-            block_identifier=safe_block
-        )
-        window_eligible_supply, window_processed = self.flow.functions.windowOutflow(
-            nav[9]
-        ).call(block_identifier=safe_block)
+        eligible_supply = int(state["eligible_supply"])
+        idle_assets = int(state["idle_assets"])
+        virtual_shares = int(state["virtual_shares"])
+        max_window_outflow_bps = int(state["max_window_outflow_bps"])
+        window_eligible_supply = int(state["window_eligible_supply"])
+        window_processed = int(state["window_processed_shares"])
         shares = bounded_redeem_shares(
             pending_shares=pending_shares,
             idle_assets=idle_assets,
@@ -381,8 +366,8 @@ class CspFundOperationsKeeper:
             return
 
         exit_cost = marginal_exit_cost(nav[4], shares, eligible_supply)
-        tx_hash = self._send(
-            self.flow.functions.startRedeemBatch(batch_id, shares, exit_cost)
+        tx = self._send(
+            self.flow.functions.startRedeemBatch(batch_id, shares, exit_cost), bundle
         )
         log.info(
             "Fund operations decision=start batch_id=%d shares=%d "
@@ -392,7 +377,7 @@ class CspFundOperationsKeeper:
             idle_assets,
             nav[9],
             Web3.to_hex(nav[11]),
-            tx_hash,
+            tx.tx_hash,
         )
 
     def run_forever(self) -> None:
@@ -409,13 +394,16 @@ class CspFundOperationsKeeper:
             time.sleep(config.FUND_OPERATIONS_KEEPER_INTERVAL_SECONDS)
 
 
-def start() -> threading.Thread | None:
+def start(snapshots: SnapshotConsumer, transaction_w3: Web3) -> threading.Thread | None:
     if not config.FUND_OPERATIONS_KEEPER_ENABLED:
         log.info("Fund operations keeper disabled")
         return None
-    keeper = CspFundOperationsKeeper()
     thread = threading.Thread(
-        target=keeper.run_forever,
+        target=supervise_worker,
+        args=(
+            "csp-fund-operations-keeper",
+            lambda: CspFundOperationsKeeper(snapshots, transaction_w3),
+        ),
         name="csp-fund-operations-keeper",
         daemon=True,
     )
