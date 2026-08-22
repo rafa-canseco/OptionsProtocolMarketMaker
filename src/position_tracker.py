@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 from src import hedge_executor, trade_logger
@@ -113,6 +114,8 @@ class PositionTracker:
         risk_free_rate: float,
         underlying: str = "eth",
         hedge_symbol: str = "ETH",
+        *,
+        decision_validator: Callable[[], None] | None = None,
     ) -> Position | None:
         otoken_addr = fill.get("otoken_address", "")
         details = self.get_otoken_details(otoken_addr)
@@ -158,29 +161,35 @@ class PositionTracker:
             current_vega=vega,
             current_theta=theta,
         )
+        if decision_validator is not None:
+            decision_validator()
         self.positions.append(pos)
+        try:
+            if decision_validator is not None:
+                decision_validator()
+            trade_logger.log_position_opened(
+                otoken=pos.otoken_address,
+                strike=pos.strike,
+                expiry=pos.expiry,
+                is_put=pos.is_put,
+                amount=pos.num_options,
+                premium_usd=pos.premium_paid_usd,
+                user_address=pos.user_address,
+                tx_hash=pos.tx_hash,
+                spot=spot,
+                delta=pos.current_delta,
+                hedge_action=pos.hedge_action,
+                hedge_size=pos.hedge_fill_size or pos.hedge_size,
+                hedge_fill_price=pos.hedge_fill_price,
+                underlying=underlying,
+                chain=chain,
+            )
+        except Exception:
+            self.positions.remove(pos)
+            raise
 
         spread_usd = pos.premium_paid_usd - theo * pos.num_options
         _log_position_open(pos, spot, theo, spread_usd)
-
-        trade_logger.log_position_opened(
-            otoken=pos.otoken_address,
-            strike=pos.strike,
-            expiry=pos.expiry,
-            is_put=pos.is_put,
-            amount=pos.num_options,
-            premium_usd=pos.premium_paid_usd,
-            user_address=pos.user_address,
-            tx_hash=pos.tx_hash,
-            spot=spot,
-            delta=pos.current_delta,
-            hedge_action=pos.hedge_action,
-            hedge_size=pos.hedge_fill_size or pos.hedge_size,
-            hedge_fill_price=pos.hedge_fill_price,
-            underlying=underlying,
-            chain=chain,
-        )
-
         return pos
 
     def recalculate_deltas(
@@ -329,7 +338,12 @@ class PositionTracker:
         return (put_delta - call_delta) / total
 
     def rebalance_hedge(
-        self, spot: float, underlying: str, hedge_symbol: str
+        self,
+        spot: float,
+        underlying: str,
+        hedge_symbol: str,
+        *,
+        decision_validator: Callable[[], None] | None = None,
     ) -> dict | None:
         """Adjust aggregate hedge to match portfolio net delta.
 
@@ -343,20 +357,14 @@ class PositionTracker:
         if config.HEDGE_MODE == "live":
             try:
                 hl_positions = hedge_executor.get_positions()
-            except Exception:
-                log.error(
-                    "[AGGREGATE HEDGE] Failed to read HL positions"
-                    " for %s, skipping rebalance",
-                    hedge_symbol,
-                )
-                return None
+            except Exception as error:
+                raise RuntimeError(
+                    f"Failed to read live hedge positions for {hedge_symbol}"
+                ) from error
             if not hl_positions and self._simulated_hedge.get(underlying):
-                log.warning(
-                    "[AGGREGATE HEDGE] HL returned empty positions"
-                    " but expected hedge for %s, skipping",
-                    hedge_symbol,
+                raise RuntimeError(
+                    f"Live hedge positions are unexpectedly empty for {hedge_symbol}"
                 )
-                return None
             current_pos = next(
                 (p for p in hl_positions if p["coin"] == hedge_symbol),
                 None,
@@ -372,6 +380,8 @@ class PositionTracker:
             return None
 
         is_buy = bool(diff > 0)
+        if decision_validator is not None:
+            decision_validator()
         fill = hedge_executor.open_hedge(hedge_symbol, is_buy, float(abs(diff)))
 
         if fill:
@@ -386,15 +396,7 @@ class PositionTracker:
                 current_size,
             )
         elif config.HEDGE_MODE == "live":
-            log.error(
-                "[AGGREGATE HEDGE] LIVE HEDGE FAILED %s %s %.4f"
-                " (net_delta=%.4f current=%.4f)",
-                "BUY" if is_buy else "SELL",
-                hedge_symbol,
-                abs(diff),
-                net_d,
-                current_size,
-            )
+            raise RuntimeError(f"Live hedge order failed for {hedge_symbol}")
         else:
             log.info(
                 "[AGGREGATE HEDGE] %s %s %.4f (simulated)"
@@ -405,6 +407,8 @@ class PositionTracker:
                 net_d,
                 current_size,
             )
+            if decision_validator is not None:
+                decision_validator()
             self._simulated_hedge[underlying] = target_size
 
         return fill

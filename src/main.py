@@ -36,12 +36,12 @@ from src.quote_builder import build_quotes, to_api_payload, to_solana_api_payloa
 from src.signer import (
     build_domain,
     build_solana_quote_message,
-    read_maker_nonce,
     read_maker_nonce_solana,
     sign_quote,
     sign_quote_solana,
 )
 
+from src.snapshot_consumer import SnapshotBundle, SnapshotConsumer
 from src.startup_recovery import recover_positions
 
 OTOKEN_DECIMALS = 8
@@ -149,10 +149,28 @@ def run_cycle(
     w3: Web3,
     domain: dict,
     mm_address: str,
+    snapshot_bundle: SnapshotBundle | None = None,
+    snapshot_consumer: SnapshotConsumer | None = None,
 ) -> dict | None:
     """Single quote-refresh cycle across all chains and assets."""
+    base_enabled = any(chain.name == "base" for chain in config.CHAINS)
+    if base_enabled:
+        if snapshot_bundle is None or snapshot_consumer is None:
+            raise RuntimeError("Fresh atomic Base snapshot is unavailable")
+        snapshot_consumer.require(snapshot_bundle)
+    base_snapshot = (
+        snapshot_bundle.market_maker(
+            expected_address=mm_address,
+            expected_usdc_address=config.USDC_ADDRESS,
+            expected_allowance_spender=config.MARGIN_POOL_ADDRESS,
+        )
+        if snapshot_bundle is not None
+        else {}
+    )
     # 1. Delete stale quotes from previous cycle (per-chain)
     for chain_cfg in config.CHAINS:
+        if chain_cfg.name == "base":
+            snapshot_consumer.require(snapshot_bundle)
         try:
             deleted = api_client.delete_quotes(chain=chain_cfg.name)
             log.info("Deleted previous %s quotes: %s", chain_cfg.name, deleted)
@@ -164,7 +182,9 @@ def run_cycle(
             )
 
     # 2. Poll fills via REST as fallback (WS may miss events)
-    _poll_fills_rest()
+    if base_enabled:
+        snapshot_consumer.require(snapshot_bundle)
+    _poll_fills_rest(snapshot_bundle, snapshot_consumer)
 
     # 3. Check for expired positions (per-asset with correct spot)
     for asset_cfg in config.ASSETS:
@@ -205,6 +225,13 @@ def run_cycle(
                     asset_cfg=asset_cfg,
                     chain=chain_cfg.name,
                     exposure_snapshot=exposure_snapshot,
+                    base_snapshot=base_snapshot if chain_cfg.name == "base" else None,
+                    snapshot_bundle=(
+                        snapshot_bundle if chain_cfg.name == "base" else None
+                    ),
+                    snapshot_consumer=(
+                        snapshot_consumer if chain_cfg.name == "base" else None
+                    ),
                 )
             except Exception:
                 log.error(
@@ -316,13 +343,22 @@ def _run_asset_cycle(
     asset_cfg: config.AssetConfig,
     chain: str = "base",
     exposure_snapshot: dict | None = None,
+    base_snapshot: dict | None = None,
+    snapshot_bundle: SnapshotBundle | None = None,
+    snapshot_consumer: SnapshotConsumer | None = None,
 ) -> None:
     """Quote-refresh for a single asset on a given chain."""
     asset_name = asset_cfg.name
     chain_label = f"{chain}/{asset_name}".upper()
     mkt = _get_market(asset_name, chain)
 
-    market = api_client.get_market_data(asset=asset_name, chain=chain)
+    if chain == "base":
+        if snapshot_bundle is None or snapshot_consumer is None:
+            raise RuntimeError("Fresh atomic Base market snapshot is unavailable")
+        snapshot_consumer.require(snapshot_bundle)
+        market = dict(snapshot_bundle.market(asset_name))
+    else:
+        market = api_client.get_market_data(asset=asset_name, chain=chain)
     otokens = market.get("available_otokens", [])
     mkt.spot = market["spot"]
     mkt.iv = market["iv"]
@@ -374,7 +410,17 @@ def _run_asset_cycle(
     if not hedge_ready:
         return
 
-    _quote_and_submit(w3, domain, mm_address, market, asset_cfg, chain)
+    _quote_and_submit(
+        w3,
+        domain,
+        mm_address,
+        market,
+        asset_cfg,
+        chain,
+        base_snapshot,
+        snapshot_bundle,
+        snapshot_consumer,
+    )
 
 
 def _quote_and_submit(
@@ -384,6 +430,9 @@ def _quote_and_submit(
     market,
     asset_cfg,
     chain,
+    base_snapshot=None,
+    snapshot_bundle=None,
+    snapshot_consumer=None,
 ) -> None:
     """Build quotes, sign per-chain, and submit to backend."""
     asset_name = asset_cfg.name
@@ -397,6 +446,7 @@ def _quote_and_submit(
         solana_addr or mm_address,
         asset_cfg,
         chain,
+        base_snapshot,
     )
     if cap is None or cap.status == "full":
         return
@@ -413,7 +463,10 @@ def _quote_and_submit(
             _solana_maker_pubkey,
         )
     else:
-        nonce = read_maker_nonce(w3, config.BATCH_SETTLER, mm_address)
+        try:
+            nonce = int(base_snapshot["maker_nonce"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("Atomic Base quote nonce is unavailable") from exc
 
     quotes = build_quotes(
         market,
@@ -432,7 +485,11 @@ def _quote_and_submit(
     if chain == "solana":
         payloads = _sign_quotes_solana(quotes)
     else:
+        if snapshot_consumer is None or snapshot_bundle is None:
+            raise RuntimeError("Fresh atomic Base snapshot is unavailable")
+        snapshot_consumer.require(snapshot_bundle)
         payloads = _sign_quotes_base(quotes, domain)
+        snapshot_consumer.require(snapshot_bundle)
 
     result = api_client.submit_quotes(payloads)
     log.info(
@@ -445,7 +502,9 @@ def _quote_and_submit(
     )
 
 
-def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg, chain="base"):
+def _calculate_and_report_capacity(
+    w3, mkt, mm_address, asset_cfg, chain="base", base_snapshot=None
+):
     """Calculate capacity, report to backend. Returns cap or None."""
     try:
         cap = calculate_capacity_internal(
@@ -455,6 +514,7 @@ def _calculate_and_report_capacity(w3, mkt, mm_address, asset_cfg, chain="base")
             _tracker,
             asset_config=asset_cfg,
             chain=chain,
+            base_snapshot=base_snapshot,
         )
     except Exception:
         log.warning(
@@ -591,7 +651,10 @@ def _log_capacity_snapshot(
         log.warning("Failed to log capacity snapshot", exc_info=True)
 
 
-def _poll_fills_rest() -> None:
+def _poll_fills_rest(
+    snapshot_bundle: SnapshotBundle | None,
+    snapshot_consumer: SnapshotConsumer | None,
+) -> None:
     """Check for new fills via REST API as WS fallback."""
     # Need at least one asset with market data
     if not any(m.spot > 0 for m in _market.values()):
@@ -601,12 +664,19 @@ def _poll_fills_rest() -> None:
     except Exception:
         log.warning("Failed to poll fills", exc_info=True)
         return
+    if snapshot_bundle is None or snapshot_consumer is None:
+        raise RuntimeError("Fresh atomic fill snapshot is unavailable")
+    snapshot_consumer.require(snapshot_bundle)
     for fill in fills:
         tx = fill.get("tx_hash", "")
         if tx and tx not in _seen_tx_hashes:
             log.info("New fill via REST poll: %s", tx[:16])
             try:
-                _handle_fill(fill)
+                _handle_fill(
+                    fill,
+                    snapshot_bundle=snapshot_bundle,
+                    snapshot_consumer=snapshot_consumer,
+                )
             except Exception:
                 log.error("Failed to handle fill %s", tx[:16], exc_info=True)
 
@@ -630,20 +700,33 @@ def _resolve_underlying(otoken_addr: str) -> tuple[str, str, str]:
     return default.name, default.hedge_symbol, "base"
 
 
-def _handle_fill(fill: dict) -> None:
-    """Called from fill_listener thread or REST poll on each fill."""
+def _handle_fill(
+    fill: dict,
+    *,
+    snapshot_consumer: SnapshotConsumer,
+    snapshot_bundle: SnapshotBundle | None = None,
+) -> None:
+    """Process one fill only while its exact atomic snapshot remains current."""
+    bundle = (
+        snapshot_bundle if snapshot_bundle is not None else snapshot_consumer.current()
+    )
+    snapshot_consumer.require(bundle)
     with _fill_lock:
         tx = fill.get("tx_hash", "")
-        if tx:
-            if any(p.tx_hash == tx for p in _tracker.positions):
-                _seen_tx_hashes.add(tx)
-                return
-            if tx in _seen_tx_hashes:
-                return
+        existing_position = next(
+            (position for position in _tracker.positions if position.tx_hash == tx),
+            None,
+        )
+        if tx and tx in _seen_tx_hashes:
+            return
 
         otoken_addr = fill.get("otoken_address", "")
         underlying, hedge_symbol, chain = _resolve_underlying(otoken_addr)
-        mkt = _get_market(underlying, chain)
+        if chain == "base":
+            market = bundle.market(underlying)
+            mkt = MarketSnapshot(spot=float(market["spot"]), iv=float(market["iv"]))
+        else:
+            mkt = _get_market(underlying, chain)
         asset_cfg = _asset_map_for_chain(chain).get(underlying)
 
         if mkt.spot <= 0 or mkt.iv <= 0:
@@ -656,24 +739,37 @@ def _handle_fill(fill: dict) -> None:
             return
 
         try:
-            _tracker.add_position(
-                fill,
-                mkt.spot,
-                mkt.iv,
-                config.RISK_FREE_RATE,
-                underlying=underlying,
-                hedge_symbol=hedge_symbol,
-            )
-            _seen_tx_hashes.add(tx)
-            if asset_cfg and _asset_is_hedge_ready(asset_cfg, chain):
-                _tracker.rebalance_hedge(mkt.spot, underlying, hedge_symbol)
-            else:
+            if existing_position is None:
+                snapshot_consumer.require(bundle)
+                added = _tracker.add_position(
+                    fill,
+                    mkt.spot,
+                    mkt.iv,
+                    config.RISK_FREE_RATE,
+                    underlying=underlying,
+                    hedge_symbol=hedge_symbol,
+                    decision_validator=lambda: snapshot_consumer.require(bundle),
+                )
+                if added is None:
+                    return
+            if not asset_cfg or not _asset_is_hedge_ready(asset_cfg, chain):
                 log.error(
                     "Recorded fill for %s/%s without live hedge readiness",
                     chain.upper(),
                     underlying.upper(),
                 )
+                return
+            snapshot_consumer.require(bundle)
+            _tracker.rebalance_hedge(
+                mkt.spot,
+                underlying,
+                hedge_symbol,
+                decision_validator=lambda: snapshot_consumer.require(bundle),
+            )
+            snapshot_consumer.require(bundle)
             _tracker.log_portfolio(mkt.spot)
+            if tx:
+                _seen_tx_hashes.add(tx)
         except Exception:
             log.error("Failed to process fill %s", tx[:16], exc_info=True)
 
@@ -704,8 +800,18 @@ def _init_solana() -> None:
 
 def main() -> None:
     mm_address = Account.from_key(config.MM_PRIVATE_KEY).address
-    w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
+    transaction_w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
     domain = build_domain(config.CHAIN_ID, config.BATCH_SETTLER)
+    snapshot_consumer = SnapshotConsumer(
+        lambda: api_client.get_snapshot_envelope(
+            environment=config.SNAPSHOT_ENVIRONMENT,
+            chain_id=config.CHAIN_ID,
+        ),
+        environment=config.SNAPSHOT_ENVIRONMENT,
+        chain_id=config.CHAIN_ID,
+        poll_interval_seconds=config.SNAPSHOT_POLL_INTERVAL_SECONDS,
+    )
+    snapshot_consumer.start()
 
     # Explicit opt-in: fail fast if the operator enabled publishing but init fails.
     if config.SOLANA_QUOTE_PUBLISHING_ENABLED:
@@ -784,13 +890,15 @@ def main() -> None:
     except Exception:
         log.warning("Failed to seed fills", exc_info=True)
 
-    fill_listener.set_on_fill(_handle_fill)
+    fill_listener.set_on_fill(
+        lambda fill: _handle_fill(fill, snapshot_consumer=snapshot_consumer)
+    )
     fill_listener.start()
-    fund_allocator.start()
-    fund_operations_keeper.start()
-    covered_call_allocator.start()
-    covered_call_operations_keeper.start()
-    meta_wheel_allocator.start()
+    fund_allocator.start(snapshot_consumer, transaction_w3)
+    fund_operations_keeper.start(snapshot_consumer, transaction_w3)
+    covered_call_allocator.start(snapshot_consumer, transaction_w3)
+    covered_call_operations_keeper.start(snapshot_consumer, transaction_w3)
+    meta_wheel_allocator.start(snapshot_consumer, transaction_w3)
 
     cycle = 0
     while True:
@@ -798,7 +906,13 @@ def main() -> None:
         log.info("--- Cycle %d ---", cycle)
         exposure_snapshot = None
         try:
-            exposure_snapshot = run_cycle(w3, domain, mm_address)
+            exposure_snapshot = run_cycle(
+                transaction_w3,
+                domain,
+                mm_address,
+                snapshot_consumer.current(),
+                snapshot_consumer,
+            )
         except Exception:
             log.error("Cycle %d failed", cycle, exc_info=True)
 

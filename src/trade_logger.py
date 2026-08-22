@@ -32,14 +32,16 @@ def _get_supabase() -> Any:
         return None
 
 
-def _write_jsonl(event: dict[str, Any]) -> None:
-    """Append one JSON line to the local log file."""
+def _write_jsonl(event: dict[str, Any], *, raise_on_error: bool = False) -> None:
+    """Append one JSON line to the local durability log."""
     path = config.TRADE_LOG_PATH
     try:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, "a") as f:
             f.write(json.dumps(event, separators=(",", ":")) + "\n")
     except Exception:
+        if raise_on_error:
+            raise
         log.warning("Failed to write JSONL event", exc_info=True)
 
 
@@ -91,9 +93,9 @@ def _write_supabase(event: dict[str, Any]) -> None:
         log.warning("Failed to write event to Supabase", exc_info=True)
 
 
-def _emit(event: dict[str, Any]) -> None:
-    """Write event to all configured sinks."""
-    _write_jsonl(event)
+def _emit(event: dict[str, Any], *, require_local: bool = False) -> None:
+    """Write event to all sinks; optionally require the local durability log."""
+    _write_jsonl(event, raise_on_error=require_local)
     _write_supabase(event)
 
 
@@ -133,7 +135,8 @@ def log_position_opened(
             "hedge_action": hedge_action,
             "hedge_size": hedge_size,
             "hedge_fill_price": hedge_fill_price,
-        }
+        },
+        require_local=True,
     )
     log.info(
         "[TRADE LOG] position_opened otoken=%s strike=%.0f underlying=%s",

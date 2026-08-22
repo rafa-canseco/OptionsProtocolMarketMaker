@@ -7,7 +7,7 @@ import logging
 import math
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -19,7 +19,9 @@ from eth_account.messages import encode_typed_data
 from web3 import Web3
 
 from src import api_client, config
+from src.fund_tx import ConfirmedTransaction, send_confirmed_transaction
 from src.pricer import bs_delta, validate_iv
+from src.snapshot_consumer import SnapshotBundle, SnapshotConsumer, supervise_worker
 
 log = logging.getLogger(__name__)
 
@@ -876,12 +878,11 @@ def sign_fund_quote(
 
 
 class CspFundAllocator:
-    def __init__(self) -> None:
+    def __init__(self, snapshots: SnapshotConsumer, transaction_w3: Web3) -> None:
         self.policy = load_testnet_policy(config.FUND_ALLOCATOR_POLICY_PATH)
         self._validate_runtime_config()
-        self.w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
-        if self.w3.eth.chain_id != 84532:
-            raise RuntimeError("CSP allocator is locked to Base Sepolia chain 84532")
+        self.snapshots = snapshots
+        self.w3 = transaction_w3
         self.account = Account.from_key(config.FUND_ALLOCATOR_PRIVATE_KEY)
         self.vault = self.w3.eth.contract(
             address=Web3.to_checksum_address(config.FUND_VAULT_ADDRESS),
@@ -904,14 +905,8 @@ class CspFundAllocator:
             address=Web3.to_checksum_address(config.BATCH_SETTLER),
             abi=_SETTLER_ABI,
         )
-        self.usdc = Web3.to_checksum_address(
-            self.adapter.functions.accountingAsset().call()
-        )
-        self.weth = Web3.to_checksum_address(self.adapter.functions.weth().call())
-        if self.usdc != Web3.to_checksum_address(config.USDC_ADDRESS):
-            raise RuntimeError(
-                "Configured CSP USDC differs from adapter accounting asset"
-            )
+        self.usdc = Web3.to_checksum_address(config.USDC_ADDRESS)
+        self.weth = ""
         self.valuator_address = Web3.to_checksum_address(
             config.FUND_CSP_VALUATOR_ADDRESS
         )
@@ -919,18 +914,6 @@ class CspFundAllocator:
             address=self.valuator_address,
             abi=_VALUATOR_ABI,
         )
-        for address in (
-            self.vault.address,
-            self.flow.address,
-            self.strategy.address,
-            self.adapter.address,
-            self.settler.address,
-            self.usdc,
-            self.weth,
-            self.valuator.address,
-        ):
-            if not self.w3.eth.get_code(address):
-                raise RuntimeError(f"Configured fund address has no code: {address}")
 
     @staticmethod
     def _validate_runtime_config() -> None:
@@ -953,102 +936,34 @@ class CspFundAllocator:
                 "CSP allocator may only run in a non-production environment"
             )
 
-    def _safe_block(self) -> int:
-        latest = self.w3.eth.block_number
-        return max(latest - config.FUND_ALLOCATOR_CONFIRMATIONS, 0)
-
-    def _is_compatible_put_series(self, quote: dict[str, Any]) -> bool:
-        o_token = self.w3.eth.contract(
-            address=Web3.to_checksum_address(quote["otoken_address"]),
-            abi=_OTOKEN_ABI,
-        )
+    def _is_compatible_put_series(
+        self, quote: dict[str, Any], state: dict[str, Any]
+    ) -> bool:
+        series = state.get("series", {}).get(str(quote["otoken_address"]).lower())
+        if not isinstance(series, Mapping):
+            return False
         return (
-            o_token.functions.isPut().call() is True
-            and Web3.to_checksum_address(o_token.functions.underlying().call())
-            == self.weth
-            and Web3.to_checksum_address(o_token.functions.strikeAsset().call())
-            == self.usdc
-            and Web3.to_checksum_address(o_token.functions.collateralAsset().call())
-            == self.usdc
-            and int(o_token.functions.expiry().call()) == int(quote["expiry"])
-            and int(o_token.functions.strikePrice().call())
+            series.get("is_put") is True
+            and Web3.to_checksum_address(series["underlying"]) == self.weth
+            and Web3.to_checksum_address(series["strike_asset"]) == self.usdc
+            and Web3.to_checksum_address(series["collateral_asset"]) == self.usdc
+            and int(series["expiry"]) == int(quote["expiry"])
+            and int(series["strike_price"])
             == int(Decimal(str(quote["strike_price"])) * OTOKEN_SCALE)
         )
 
     def _quote_fill_state(
         self, quote: dict[str, Any], *, owner: str, signer: str, block: int
     ) -> tuple[int, int]:
-        quote_tuple = (
-            Web3.to_checksum_address(quote["otoken_address"]),
-            int(quote["bid_price"]),
-            int(quote["deadline"]),
-            int(quote["quote_id"]),
-            int(quote["max_amount"]),
-            int(quote["maker_nonce"]),
-        )
-        quote_hash = self.settler.functions.hashQuoteFor(
-            Web3.to_checksum_address(owner), quote_tuple
-        ).call(block_identifier=block)
-        filled, cancelled = self.settler.functions.getQuoteState(
-            Web3.to_checksum_address(signer), quote_hash
-        ).call(block_identifier=block)
+        del owner, signer, block
+        quote_state = quote.get("_snapshot_quote_state")
+        if not isinstance(quote_state, Mapping):
+            raise RuntimeError("Atomic CSP quote state is unavailable")
+        filled = quote_state["filled_amount"]
+        cancelled = quote_state["cancelled"]
         filled_amount = int(filled)
         remaining = 0 if cancelled else max(int(quote["max_amount"]) - filled_amount, 0)
         return filled_amount, remaining
-
-    def _read_gate_state(self, block: int) -> dict[str, Any]:
-        nav = self.vault.functions.activeNavWindow().call(block_identifier=block)
-        strategy_hash = self.strategy.functions.positionsHash().call(
-            block_identifier=block
-        )
-        strategy_config = self.strategy.functions.strategyConfig(
-            self.adapter_address
-        ).call(block_identifier=block)
-        adapter_config = self.adapter.functions.adapterConfig().call(
-            block_identifier=block
-        )
-        adapter_state = self.adapter.functions.adapterState().call(
-            block_identifier=block
-        )
-        valuation_policy = (
-            self.valuator.functions.interfaceVersion().call(block_identifier=block),
-            self.valuator.functions.valuationPolicyVersion().call(
-                block_identifier=block
-            ),
-            self.valuator.functions.requiredModelVersion().call(block_identifier=block),
-            self.valuator.functions.liabilityBufferBps().call(block_identifier=block),
-            self.valuator.functions.maxObservationDivergenceBps().call(
-                block_identifier=block
-            ),
-            self.valuator.functions.observationQuorum().call(block_identifier=block),
-        )
-        return {
-            "block": block,
-            "nav": nav,
-            "strategy_hash": strategy_hash,
-            "strategy_config": strategy_config,
-            "adapter_config": adapter_config,
-            "adapter_state": adapter_state,
-            "valuation_policy": valuation_policy,
-            "total_assets": self.vault.functions.totalAssets().call(
-                block_identifier=block
-            ),
-            "idle_assets": self.vault.functions.accountedIdleAssets().call(
-                block_identifier=block
-            ),
-            "allocated": self.strategy.functions.allocatedToAdapter(
-                self.adapter_address, self.usdc
-            ).call(block_identifier=block),
-            "minimum_idle_bps": self.strategy.functions.minimumIdleBps().call(
-                block_identifier=block
-            ),
-            "processing": self.flow.functions.hasActiveProcessing().call(
-                block_identifier=block
-            ),
-            "pending_shares": self.flow.functions.totalPendingShares().call(
-                block_identifier=block
-            ),
-        }
 
     def _validate_policy_gates(self, state: dict[str, Any]) -> None:
         nav = state["nav"]
@@ -1099,37 +1014,32 @@ class CspFundAllocator:
         if state["minimum_idle_bps"] != self.policy.onchain_minimum_idle_bps:
             raise RuntimeError("On-chain minimum idle requirement differs from policy")
 
-    def _send(self, function: Any) -> str:
-        nonce = self.w3.eth.get_transaction_count(self.account.address, "pending")
-        tx = function.build_transaction(
-            {
-                "from": self.account.address,
-                "chainId": 84532,
-                "nonce": nonce,
-                "gasPrice": self.w3.eth.gas_price,
-            }
+    def _send(self, function: Any, bundle: SnapshotBundle) -> ConfirmedTransaction:
+        self.snapshots.require(bundle)
+        tx = send_confirmed_transaction(
+            w3=self.w3,
+            account=self.account,
+            function=function,
+            chain_id=84532,
+            confirmations=config.FUND_ALLOCATOR_CONFIRMATIONS,
+            decision_validator=lambda: self.snapshots.require(bundle),
         )
-        estimate = self.w3.eth.estimate_gas(tx)
-        tx["gas"] = estimate * 120 // 100
-        signed = self.account.sign_transaction(tx)
-        tx_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
-        receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
-        if receipt.status != 1:
-            raise RuntimeError(f"Fund allocator transaction reverted: {tx_hash.hex()}")
-        return tx_hash.hex()
+        self.snapshots.wait_after_receipt(
+            pre_send_generation=bundle.generation,
+            receipt_block=tx.block_number,
+            receipt_block_hash=tx.block_hash,
+        )
+        return tx
 
-    def _settle(self, state: dict[str, Any]) -> bool:
+    def _settle(self, state: dict[str, Any], bundle: SnapshotBundle) -> bool:
         adapter_state = state["adapter_state"]
         if adapter_state[3] == 0:
             return False
         position_id = adapter_state[2]
-        position = self.adapter.functions.position(position_id).call()
+        position = state["position"]
         lifecycle = position[11]
-        otoken = self.w3.eth.contract(address=position[0], abi=_OTOKEN_ABI)
-        if (
-            lifecycle == 1
-            and self.w3.eth.get_block("latest").timestamp
-            < otoken.functions.expiry().call()
+        if lifecycle == 1 and bundle.snapshot_block_timestamp < int(
+            state["position_expiry"]
         ):
             return True
         if lifecycle not in {1, 2}:
@@ -1139,23 +1049,26 @@ class CspFundAllocator:
             ["(uint8,uint256,uint256,uint256)"],
             [(1, position_id, 0, 0)],
         )
-        tx_hash = self._send(
+        tx = self._send(
             self.strategy.functions.deallocate(
                 self.adapter_address,
                 target_value,
                 0,
                 data,
-            )
+            ),
+            bundle,
         )
         log.info(
             "CSP allocator decision=%s position_id=%d tx=%s",
             "settle" if lifecycle == 1 else "complete_assignment",
             position_id,
-            tx_hash,
+            tx.tx_hash,
         )
         return True
 
-    def _open(self, state: dict[str, Any]) -> None:
+    def _open(
+        self, state: dict[str, Any], bundle: SnapshotBundle | None = None
+    ) -> None:
         adapter_state = state["adapter_state"]
         if adapter_state[3] != 0 or state["allocated"] != 0:
             return
@@ -1165,29 +1078,17 @@ class CspFundAllocator:
                 state["pending_shares"],
             )
             return
-        latest_pending_shares = self.flow.functions.totalPendingShares().call()
-        if latest_pending_shares != 0:
-            log.info(
-                "CSP allocator decision=skip reason=pending_redemptions_latest "
-                "shares=%d",
-                latest_pending_shares,
-            )
-            return
         idle_assets = state["idle_assets"]
         target = liquid_collateral_target(idle_assets, self.policy)
         if target <= 0:
             log.info("CSP allocator decision=skip reason=no_liquid_usdc")
             return
-        market = api_client.get_market_data(asset="eth", chain="base")
+        if bundle is None:
+            raise RuntimeError("Atomic CSP market/quote snapshot is unavailable")
+        market = dict(bundle.market("eth"))
         now = int(time.time())
-        configured_protocol_fee_bps = int(
-            self.settler.functions.protocolFeeBps().call(
-                block_identifier=state["block"]
-            )
-        )
-        treasury = Web3.to_checksum_address(
-            self.settler.functions.treasury().call(block_identifier=state["block"])
-        )
+        configured_protocol_fee_bps = int(state["protocol_fee_bps"])
+        treasury = Web3.to_checksum_address(state["treasury"])
         protocol_fee_bps = 0 if int(treasury, 16) == 0 else configured_protocol_fee_bps
         try:
             api_client.require_protocol_fee_match(market, configured_protocol_fee_bps)
@@ -1208,10 +1109,18 @@ class CspFundAllocator:
             raise
         signer = Account.from_key(config.MM_PRIVATE_KEY).address
         quotes: list[dict[str, Any]] = []
-        for raw_quote in api_client.get_quotes():
+        quote_states = state.get("quote_states", {})
+        for raw_quote in bundle.quotes():
             bounded_quote = dict(raw_quote)
+            quote_state_key = (
+                f"{raw_quote.get('maker_nonce')}:{raw_quote.get('quote_id')}:"
+                f"{str(raw_quote.get('otoken_address')).lower()}"
+            )
+            bounded_quote["_snapshot_quote_state"] = quote_states.get(
+                quote_state_key, quote_states.get(str(raw_quote.get("quote_id")))
+            )
             filled_amount, remaining_amount = self._quote_fill_state(
-                raw_quote,
+                bounded_quote,
                 owner=self.adapter_address,
                 signer=signer,
                 block=state["block"],
@@ -1219,6 +1128,10 @@ class CspFundAllocator:
             bounded_quote["_filled_amount"] = filled_amount
             bounded_quote["_remaining_amount"] = remaining_amount
             quotes.append(bounded_quote)
+
+        def series_validator(candidate: dict[str, Any]) -> bool:
+            return self._is_compatible_put_series(candidate, state)
+
         quote = select_policy_quote(
             quotes,
             spot=spot,
@@ -1227,7 +1140,7 @@ class CspFundAllocator:
             policy=self.policy,
             protocol_fee_bps=protocol_fee_bps,
             collateral_target=target,
-            series_validator=self._is_compatible_put_series,
+            series_validator=series_validator,
         )
         if quote is None:
             quote = select_policy_quote(
@@ -1238,7 +1151,7 @@ class CspFundAllocator:
                 policy=self.policy,
                 protocol_fee_bps=protocol_fee_bps,
                 collateral_target=target,
-                series_validator=self._is_compatible_put_series,
+                series_validator=series_validator,
                 deployment_statuses=frozenset({"virtual", "creating"}),
             )
             if quote is None:
@@ -1263,7 +1176,7 @@ class CspFundAllocator:
             protocol_fee_bps=protocol_fee_bps,
             collateral_target=target,
             series_validator=(
-                self._is_compatible_put_series
+                series_validator
                 if str(quote.get("deployment_status") or "ready").lower() == "ready"
                 else None
             ),
@@ -1282,6 +1195,7 @@ class CspFundAllocator:
                 "Matching quote cannot fill the bounded collateral target"
             )
         if str(quote.get("deployment_status") or "ready").lower() != "ready":
+            self.snapshots.require(bundle)
             result = api_client.ensure_fund_series(
                 adapter_address=self.adapter_address,
                 quote={
@@ -1336,13 +1250,14 @@ class CspFundAllocator:
                 )
             ],
         )
-        tx_hash = self._send(
+        tx = self._send(
             self.strategy.functions.allocate(
                 self.adapter_address,
                 self.usdc,
                 collateral,
                 open_data,
-            )
+            ),
+            bundle,
         )
         log.info(
             "CSP allocator decision=open policy=%s strike=%s collateral_usdc=%.6f "
@@ -1360,15 +1275,24 @@ class CspFundAllocator:
             evaluation.gross_premium_bps,
             evaluation.net_premium_bps,
             protocol_fee_bps,
-            tx_hash,
+            tx.tx_hash,
         )
 
     def run_once(self) -> None:
-        state = self._read_gate_state(self._safe_block())
+        bundle = self.snapshots.current()
+        state = dict(
+            bundle.fund(
+                "csp",
+                "allocator",
+                expected_address=config.FUND_VAULT_ADDRESS,
+            )
+        )
+        state["block"] = bundle.snapshot_block
+        self.weth = Web3.to_checksum_address(state["weth"])
         self._validate_policy_gates(state)
-        if self._settle(state):
+        if self._settle(state, bundle):
             return
-        self._open(state)
+        self._open(state, bundle)
 
     def run_forever(self) -> None:
         log.info(
@@ -1385,13 +1309,16 @@ class CspFundAllocator:
             time.sleep(config.FUND_ALLOCATOR_INTERVAL_SECONDS)
 
 
-def start() -> threading.Thread | None:
+def start(snapshots: SnapshotConsumer, transaction_w3: Web3) -> threading.Thread | None:
     if not config.FUND_ALLOCATOR_ENABLED:
         log.info("CSP fund allocator disabled")
         return None
-    allocator = CspFundAllocator()
     thread = threading.Thread(
-        target=allocator.run_forever,
+        target=supervise_worker,
+        args=(
+            "csp-fund-allocator",
+            lambda: CspFundAllocator(snapshots, transaction_w3),
+        ),
         name="csp-fund-allocator",
         daemon=True,
     )

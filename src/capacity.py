@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, fields
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 import requests
 
@@ -18,13 +19,8 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-USDC_DECIMALS = 6
 OTOKEN_DECIMALS = 8
 DEGRADED_HEDGE_RATIO = 0.4
-
-# ERC-20 function selectors
-_BALANCE_OF_SIG = "0x70a08231"
-_ALLOWANCE_SIG = "0xdd62ed3e"
 
 _INTERNAL_FIELDS = {
     "premium_pool_usd",
@@ -82,45 +78,6 @@ def capacity_status(
     ):
         return "degraded"
     return "active"
-
-
-def _read_usdc_balance(w3: Web3, mm_address: str) -> float:
-    addr_padded = mm_address.lower().replace("0x", "").zfill(64)
-    data = _BALANCE_OF_SIG + addr_padded
-    raw = w3.eth.call({"to": config.USDC_ADDRESS, "data": data})
-    return int.from_bytes(raw, "big") / 10**USDC_DECIMALS
-
-
-def _read_usdc_allowance(w3: Web3, mm_address: str) -> float:
-    owner = mm_address.lower().replace("0x", "").zfill(64)
-    spender = config.MARGIN_POOL_ADDRESS.lower().replace("0x", "").zfill(64)
-    data = _ALLOWANCE_SIG + owner + spender
-    raw = w3.eth.call({"to": config.USDC_ADDRESS, "data": data})
-    return int.from_bytes(raw, "big") / 10**USDC_DECIMALS
-
-
-def _read_pools(
-    w3: Web3,
-    mm_address: str,
-    asset_config: AssetConfig,
-) -> tuple[float, float, float]:
-    """Read on-chain USDC and hedge pool state.
-
-    Returns:
-        (usdc_available, hedge_pool_value_usd, hedge_withdrawable_usd)
-    """
-    usdc_balance = _read_usdc_balance(w3, mm_address)
-    usdc_allowance = _read_usdc_allowance(w3, mm_address)
-    usdc_available = min(usdc_balance, usdc_allowance)
-
-    if config.HEDGE_MODE == "live":
-        withdrawable = hedge_executor.get_withdrawable(asset_config.hedge_symbol)
-        hedge_pool_value = hedge_executor.get_account_value(asset_config.hedge_symbol)
-    else:
-        withdrawable = 0.0
-        hedge_pool_value = 0.0
-
-    return usdc_available, hedge_pool_value, withdrawable
 
 
 def _read_solana_token_balance(
@@ -327,6 +284,7 @@ def calculate_capacity_internal(
     asset_config: AssetConfig | None = None,
     *,
     chain: str = "base",
+    base_snapshot: Mapping[str, Any] | None = None,
 ) -> CapacityReport:
     """Calculate MM capacity for a specific asset.
 
@@ -348,9 +306,22 @@ def calculate_capacity_internal(
             asset_config,
         )
     else:
-        usdc_available, hedge_pool_value, withdrawable = _read_pools(
-            w3, mm_address, asset_config
-        )
+        if base_snapshot is None:
+            raise RuntimeError("Fresh atomic Base capacity state is unavailable")
+        try:
+            usdc_balance = int(base_snapshot["usdc_balance_raw"]) / 10**6
+            usdc_allowance = int(base_snapshot["usdc_allowance_raw"]) / 10**6
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("Atomic Base capacity state is incomplete") from exc
+        usdc_available = min(usdc_balance, usdc_allowance)
+        if config.HEDGE_MODE == "live":
+            withdrawable = hedge_executor.get_withdrawable(asset_config.hedge_symbol)
+            hedge_pool_value = hedge_executor.get_account_value(
+                asset_config.hedge_symbol
+            )
+        else:
+            withdrawable = 0.0
+            hedge_pool_value = 0.0
     leverage = max(asset_config.leverage, 1)
 
     if config.HEDGE_MODE == "live":

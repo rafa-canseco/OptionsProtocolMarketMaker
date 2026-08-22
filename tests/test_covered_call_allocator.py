@@ -327,11 +327,17 @@ def test_missing_approved_quote_fails_closed():
     )
 
 
-def test_virtual_call_quote_materializes_without_allocating(monkeypatch):
+@pytest.mark.parametrize("snapshot_valid", (True, False))
+def test_virtual_call_quote_materializes_without_allocating(
+    monkeypatch, snapshot_valid
+):
     now = 1_000_000
     allocator = CoveredCallFundAllocator.__new__(CoveredCallFundAllocator)
     allocator.policy = _policy()
     allocator.flow = MagicMock()
+    allocator.snapshots = MagicMock()
+    if not snapshot_valid:
+        allocator.snapshots.require.side_effect = RuntimeError("snapshot expired")
     allocator.flow.functions.totalPendingShares.return_value.call.return_value = 0
     allocator.adapter_address = "0x" + "34" * 20
     allocator.settler = MagicMock()
@@ -349,12 +355,13 @@ def test_virtual_call_quote_materializes_without_allocating(monkeypatch):
         max_amount=100_000_000,
     )
     monkeypatch.setattr("src.covered_call_allocator.time.time", lambda: now)
-    monkeypatch.setattr(
-        api_client,
-        "get_market_data",
-        lambda **_: {"spot": 2000, "iv": 0.6, "protocol_fee_bps": 1_000},
-    )
-    monkeypatch.setattr(api_client, "get_quotes", lambda: [quote])
+    bundle = MagicMock()
+    bundle.market.return_value = {
+        "spot": 2000,
+        "iv": 0.6,
+        "protocol_fee_bps": 1_000,
+    }
+    bundle.quotes.return_value = (quote,)
     ensure = MagicMock(
         return_value={
             "status": "creating",
@@ -364,16 +371,23 @@ def test_virtual_call_quote_materializes_without_allocating(monkeypatch):
     )
     monkeypatch.setattr(api_client, "ensure_fund_series", ensure)
 
-    allocator._open(
-        {
-            "adapter_state": (0, b"", 0, 0, 0, 0, 0),
-            "positions": [],
-            "allocated": 0,
-            "pending_shares": 0,
-            "idle_assets": 1 * 10**18,
-        }
-    )
+    state = {
+        "adapter_state": (0, b"", 0, 0, 0, 0, 0),
+        "positions": [],
+        "allocated": 0,
+        "pending_shares": 0,
+        "idle_assets": 1 * 10**18,
+        "protocol_fee_bps": 1_000,
+    }
+    if not snapshot_valid:
+        with pytest.raises(RuntimeError, match="snapshot expired"):
+            allocator._open(state, bundle)
+        ensure.assert_not_called()
+        return
 
+    allocator._open(state, bundle)
+
+    allocator.snapshots.require.assert_called_once_with(bundle)
     ensure.assert_called_once_with(
         adapter_address=allocator.adapter_address,
         quote=quote,
@@ -639,15 +653,17 @@ def test_terminal_usdc_is_normalized_before_any_reopen():
     allocator.weth = "0x" + "11" * 20
     allocator.adapter_address = "0x" + "22" * 20
     allocator.policy_hash = "policy"
-    allocator.oracle = MagicMock()
-    allocator.oracle.functions.getPrice.return_value.call.return_value = 2000 * 10**8
     allocator.strategy = MagicMock()
     allocator.w3 = MagicMock()
     allocator.w3.codec.encode.return_value = b"normalize"
+    post = MagicMock()
+    post.fund.return_value = {"adapter_state": (2, b"h" * 32, 1, 0, 0, 0, 0)}
     allocator._send = MagicMock(
-        return_value=ConfirmedTransaction("0xtx", 1, 10, "0xblock", False)
+        return_value=(
+            ConfirmedTransaction("0xtx", 1, 10, "0xblock", False),
+            post,
+        )
     )
-    allocator._result_state = MagicMock(return_value=(2, b"h" * 32, 1, 0, 0, 0, 0))
     nav = [0] * 15
     nav[9] = 7
     nav[11] = b"r" * 32
@@ -655,6 +671,7 @@ def test_terminal_usdc_is_normalized_before_any_reopen():
         "adapter_state": (1, b"", 1, 0, 0, 0, 32 * 10**6),
         "allocated": 2_499_999_999_999_999,
         "nav": tuple(nav),
+        "spot_price": 2000 * 10**8,
     }
 
     assert allocator._settle_or_normalize(state) is True

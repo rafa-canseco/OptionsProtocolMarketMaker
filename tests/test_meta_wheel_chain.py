@@ -496,6 +496,84 @@ def test_chain_port_uses_processor_for_processing_and_allocator_for_queue(tmp_pa
     )
 
 
+def test_recovered_receipt_requires_snapshot_newer_than_startup_baseline(tmp_path):
+    manifest, private_keys = _manifest()
+    gate = _gate(tmp_path, manifest)
+    w3 = MagicMock()
+    block_hash = HexBytes("0x" + "ab" * 32)
+    w3.eth.get_transaction_receipt.return_value = SimpleNamespace(
+        blockNumber=100,
+        blockHash=block_hash,
+        status=1,
+    )
+    w3.eth.get_block.return_value = SimpleNamespace(hash=block_hash)
+    w3.eth.block_number = 102
+    snapshots = MagicMock()
+    baseline = SimpleNamespace(generation=41)
+    snapshots.current.return_value = baseline
+    snapshots.wait_after_receipt.side_effect = RuntimeError(
+        "post-receipt snapshot unavailable"
+    )
+    port = Web3MetaWheelChainPort(
+        manifest=gate,
+        signers=_automated_signers(gate, manifest, private_keys),
+        snapshot_reader=MagicMock(return_value=MagicMock()),
+        quote_reader=MagicMock(),
+        reconciler=MagicMock(),
+        w3=w3,
+        strategy_contract=MagicMock(),
+        snapshot_consumer=snapshots,
+    )
+    port.read_snapshot(MagicMock())
+
+    with pytest.raises(RuntimeError, match="post-receipt snapshot unavailable"):
+        port.receipt("0xrecovered", 2)
+
+    snapshots.require.assert_called_with(baseline)
+    snapshots.wait_after_receipt.assert_called_once_with(
+        pre_send_generation=41,
+        receipt_block=100,
+        receipt_block_hash=Web3.to_hex(block_hash),
+    )
+    assert port._pre_send_generations["0xrecovered"] == 41
+    port.reconciler.assert_not_called()
+
+
+def test_receipt_carries_exact_post_receipt_snapshot_into_reconciliation(tmp_path):
+    manifest, private_keys = _manifest()
+    gate = _gate(tmp_path, manifest)
+    w3 = MagicMock()
+    block_hash = HexBytes("0x" + "ab" * 32)
+    w3.eth.get_transaction_receipt.return_value = SimpleNamespace(
+        blockNumber=100,
+        blockHash=block_hash,
+        status=1,
+    )
+    w3.eth.get_block.return_value = SimpleNamespace(hash=block_hash)
+    w3.eth.block_number = 102
+    baseline = SimpleNamespace(generation=41)
+    post_receipt = SimpleNamespace(generation=42)
+    snapshots = MagicMock()
+    snapshots.current.return_value = baseline
+    snapshots.wait_after_receipt.return_value = post_receipt
+    port = Web3MetaWheelChainPort(
+        manifest=gate,
+        signers=_automated_signers(gate, manifest, private_keys),
+        snapshot_reader=MagicMock(return_value=MagicMock()),
+        quote_reader=MagicMock(),
+        reconciler=MagicMock(),
+        w3=w3,
+        strategy_contract=MagicMock(),
+        snapshot_consumer=snapshots,
+    )
+    port.read_snapshot(MagicMock())
+
+    receipt = port.receipt("0xrecovered", 2)
+
+    assert receipt.snapshot_bundle is post_receipt
+    assert snapshots.current.call_count == 1
+
+
 def test_chain_port_rejects_wrapper_or_payload_substitution(tmp_path):
     manifest, private_keys = _manifest()
     gate = _gate(tmp_path, manifest)

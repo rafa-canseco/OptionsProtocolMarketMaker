@@ -14,6 +14,7 @@ from src.meta_wheel_allocator import (
     LaneSnapshot,
     WheelAction,
     WheelActionPreState,
+    WheelQuote,
 )
 from src.meta_wheel_runtime import (
     BaseSepoliaMetaWheelRuntime,
@@ -24,6 +25,20 @@ from src.meta_wheel_runtime import (
     reconcile_wheel_events,
     reconcile_wheel_state,
 )
+
+
+def test_meta_wheel_quotes_stay_bound_to_the_decoded_snapshot_generation():
+    runtime = BaseSepoliaMetaWheelRuntime.__new__(BaseSepoliaMetaWheelRuntime)
+    snapshot = MagicMock()
+    expected = (MagicMock(spec=WheelQuote),)
+    runtime._consumed_quotes = {id(snapshot): expected}
+    runtime.snapshots = MagicMock()
+    runtime.snapshots.current.side_effect = AssertionError(
+        "must not read a newer generation while planning"
+    )
+
+    assert runtime.list_consumed_quotes(snapshot) is expected
+    runtime.snapshots.current.assert_not_called()
 
 
 def event(name: str, **args) -> DecodedWheelEvent:

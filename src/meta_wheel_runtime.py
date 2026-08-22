@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from collections.abc import Mapping
+from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
 from decimal import Decimal
 import logging
@@ -48,6 +49,7 @@ from src.meta_wheel_chain import (
 from src.meta_wheel_policy import BPS, MetaWheelPolicy
 from src.pricer import bs_delta, validate_iv
 from src.signer import build_domain, sign_quote
+from src.snapshot_consumer import SnapshotBundle, SnapshotConsumer
 
 
 log = logging.getLogger(__name__)
@@ -641,12 +643,16 @@ class WheelObservedState:
 class BaseSepoliaMetaWheelRuntime:
     """Read one coherent confirmed block and reconcile only canonical receipts."""
 
-    def __init__(self, manifest: WheelManifestGate, *, w3: Any | None = None) -> None:
+    def __init__(
+        self,
+        manifest: WheelManifestGate,
+        *,
+        snapshots: SnapshotConsumer,
+        w3: Any,
+    ) -> None:
         self.manifest = manifest
-        self.w3 = w3 or Web3(Web3.HTTPProvider(config.RPC_URL))
-        if int(self.w3.eth.chain_id) != BASE_SEPOLIA_CHAIN_ID:
-            raise RuntimeError("Meta Wheel runtime RPC is not Base Sepolia")
-        self._verify_manifest_chain()
+        self.snapshots = snapshots
+        self.w3 = w3
         self.parent = self.w3.eth.contract(address=manifest.parent, abi=_PARENT_ABI)
         self.coordinator = self.w3.eth.contract(
             address=manifest.coordinator,
@@ -683,20 +689,7 @@ class BaseSepoliaMetaWheelRuntime:
         self._minimum_net_premium_bps: int | None = None
         self._csp_minimum_net_premium_bps: int | None = None
         self._market_maximum_age: int | None = None
-        for address in (
-            manifest.parent,
-            manifest.strategy_manager,
-            manifest.coordinator,
-            manifest.fund_accounting,
-            manifest.fund_flow_manager,
-            manifest.valuator,
-            manifest.batch_settler,
-            manifest.oracle,
-            manifest.usdc,
-            manifest.weth,
-        ):
-            if not self.w3.eth.get_code(address):
-                raise RuntimeError(f"Meta Wheel runtime address has no code: {address}")
+        self._consumed_quotes: dict[int, tuple[WheelQuote, ...]] = {}
 
     def _verify_manifest_chain(self) -> None:
         safe = int(self.w3.eth.block_number) - max(
@@ -1255,6 +1248,111 @@ class BaseSepoliaMetaWheelRuntime:
             coordinator_raw_weth=coordinator_weth,
         )
 
+    @staticmethod
+    def _dataclass_values(model: type, raw: Mapping[str, Any]) -> dict[str, Any]:
+        names = {field.name for field in fields(model)}
+        return {name: raw[name] for name in names if name in raw}
+
+    def read_consumed_snapshot(
+        self,
+        policy: MetaWheelPolicy | None,
+        *,
+        bundle: SnapshotBundle | None = None,
+    ) -> WheelSnapshot:
+        """Decode Meta Wheel state from one explicitly bound atomic bundle."""
+        del policy
+        if bundle is None:
+            bundle = self.snapshots.current()
+        raw = bundle.fund(
+            "meta_wheel",
+            "allocator",
+            expected_address=self.manifest.parent,
+        )
+        wheel = raw.get("wheel_snapshot")
+        if not isinstance(wheel, Mapping):
+            raise RuntimeError("Atomic Meta Wheel snapshot is unavailable")
+
+        pending = tuple(
+            PendingCspTranche(**self._dataclass_values(PendingCspTranche, item))
+            for item in wheel.get("pending_csp_tranches", ())
+        )
+
+        def lane(item: Mapping[str, Any]) -> LaneSnapshot:
+            values = self._dataclass_values(LaneSnapshot, item)
+            values["kind"] = LaneKind(values["kind"])
+            values["phase"] = LanePhase(values["phase"])
+            values["lot_ids"] = tuple(values.get("lot_ids", ()))
+            return LaneSnapshot(**values)
+
+        def lot(item: Mapping[str, Any]) -> AssignmentLot:
+            values = self._dataclass_values(AssignmentLot, item)
+            values["status"] = LotStatus(values["status"])
+            return AssignmentLot(**values)
+
+        csp_lanes = tuple(lane(item) for item in wheel.get("csp_lanes", ()))
+        call_lanes = tuple(lane(item) for item in wheel.get("call_lanes", ()))
+        try:
+            csp_addresses = tuple(
+                Web3.to_checksum_address(item.address) for item in csp_lanes
+            )
+            call_addresses = tuple(
+                Web3.to_checksum_address(item.address) for item in call_lanes
+            )
+        except (TypeError, ValueError):
+            raise RuntimeError(
+                "Meta Wheel registered lanes differ from configured lanes"
+            ) from None
+        if (
+            any(item.kind != LaneKind.CSP for item in csp_lanes)
+            or any(item.kind != LaneKind.COVERED_CALL for item in call_lanes)
+            or frozenset(csp_addresses) != self.expected_csp_lanes
+            or frozenset(call_addresses) != self.expected_call_lanes
+            or len(csp_addresses) != len(self.expected_csp_lanes)
+            or len(call_addresses) != len(self.expected_call_lanes)
+        ):
+            raise RuntimeError(
+                "Meta Wheel registered lanes differ from configured lanes"
+            )
+
+        values = self._dataclass_values(WheelSnapshot, wheel)
+        values.update(
+            chain_id=bundle.chain_id,
+            safe_block=bundle.snapshot_block,
+            timestamp=bundle.snapshot_block_timestamp,
+            pending_csp_tranches=pending,
+            csp_lanes=csp_lanes,
+            call_lanes=call_lanes,
+            assignment_lots=tuple(
+                lot(item) for item in wheel.get("assignment_lots", ())
+            ),
+        )
+        snapshot = WheelSnapshot(**values)
+        self._consumed_quotes[id(snapshot)] = self._decode_consumed_quotes(raw)
+        return snapshot
+
+    def _decode_consumed_quotes(self, raw: Mapping[str, Any]) -> tuple[WheelQuote, ...]:
+        quotes = raw.get("wheel_quotes")
+        if not isinstance(quotes, tuple):
+            raise RuntimeError("Atomic Meta Wheel quotes are unavailable")
+        result = []
+        for item in quotes:
+            if not isinstance(item, Mapping):
+                raise RuntimeError("Atomic Meta Wheel quote is invalid")
+            values = self._dataclass_values(WheelQuote, item)
+            open_data = values.get("open_data", b"")
+            if isinstance(open_data, str):
+                values["open_data"] = bytes.fromhex(open_data.removeprefix("0x"))
+            result.append(WheelQuote(**values))
+        return tuple(result)
+
+    def list_consumed_quotes(self, snapshot: WheelSnapshot) -> tuple[WheelQuote, ...]:
+        try:
+            return self._consumed_quotes.pop(id(snapshot))
+        except KeyError:
+            raise RuntimeError(
+                "Meta Wheel snapshot/quotes generation is not bound"
+            ) from None
+
     def _compatible_series(self, raw: dict[str, Any], is_put: bool, block: int) -> bool:
         try:
             address = Web3.to_checksum_address(raw["otoken_address"])
@@ -1598,69 +1696,131 @@ class BaseSepoliaMetaWheelRuntime:
                 )
         return decoded
 
+    def _observed_state_from_snapshot(
+        self,
+        action: WheelAction,
+        events: list[DecodedWheelEvent],
+        snapshot: WheelSnapshot,
+    ) -> WheelObservedState:
+        lanes = (*snapshot.csp_lanes, *snapshot.call_lanes)
+        lane = next(
+            (item for item in lanes if item.address.lower() == action.lane.lower()),
+            None,
+        )
+        action_tranche = next(
+            (
+                item
+                for item in snapshot.pending_csp_tranches
+                if item.tranche_id == action.tranche_id
+            ),
+            None,
+        )
+        tranche_principal = (
+            lane.tranche_principal_usdc
+            if lane
+            else action_tranche.principal_usdc
+            if action_tranche
+            else 0
+        )
+        tranche_pending = (
+            lane.tranche_pending_usdc
+            if lane
+            else action_tranche.pending_usdc
+            if action_tranche
+            else 0
+        )
+        sibling_id = 0
+        for event_name in (
+            "WheelSiblingTrancheQueued",
+            "WheelRedemptionUsdcReleased",
+            "WheelTrancheQueued",
+        ):
+            event = _matching(events, event_name)
+            if event is not None:
+                sibling_id = int(
+                    event.args.get("siblingTrancheId")
+                    or event.args.get("trancheId")
+                    or 0
+                )
+        sibling = next(
+            (
+                item
+                for item in snapshot.pending_csp_tranches
+                if item.tranche_id == sibling_id
+            ),
+            None,
+        )
+        return WheelObservedState(
+            parent_idle_usdc=snapshot.idle_usdc,
+            coordinator_accounted_usdc=snapshot.coordinator_accounted_usdc,
+            coordinator_accounted_weth=snapshot.coordinator_accounted_weth,
+            coordinator_transition_weth=snapshot.coordinator_transition_weth,
+            coordinator_raw_usdc=snapshot.coordinator_raw_usdc,
+            coordinator_raw_weth=snapshot.coordinator_raw_weth,
+            pending_csp_usdc=snapshot.pending_csp_usdc,
+            reserved_redemption_usdc=snapshot.reserved_redemption_usdc,
+            reserved_principal_usdc=snapshot.reserved_principal_usdc,
+            tranche_principal_usdc=tranche_principal,
+            tranche_pending_usdc=tranche_pending,
+            sibling_principal_usdc=sibling.principal_usdc if sibling else 0,
+            sibling_pending_usdc=sibling.pending_usdc if sibling else 0,
+            lane_child_shares=lane.amount if lane else 0,
+            lane_accounted_usdc=lane.accounted_usdc if lane else 0,
+            lane_accounted_weth=lane.accounted_weth if lane else 0,
+            lane_raw_usdc=lane.raw_usdc if lane else 0,
+            lane_raw_weth=lane.raw_weth if lane else 0,
+            lane_execution_state_hash=lane.execution_state_hash if lane else "",
+            lane_position_state_hash=lane.position_state_hash if lane else "",
+        )
+
     def reconcile(self, action: WheelAction, receipt) -> Reconciliation:
+        """Reconcile receipt events against the already-gated shared snapshot."""
         observed = self.w3.eth.get_transaction_receipt(receipt.tx_hash)
-        block = self.w3.eth.get_block(receipt.block_number)
         if (
             int(observed.status) != 1
-            or observed.blockHash != block.hash
             or _hex(observed.blockHash).lower() != receipt.block_hash.lower()
         ):
             return Reconciliation(False, False, False, False, False, False)
         events = self._decode(self.coordinator, observed, _COORDINATOR_EVENTS)
         if action.kind != ActionKind.QUEUE_CSP_USDC:
-            lane = self._lane_contract(Web3.to_checksum_address(action.lane))
-            events.extend(self._decode(lane, observed, _LANE_EVENTS))
+            lane_contract = self._lane_contract(Web3.to_checksum_address(action.lane))
+            events.extend(self._decode(lane_contract, observed, _LANE_EVENTS))
         reconciled = reconcile_wheel_events(
             action, events, premium_fee_bps=self.manifest.premium_fee_bps
         )
+        if receipt.snapshot_bundle is None:
+            raise RuntimeError("Meta Wheel receipt has no bound post-receipt snapshot")
+        snapshot = self.read_consumed_snapshot(
+            None,
+            bundle=receipt.snapshot_bundle,
+        )
+        self._consumed_quotes.pop(id(snapshot), None)
         state_reconciled = reconcile_wheel_state(
             action,
             events,
-            self._observed_state(action, events, receipt.block_number),
+            self._observed_state_from_snapshot(action, events, snapshot),
+        )
+        lanes = (*snapshot.csp_lanes, *snapshot.call_lanes)
+        lane = next(
+            (item for item in lanes if item.address.lower() == action.lane.lower()),
+            None,
+        )
+        tranche = next(
+            (
+                item
+                for item in snapshot.pending_csp_tranches
+                if item.tranche_id == action.tranche_id
+            ),
+            None,
         )
         if action.kind == ActionKind.QUEUE_CSP_USDC:
-            advanced = (
-                int(
-                    self._call(
-                        self.parent.functions.fundFlowNonce(),
-                        receipt.block_number,
-                    )
-                )
-                > action.transition_nonce
-            )
-        elif action.kind in {ActionKind.OPEN_CSP, ActionKind.OPEN_CALL}:
-            post = tuple(
-                self._call(
-                    self.coordinator.functions.tranche(action.tranche_id),
-                    receipt.block_number,
-                )
-            )
-            advanced = int(post[2]) > action.transition_nonce
-        elif action.kind in {
-            ActionKind.SETTLE_CSP,
-            ActionKind.SETTLE_CALL,
-            ActionKind.HANDOFF_ASSIGNMENT,
-            ActionKind.HANDOFF_CALL_AWAY,
-        }:
-            lane = self._lane_contract(Web3.to_checksum_address(action.lane))
-            advanced = (
-                int(self._call(lane.functions.stateNonce(), receipt.block_number))
-                > action.transition_nonce
-            )
-        elif action.kind == ActionKind.RELEASE_REDEMPTION:
-            post = tuple(
-                self._call(self.coordinator.functions.summary(), receipt.block_number)
-            )
-            advanced = int(post[0]) > action.transition_nonce
+            advanced = snapshot.fund_flow_nonce > action.transition_nonce
+        elif lane is not None:
+            advanced = lane.transition_nonce > action.transition_nonce
+        elif tranche is not None:
+            advanced = tranche.state_nonce > action.transition_nonce
         else:
-            post = tuple(
-                self._call(
-                    self.coordinator.functions.tranche(action.tranche_id),
-                    receipt.block_number,
-                )
-            )
-            advanced = int(post[2]) > action.transition_nonce
+            advanced = snapshot.coordinator_transition_nonce > action.transition_nonce
         return replace(
             reconciled,
             child_shares_delta_matches=(
@@ -2308,16 +2468,21 @@ def reconcile_wheel_events(
     return Reconciliation(child, usdc, weth, principal, transition, premium)
 
 
-def build_authoritative_chain_port() -> Web3MetaWheelChainPort:
-    """Compose the default automatic port from the final manifest and two signers."""
+def build_authoritative_chain_port(
+    snapshots: SnapshotConsumer, transaction_w3: Any
+) -> Web3MetaWheelChainPort:
+    """Compose transaction RPC with the process-wide recurrent snapshot consumer."""
 
     manifest, signers = load_runtime_gate_and_signers()
-    runtime = BaseSepoliaMetaWheelRuntime(manifest)
+    runtime = BaseSepoliaMetaWheelRuntime(
+        manifest, snapshots=snapshots, w3=transaction_w3
+    )
     return Web3MetaWheelChainPort(
         manifest=manifest,
         signers=signers,
-        snapshot_reader=runtime.read_snapshot,
-        quote_reader=runtime.list_quotes,
+        snapshot_reader=runtime.read_consumed_snapshot,
+        quote_reader=runtime.list_consumed_quotes,
         reconciler=runtime.reconcile,
         w3=runtime.w3,
+        snapshot_consumer=snapshots,
     )

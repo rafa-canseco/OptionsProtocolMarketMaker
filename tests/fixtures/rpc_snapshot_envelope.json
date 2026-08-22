@@ -1,0 +1,316 @@
+{
+  "environment": "test",
+  "chain_id": 84532,
+  "window_id": 56666666,
+  "generation": 42,
+  "snapshot_block": 1000,
+  "snapshot_block_hash": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "snapshot_block_timestamp": 1787350000,
+  "published_at": "2026-08-22T01:15:00Z",
+  "chain_data_age_seconds": 5,
+  "reconciled": true,
+  "stale": false,
+  "common": {
+    "market": {
+      "asset": "eth",
+      "spot": 1859.32,
+      "iv": 0.6,
+      "iv_source": "deribit",
+      "observed_at": 1787350000,
+      "protocol_fee_bps": 1000,
+      "available_otokens": [
+        {
+          "address": "0x8888888888888888888888888888888888888888",
+          "strike_price": 1750.0,
+          "expiry": 1787522800,
+          "is_put": true
+        },
+        {
+          "address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "strike_price": 2000.0,
+          "expiry": 1787522800,
+          "is_put": false
+        }
+      ]
+    },
+    "quotes": [
+      {
+        "asset": "eth",
+        "chain": "base",
+        "is_put": true,
+        "created_at": 1787349995,
+        "deadline": 1787350300,
+        "expiry": 1787522800,
+        "strike_price": 1750.0,
+        "deployment_status": "virtual",
+        "otoken_address": "0x8888888888888888888888888888888888888888",
+        "bid_price": 4000000,
+        "quote_id": 101,
+        "max_amount": 100000000,
+        "maker_nonce": 7,
+        "signature": "0xababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+      },
+      {
+        "asset": "eth",
+        "chain": "base",
+        "is_put": false,
+        "created_at": 1787349995,
+        "deadline": 1787350300,
+        "expiry": 1787522800,
+        "strike_price": 2000.0,
+        "deployment_status": "virtual",
+        "otoken_address": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "bid_price": 3000000,
+        "quote_id": 102,
+        "max_amount": 100000000,
+        "maker_nonce": 7,
+        "signature": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+      }
+    ],
+    "market_maker": {
+      "mm_address": "0x1111111111111111111111111111111111111111",
+      "usdc_address": "0x2222222222222222222222222222222222222222",
+      "allowance_spender": "0x3333333333333333333333333333333333333333",
+      "usdc_balance_raw": 100000000000,
+      "usdc_allowance_raw": 75000000000,
+      "maker_nonce": 7
+    }
+  },
+  "funds": [
+    {
+      "fund_key": "eth-usdc-csp",
+      "fund_type": "csp",
+      "fund_address": "0x4444444444444444444444444444444444444444",
+      "state": {
+        "allocator": {
+          "weth": "0x5555555555555555555555555555555555555555",
+          "nav": [1000000000, 0, 1000000000, 1000000000, 0, 1000, 999, 1030, 1, 10, "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "0x0000000000000000000000000000000000000000000000000000000000000000", 0, "0x0000000000000000000000000000000000000000000000000000000000000000"],
+          "strategy_hash": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "strategy_config": [true, 8000, 10000, 0, 1, "0x6666666666666666666666666666666666666666", 115792089237316195423570985008687907853269984665640564039457584007913129639935],
+          "adapter_config": [[129600, 216000, 1, 20, 500, 1, 100000000000, 500000000000, 115792089237316195423570985008687907853269984665640564039457584007913129639935, 1000000000000000000], "0x2222222222222222222222222222222222222222", 0],
+          "adapter_state": [0, "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", 0, 0, 0, 0],
+          "valuation_policy": [1, 2, 1, 0, 500, 2],
+          "total_assets": 1000000000,
+          "idle_assets": 1000000000,
+          "allocated": 0,
+          "minimum_idle_bps": 0,
+          "processing": false,
+          "pending_shares": 0,
+          "protocol_fee_bps": 1000,
+          "treasury": "0x7777777777777777777777777777777777777777",
+          "series": {
+            "0x8888888888888888888888888888888888888888": {
+              "is_put": true,
+              "underlying": "0x5555555555555555555555555555555555555555",
+              "strike_asset": "0x2222222222222222222222222222222222222222",
+              "collateral_asset": "0x2222222222222222222222222222222222222222",
+              "expiry": 1787522800,
+              "strike_price": 175000000000
+            }
+          },
+          "quote_states": {
+            "7:101:0x8888888888888888888888888888888888888888": {
+              "filled_amount": 0,
+              "cancelled": false
+            },
+            "7:102:0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+              "filled_amount": 0,
+              "cancelled": false
+            }
+          },
+          "position": ["0x0000000000000000000000000000000000000000", "0x0000000000000000000000000000000000000000", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "0x0000000000000000000000000000000000000000000000000000000000000000"],
+          "position_expiry": 0
+        },
+        "operations": {
+          "latest_block": 1002,
+          "batch_id": 12,
+          "batch": [1000000000000000000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "0x0000000000000000000000000000000000000000000000000000000000000000", 0, 0, 0, 0, 0, true, true, false, false],
+          "open_batch_id": 12,
+          "nav": [1000000000, 0, 1000000000, 1000000000, 0, 1000, 999, 1030, 1, 10, "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "0x0000000000000000000000000000000000000000000000000000000000000000", 0, "0x0000000000000000000000000000000000000000000000000000000000000000"],
+          "eligible_supply": 1000000000000000000000,
+          "idle_assets": 1000000000,
+          "virtual_shares": 1000000000000,
+          "max_window_outflow_bps": 5000,
+          "window_eligible_supply": 1000000000000000000000,
+          "window_processed_shares": 0
+        }
+      }
+    },
+    {
+      "fund_key": "eth-weth-covered-call",
+      "fund_type": "covered_call",
+      "fund_address": "0x9999999999999999999999999999999999999999",
+      "state": {
+        "allocator": {
+          "nav": [2000000000000000000, 0, 2000000000000000000, 2000000000000000000, 0, 1000, 999, 1030, 1, 11, "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "0x0000000000000000000000000000000000000000000000000000000000000000", 0, "0x0000000000000000000000000000000000000000000000000000000000000000"],
+          "strategy_hash": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "strategy_config": [true, 8000, 10000, 0, 1, "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", 115792089237316195423570985008687907853269984665640564039457584007913129639935],
+          "adapter_config": [[129600, 219600, 3600, 10, 500, 1, 8000, 100000000000, 1000000000000, 115792089237316195423570985008687907853269984665640564039457584007913129639935, 32000000], "0x5555555555555555555555555555555555555555", 3000],
+          "adapter_state": [0, "0x1212121212121212121212121212121212121212121212121212121212121212", 0, 0, 0, 0, 0],
+          "positions": [],
+          "valuation_policy": [1, 2, 1, 0, 500, 2, 120, "0x4aDC67696bA383F43DD60A9e78F2C97Fbbfc7cb1", 8, 3600],
+          "valuation_observers": [true, true],
+          "total_assets": 2000000000000000000,
+          "idle_assets": 2000000000000000000,
+          "allocated": 0,
+          "minimum_idle_bps": 0,
+          "processing": false,
+          "pending_shares": 0,
+          "spot_price": 185932000000,
+          "protocol_fee_bps": 1000,
+          "series": {
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb": {
+              "is_put": false,
+              "underlying": "0x5555555555555555555555555555555555555555",
+              "strike_asset": "0x2222222222222222222222222222222222222222",
+              "collateral_asset": "0x5555555555555555555555555555555555555555",
+              "expiry": 1787522800,
+              "strike_price": 200000000000
+            }
+          },
+          "position_expiries": {}
+        },
+        "operations": {
+          "latest_block": 1002,
+          "batch_id": 15,
+          "batch": [1000000000000000000, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "0x0000000000000000000000000000000000000000000000000000000000000000", 0, 0, 0, 0, 0, true, true, false, false],
+          "open_batch_id": 15,
+          "nav": [2000000000000000000, 0, 2000000000000000000, 2000000000000000000, 0, 1000, 999, 1030, 1, 11, "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "0x0000000000000000000000000000000000000000000000000000000000000000", 0, "0x0000000000000000000000000000000000000000000000000000000000000000"],
+          "eligible_supply": 2000000000000000000000,
+          "idle_assets": 2000000000000000000,
+          "virtual_shares": 1000000000000,
+          "max_window_outflow_bps": 5000,
+          "window_eligible_supply": 2000000000000000000000,
+          "window_processed_shares": 0
+        }
+      }
+    },
+    {
+      "fund_key": "eth-usdc-meta-wheel",
+      "fund_type": "meta_wheel",
+      "fund_address": "0xcccccccccccccccccccccccccccccccccccccccc",
+      "state": {
+        "allocator": {
+          "wheel_snapshot": {
+            "chain_id": 84532,
+            "parent": "0xcccccccccccccccccccccccccccccccccccccccc",
+            "coordinator": "0xdddddddddddddddddddddddddddddddddddddddd",
+            "safe_block": 1000,
+            "safe_block_confirmations": 2,
+            "safe_block_canonical": true,
+            "timestamp": 1787350000,
+            "onchain_policy_hash": "0x1313131313131313131313131313131313131313131313131313131313131313",
+            "nav_policy_hash": "0x1313131313131313131313131313131313131313131313131313131313131313",
+            "onchain_floor_buffer8": 1000000000,
+            "onchain_max_csp_lanes": 4,
+            "onchain_max_call_lanes": 4,
+            "onchain_max_usdc_per_csp_lane": 5000000000,
+            "onchain_max_weth_per_call_lane": 2000000000000000000,
+            "coordinator_position_state_hash": "0x1414141414141414141414141414141414141414141414141414141414141414",
+            "nav_coordinator_position_state_hash": "0x1414141414141414141414141414141414141414141414141414141414141414",
+            "nav_coherent": true,
+            "nav_fresh": true,
+            "transition_balances_reconciled": true,
+            "paused": false,
+            "parent_total_assets_usdc": 1000000000,
+            "idle_usdc": 1000000000,
+            "pending_csp_usdc": 0,
+            "pending_csp_tranches": [],
+            "pending_redemption_usdc": 0,
+            "reserved_redemption_usdc": 0,
+            "reserved_principal_usdc": 0,
+            "coordinator_transition_nonce": 3,
+            "fund_flow_nonce": 4,
+            "spot_price8": 185932000000,
+            "protocol_premium_fee_bps": 1000,
+            "parent_management_fee_bps": 200,
+            "parent_performance_fee_bps": 1000,
+            "child_management_fee_bps": 0,
+            "child_performance_fee_bps": 0,
+            "csp_lanes": [
+              {
+                "address": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "kind": "csp",
+                "phase": "idle",
+                "tranche_id": 0,
+                "transition_nonce": 0,
+                "child_position_id": 0,
+                "amount": 0,
+                "expiry": 0,
+                "execution_state_hash": "",
+                "tranche_child_execution_state_hash": "",
+                "position_state_hash": "",
+                "nav_position_state_hash": "",
+                "lot_ids": [],
+                "adapter": "0xabababababababababababababababababababab",
+                "dedicated_to_parent": true,
+                "active_options": 0,
+                "tranche_principal_usdc": 0,
+                "tranche_pending_usdc": 0,
+                "accounted_usdc": 0,
+                "accounted_weth": 0,
+                "raw_usdc": 0,
+                "raw_weth": 0
+              }
+            ],
+            "call_lanes": [
+              {
+                "address": "0xffffffffffffffffffffffffffffffffffffffff",
+                "kind": "covered_call",
+                "phase": "idle",
+                "tranche_id": 0,
+                "transition_nonce": 0,
+                "child_position_id": 0,
+                "amount": 0,
+                "expiry": 0,
+                "execution_state_hash": "",
+                "tranche_child_execution_state_hash": "",
+                "position_state_hash": "",
+                "nav_position_state_hash": "",
+                "lot_ids": [],
+                "adapter": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd",
+                "dedicated_to_parent": true,
+                "active_options": 0,
+                "tranche_principal_usdc": 0,
+                "tranche_pending_usdc": 0,
+                "accounted_usdc": 0,
+                "accounted_weth": 0,
+                "raw_usdc": 0,
+                "raw_weth": 0
+              }
+            ],
+            "assignment_lots": [],
+            "coordinator_accounted_usdc": 0,
+            "coordinator_accounted_weth": 0,
+            "coordinator_transition_weth": 0,
+            "coordinator_raw_usdc": 0,
+            "coordinator_raw_weth": 0
+          },
+          "wheel_quotes": [
+            {
+              "quote_id": "7:303",
+              "is_put": true,
+              "strike8": 175000000000,
+              "expiry": 1787522800,
+              "created_at": 1787349995,
+              "deadline": 1787350300,
+              "gross_premium_bps": 100,
+              "maximum_collateral": 5000000000,
+              "canonical_series": true,
+              "delta_bps": -900,
+              "gross_premium": 5000000,
+              "net_premium": 4500000,
+              "collateral": 5000000000,
+              "execution_slippage_bps": 100,
+              "open_data": "0x",
+              "lane": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "tranche_id": 0,
+              "lot_id": 0,
+              "allocation_amount": 0
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

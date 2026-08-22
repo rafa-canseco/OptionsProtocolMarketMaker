@@ -129,6 +129,10 @@ if DEADLINE_SECONDS < MIN_LAZY_QUOTE_TTL_SECONDS:
     )
     sys.exit(1)
 CHAIN_ID: int = int(os.getenv("CHAIN_ID", "84532"))
+SNAPSHOT_ENVIRONMENT: str = _current_environment() or "development"
+SNAPSHOT_POLL_INTERVAL_SECONDS: float = max(
+    float(os.getenv("SNAPSHOT_POLL_INTERVAL_SECONDS", "2")), 0.1
+)
 
 
 def _chain_default(*, mainnet: str, sepolia: str) -> str:
