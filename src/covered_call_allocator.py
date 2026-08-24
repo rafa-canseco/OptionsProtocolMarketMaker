@@ -7,7 +7,7 @@ import json
 import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -19,7 +19,6 @@ from web3 import Web3
 from src import api_client, config
 from src.fund_allocator import (
     _FLOW_ABI,
-    _OTOKEN_ABI,
     _STRATEGY_ABI,
     _VAULT_ABI,
     UINT256_MAX,
@@ -28,6 +27,7 @@ from src.fund_allocator import (
 )
 from src.fund_tx import ConfirmedTransaction, send_confirmed_transaction
 from src.pricer import bs_delta
+from src.snapshot_consumer import SnapshotBundle, SnapshotConsumer, supervise_worker
 
 log = logging.getLogger(__name__)
 
@@ -593,14 +593,13 @@ def count_called_away(positions: list[tuple[Any, ...]]) -> int:
 
 
 class CoveredCallFundAllocator:
-    def __init__(self) -> None:
+    def __init__(self, snapshots: SnapshotConsumer, transaction_w3: Web3) -> None:
         policy_path = Path(config.COVERED_CALL_ALLOCATOR_POLICY_PATH)
         self.policy = load_covered_call_policy(policy_path)
         self.policy_hash = hashlib.sha256(policy_path.read_bytes()).hexdigest()
         self._validate_runtime_config()
-        self.w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
-        if self.w3.eth.chain_id != 84532:
-            raise RuntimeError("Covered-call allocator is locked to Base Sepolia")
+        self.snapshots = snapshots
+        self.w3 = transaction_w3
         self.account = Account.from_key(config.COVERED_CALL_ALLOCATOR_PRIVATE_KEY)
         self.vault = self.w3.eth.contract(
             address=Web3.to_checksum_address(config.COVERED_CALL_VAULT_ADDRESS),
@@ -629,35 +628,10 @@ class CoveredCallFundAllocator:
             address=self.valuator_address, abi=_VALUATOR_ABI
         )
         self.weth = Web3.to_checksum_address(config.COVERED_CALL_WETH_ADDRESS)
-        self.usdc = Web3.to_checksum_address(self.adapter.functions.usdc().call())
-        address_book = self.adapter.functions.addressBook().call()
-        self.address_book = self.w3.eth.contract(
-            address=address_book, abi=_ADDRESS_BOOK_ABI
+        self.usdc = Web3.to_checksum_address(config.USDC_ADDRESS)
+        self.settler = self.w3.eth.contract(
+            address=Web3.to_checksum_address(config.BATCH_SETTLER), abi=_SETTLER_ABI
         )
-        self.oracle = self.w3.eth.contract(
-            address=self.address_book.functions.oracle().call(), abi=_ORACLE_ABI
-        )
-        settler_address = Web3.to_checksum_address(
-            self.address_book.functions.batchSettler().call()
-        )
-        if settler_address != Web3.to_checksum_address(config.BATCH_SETTLER):
-            raise RuntimeError("Covered-call BatchSettler differs from configuration")
-        self.settler = self.w3.eth.contract(address=settler_address, abi=_SETTLER_ABI)
-        for address in (
-            self.vault.address,
-            self.flow.address,
-            self.strategy.address,
-            self.adapter.address,
-            self.valuator.address,
-            self.weth,
-            self.usdc,
-            self.oracle.address,
-            self.settler.address,
-        ):
-            if not self.w3.eth.get_code(address):
-                raise RuntimeError(
-                    f"Configured covered-call address has no code: {address}"
-                )
 
     @staticmethod
     def _validate_runtime_config() -> None:
@@ -685,102 +659,21 @@ class CoveredCallFundAllocator:
         if environment and environment not in {"staging", "development", "test"}:
             raise RuntimeError("Covered-call allocator is non-production only")
 
-    def _safe_block(self) -> int:
-        return max(
-            self.w3.eth.block_number - config.COVERED_CALL_ALLOCATOR_CONFIRMATIONS,
-            0,
-        )
-
-    def _is_compatible_call_series(self, quote: dict[str, Any]) -> bool:
-        o_token = self.w3.eth.contract(
-            address=Web3.to_checksum_address(quote["otoken_address"]),
-            abi=_OTOKEN_ABI,
-        )
+    def _is_compatible_call_series(
+        self, quote: dict[str, Any], state: Mapping[str, Any]
+    ) -> bool:
+        series = state.get("series", {}).get(str(quote["otoken_address"]).lower())
+        if not isinstance(series, Mapping):
+            return False
         return (
-            o_token.functions.isPut().call() is False
-            and Web3.to_checksum_address(o_token.functions.underlying().call())
-            == self.weth
-            and Web3.to_checksum_address(o_token.functions.strikeAsset().call())
-            == self.usdc
-            and Web3.to_checksum_address(o_token.functions.collateralAsset().call())
-            == self.weth
-            and int(o_token.functions.expiry().call()) == int(quote["expiry"])
-            and int(o_token.functions.strikePrice().call())
+            series.get("is_put") is False
+            and Web3.to_checksum_address(series["underlying"]) == self.weth
+            and Web3.to_checksum_address(series["strike_asset"]) == self.usdc
+            and Web3.to_checksum_address(series["collateral_asset"]) == self.weth
+            and int(series["expiry"]) == int(quote["expiry"])
+            and int(series["strike_price"])
             == int(Decimal(str(quote["strike_price"])) * OTOKEN_SCALE)
         )
-
-    def _read_state(self, block: int) -> dict[str, Any]:
-        adapter_state = self.adapter.functions.adapterState().call(
-            block_identifier=block
-        )
-        position_count = int(adapter_state[2])
-        positions = [
-            self.adapter.functions.position(position_id).call(block_identifier=block)
-            for position_id in range(1, position_count + 1)
-        ]
-        return {
-            "block": block,
-            "nav": self.vault.functions.activeNavWindow().call(block_identifier=block),
-            "strategy_hash": self.strategy.functions.positionsHash().call(
-                block_identifier=block
-            ),
-            "strategy_config": self.strategy.functions.strategyConfig(
-                self.adapter_address
-            ).call(block_identifier=block),
-            "adapter_config": self.adapter.functions.adapterConfig().call(
-                block_identifier=block
-            ),
-            "adapter_state": adapter_state,
-            "positions": positions,
-            "valuation_policy": (
-                self.valuator.functions.interfaceVersion().call(block_identifier=block),
-                self.valuator.functions.valuationPolicyVersion().call(
-                    block_identifier=block
-                ),
-                self.valuator.functions.requiredModelVersion().call(
-                    block_identifier=block
-                ),
-                self.valuator.functions.liabilityBufferBps().call(
-                    block_identifier=block
-                ),
-                self.valuator.functions.maxObservationDivergenceBps().call(
-                    block_identifier=block
-                ),
-                self.valuator.functions.observationQuorum().call(
-                    block_identifier=block
-                ),
-                self.valuator.functions.maxObservationWindow().call(
-                    block_identifier=block
-                ),
-                self.valuator.functions.spotFeed().call(block_identifier=block),
-                self.valuator.functions.spotFeedDecimals().call(block_identifier=block),
-                self.valuator.functions.maxSpotStaleness().call(block_identifier=block),
-            ),
-            "valuation_observers": tuple(
-                self.valuator.functions.isApprovedObserver(observer).call(
-                    block_identifier=block
-                )
-                for observer in self.policy.approved_observers
-            ),
-            "total_assets": self.vault.functions.totalAssets().call(
-                block_identifier=block
-            ),
-            "idle_assets": self.vault.functions.accountedIdleAssets().call(
-                block_identifier=block
-            ),
-            "allocated": self.strategy.functions.allocatedToAdapter(
-                self.adapter_address, self.weth
-            ).call(block_identifier=block),
-            "minimum_idle_bps": self.strategy.functions.minimumIdleBps().call(
-                block_identifier=block
-            ),
-            "processing": self.flow.functions.hasActiveProcessing().call(
-                block_identifier=block
-            ),
-            "pending_shares": self.flow.functions.totalPendingShares().call(
-                block_identifier=block
-            ),
-        }
 
     def _validate_policy_gates(
         self, state: dict[str, Any], *, require_active_nav: bool = True
@@ -844,21 +737,28 @@ class CoveredCallFundAllocator:
         if state["minimum_idle_bps"] != policy.onchain_minimum_idle_bps:
             raise RuntimeError("On-chain minimum idle differs from policy")
 
-    def _send(self, function: Any) -> ConfirmedTransaction:
-        return send_confirmed_transaction(
+    def _send(
+        self, function: Any, bundle: SnapshotBundle
+    ) -> tuple[ConfirmedTransaction, SnapshotBundle]:
+        self.snapshots.require(bundle)
+        tx = send_confirmed_transaction(
             w3=self.w3,
             account=self.account,
             function=function,
             chain_id=84532,
             confirmations=config.COVERED_CALL_ALLOCATOR_CONFIRMATIONS,
+            decision_validator=lambda: self.snapshots.require(bundle),
         )
-
-    def _result_state(self, tx: ConfirmedTransaction) -> tuple[Any, ...]:
-        return self.adapter.functions.adapterState().call(
-            block_identifier=tx.block_number
+        post = self.snapshots.wait_after_receipt(
+            pre_send_generation=bundle.generation,
+            receipt_block=tx.block_number,
+            receipt_block_hash=tx.block_hash,
         )
+        return tx, post
 
-    def _settle_or_normalize(self, state: dict[str, Any]) -> bool:
+    def _settle_or_normalize(
+        self, state: dict[str, Any], bundle: SnapshotBundle | None = None
+    ) -> bool:
         adapter_state = state["adapter_state"]
         active_positions = int(adapter_state[3])
         accounted_weth = int(adapter_state[5])
@@ -868,12 +768,8 @@ class CoveredCallFundAllocator:
             position = state["positions"][position_id - 1]
             lifecycle = int(position[13])
             if lifecycle == 1:
-                expiry = (
-                    self.w3.eth.contract(address=position[0], abi=_OTOKEN_ABI)
-                    .functions.expiry()
-                    .call()
-                )
-                if self.w3.eth.get_block("latest").timestamp < expiry:
+                expiry = int(state["position_expiries"][str(position_id)])
+                if bundle.snapshot_block_timestamp < expiry:
                     return True
             if lifecycle not in {1, 2}:
                 raise RuntimeError(f"Unexpected covered-call lifecycle {lifecycle}")
@@ -881,10 +777,11 @@ class CoveredCallFundAllocator:
                 ["(uint8,uint256,uint256,uint256)"],
                 [(1, position_id, 0, 0)],
             )
-            tx = self._send(
-                self.strategy.functions.deallocate(self.adapter_address, 1, 0, data)
+            tx, post = self._send(
+                self.strategy.functions.deallocate(self.adapter_address, 1, 0, data),
+                bundle,
             )
-            result = self._result_state(tx)
+            result = post.fund("covered_call", "allocator")["adapter_state"]
             log.info(
                 "Covered call decision=%s position_id=%d policy_hash=%s "
                 "report_nonce=%d report_hash=%s tx=%s tx_nonce=%d "
@@ -904,7 +801,7 @@ class CoveredCallFundAllocator:
 
         if accounted_usdc:
             amount = min(accounted_usdc, self.policy.maximum_usdc_per_swap)
-            spot_price = self.oracle.functions.getPrice(self.weth).call()
+            spot_price = int(state["spot_price"])
             minimum_weth = normalization_minimum_weth_out(
                 amount, spot_price, self.policy.maximum_swap_slippage_bps
             )
@@ -914,12 +811,13 @@ class CoveredCallFundAllocator:
                 ["(uint8,uint256,uint256,uint256)"],
                 [(2, 0, amount, minimum_weth)],
             )
-            tx = self._send(
+            tx, post = self._send(
                 self.strategy.functions.deallocate(
                     self.adapter_address, target_value, 0, data
-                )
+                ),
+                bundle,
             )
-            result = self._result_state(tx)
+            result = post.fund("covered_call", "allocator")["adapter_state"]
             log.info(
                 "Covered call decision=normalize_usdc amount=%d min_weth=%d "
                 "policy_hash=%s report_nonce=%d report_hash=%s tx=%s "
@@ -942,12 +840,13 @@ class CoveredCallFundAllocator:
                 ["(uint8,uint256,uint256,uint256)"],
                 [(0, 0, 0, 0)],
             )
-            tx = self._send(
+            tx, post = self._send(
                 self.strategy.functions.deallocate(
                     self.adapter_address, accounted_weth, accounted_weth, data
-                )
+                ),
+                bundle,
             )
-            result = self._result_state(tx)
+            result = post.fund("covered_call", "allocator")["adapter_state"]
             log.info(
                 "Covered call decision=return_idle_weth amount=%d policy_hash=%s "
                 "report_nonce=%d report_hash=%s tx=%s tx_nonce=%d replaced=%s "
@@ -965,7 +864,9 @@ class CoveredCallFundAllocator:
             return True
         return False
 
-    def _open(self, state: dict[str, Any]) -> None:
+    def _open(
+        self, state: dict[str, Any], bundle: SnapshotBundle | None = None
+    ) -> None:
         adapter_state = state["adapter_state"]
         if (
             int(adapter_state[3]) != 0
@@ -976,9 +877,6 @@ class CoveredCallFundAllocator:
             return
         if state["pending_shares"] != 0:
             log.info("Covered call decision=skip reason=pending_redemptions")
-            return
-        if self.flow.functions.totalPendingShares().call() != 0:
-            log.info("Covered call decision=skip reason=pending_redemptions_latest")
             return
         if int(adapter_state[2]) >= self.policy.maximum_opened_positions_before_review:
             log.info("Covered call decision=skip reason=cycle_review_cap")
@@ -996,11 +894,19 @@ class CoveredCallFundAllocator:
         if option_amount <= 0 or collateral <= 0:
             log.info("Covered call decision=skip reason=no_deployable_weth")
             return
-        market = api_client.get_market_data(asset="eth", chain="base")
-        protocol_fee_bps = int(self.settler.functions.protocolFeeBps().call())
+        if bundle is None:
+            raise RuntimeError(
+                "Atomic covered-call market/quote snapshot is unavailable"
+            )
+        market = dict(bundle.market("eth"))
+        protocol_fee_bps = int(state["protocol_fee_bps"])
         api_client.require_protocol_fee_match(market, protocol_fee_bps)
         now = int(time.time())
-        quotes = api_client.get_quotes()
+        quotes = list(bundle.quotes())
+
+        def series_validator(candidate: dict[str, Any]) -> bool:
+            return self._is_compatible_call_series(candidate, state)
+
         quote = select_covered_call_quote(
             quotes,
             spot=float(market["spot"]),
@@ -1008,7 +914,7 @@ class CoveredCallFundAllocator:
             now=now,
             risk_free_rate=config.RISK_FREE_RATE,
             policy=self.policy,
-            series_validator=self._is_compatible_call_series,
+            series_validator=series_validator,
         )
         if quote is None:
             quote = select_covered_call_quote(
@@ -1018,7 +924,7 @@ class CoveredCallFundAllocator:
                 now=now,
                 risk_free_rate=config.RISK_FREE_RATE,
                 policy=self.policy,
-                series_validator=self._is_compatible_call_series,
+                series_validator=series_validator,
                 deployment_statuses=frozenset({"virtual", "creating"}),
             )
             if quote is None:
@@ -1028,6 +934,7 @@ class CoveredCallFundAllocator:
         if option_amount <= 0 or collateral > target:
             raise RuntimeError("Covered-call quote cannot fill bounded target")
         if str(quote.get("deployment_status") or "ready").lower() != "ready":
+            self.snapshots.require(bundle)
             result = api_client.ensure_fund_series(
                 adapter_address=self.adapter_address,
                 quote=quote,
@@ -1040,7 +947,7 @@ class CoveredCallFundAllocator:
                 result.get("deployment_tx_hash"),
             )
             return
-        spot_price = int(self.oracle.functions.getPrice(self.weth).call())
+        spot_price = int(state["spot_price"])
         quoted_bid_price = int(quote["bid_price"])
         execution_bid_price = max(
             quoted_bid_price,
@@ -1106,12 +1013,13 @@ class CoveredCallFundAllocator:
                 separators=(",", ":"),
             ).encode()
         ).hexdigest()
-        tx = self._send(
+        tx, post = self._send(
             self.strategy.functions.allocate(
                 self.adapter_address, self.weth, collateral, open_data
-            )
+            ),
+            bundle,
         )
-        result = self._result_state(tx)
+        result = post.fund("covered_call", "allocator")["adapter_state"]
         log.info(
             "Covered call decision=open strike=%s collateral_weth=%.8f "
             "option_amount=%.8f policy_hash=%s report_nonce=%d report_hash=%s "
@@ -1136,7 +1044,15 @@ class CoveredCallFundAllocator:
         )
 
     def run_once(self) -> None:
-        state = self._read_state(self._safe_block())
+        bundle = self.snapshots.current()
+        state = dict(
+            bundle.fund(
+                "covered_call",
+                "allocator",
+                expected_address=config.COVERED_CALL_VAULT_ADDRESS,
+            )
+        )
+        state["block"] = bundle.snapshot_block
         adapter_state = state["adapter_state"]
         awaiting_physical_delivery = False
         if int(adapter_state[3]) != 0:
@@ -1151,9 +1067,9 @@ class CoveredCallFundAllocator:
         self._validate_policy_gates(
             state, require_active_nav=not awaiting_physical_delivery
         )
-        if self._settle_or_normalize(state):
+        if self._settle_or_normalize(state, bundle):
             return
-        self._open(state)
+        self._open(state, bundle)
 
     def run_forever(self) -> None:
         log.info(
@@ -1169,13 +1085,16 @@ class CoveredCallFundAllocator:
             time.sleep(config.COVERED_CALL_ALLOCATOR_INTERVAL_SECONDS)
 
 
-def start() -> threading.Thread | None:
+def start(snapshots: SnapshotConsumer, transaction_w3: Web3) -> threading.Thread | None:
     if not config.COVERED_CALL_ALLOCATOR_ENABLED:
         log.info("Covered-call allocator disabled")
         return None
-    allocator = CoveredCallFundAllocator()
     thread = threading.Thread(
-        target=allocator.run_forever,
+        target=supervise_worker,
+        args=(
+            "covered-call-fund-allocator",
+            lambda: CoveredCallFundAllocator(snapshots, transaction_w3),
+        ),
         name="covered-call-fund-allocator",
         daemon=True,
     )

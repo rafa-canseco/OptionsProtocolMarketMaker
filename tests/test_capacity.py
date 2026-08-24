@@ -7,7 +7,7 @@ import pytest
 
 from src.capacity import (
     CapacityReport,
-    calculate_capacity_internal,
+    calculate_capacity_internal as _calculate_capacity_internal,
     capacity_status,
     solana_call_capacity_raw,
 )
@@ -60,7 +60,17 @@ def _mock_w3(usdc_balance: int, usdc_allowance: int):
         return b"\x00" * 32
 
     w3.eth.call = mock_call
+    w3.atomic_snapshot = {
+        "usdc_balance_raw": usdc_balance,
+        "usdc_allowance_raw": usdc_allowance,
+    }
     return w3
+
+
+def calculate_capacity_internal(w3, *args, **kwargs):
+    if kwargs.get("chain", "base") == "base":
+        kwargs["base_snapshot"] = w3.atomic_snapshot
+    return _calculate_capacity_internal(w3, *args, **kwargs)
 
 
 def _live_config(mock_config, max_amount=100 * 10**8):

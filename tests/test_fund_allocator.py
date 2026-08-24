@@ -333,10 +333,8 @@ def test_pending_redemptions_take_priority_over_opening_another_csp(monkeypatch)
     )
 
 
-def test_latest_redemption_request_closes_safe_block_handoff_race(monkeypatch):
+def test_atomic_snapshot_redemption_state_closes_handoff_race(monkeypatch):
     allocator = CspFundAllocator.__new__(CspFundAllocator)
-    allocator.flow = MagicMock()
-    allocator.flow.functions.totalPendingShares.return_value.call.return_value = 1
     monkeypatch.setattr(
         api_client,
         "get_market_data",
@@ -347,16 +345,22 @@ def test_latest_redemption_request_closes_safe_block_handoff_race(monkeypatch):
         {
             "adapter_state": (0, b"", 0, 0, 0, 0),
             "allocated": 0,
-            "pending_shares": 0,
+            "pending_shares": 1,
         }
     )
 
 
-def test_virtual_policy_quote_materializes_without_allocating(monkeypatch):
+@pytest.mark.parametrize("snapshot_valid", (True, False))
+def test_virtual_policy_quote_materializes_without_allocating(
+    monkeypatch, snapshot_valid
+):
     now = 1_000_000
     allocator = CspFundAllocator.__new__(CspFundAllocator)
     allocator.policy = load_testnet_policy(POLICY_PATH)
     allocator.flow = MagicMock()
+    allocator.snapshots = MagicMock()
+    if not snapshot_valid:
+        allocator.snapshots.require.side_effect = RuntimeError("snapshot expired")
     allocator.flow.functions.totalPendingShares.return_value.call.return_value = 0
     allocator.adapter_address = "0x" + "34" * 20
     allocator.settler = MagicMock()
@@ -364,7 +368,6 @@ def test_virtual_policy_quote_materializes_without_allocating(monkeypatch):
     allocator.settler.functions.treasury.return_value.call.return_value = (
         "0x" + "56" * 20
     )
-    allocator._quote_fill_state = MagicMock(return_value=(0, 100_000_000))
     allocator._is_compatible_put_series = MagicMock(
         side_effect=AssertionError("virtual series must not be read on-chain")
     )
@@ -388,17 +391,14 @@ def test_virtual_policy_quote_materializes_without_allocating(monkeypatch):
         "signature": "0x" + "ab" * 65,
     }
     monkeypatch.setattr("src.fund_allocator.time.time", lambda: now)
-    monkeypatch.setattr(
-        api_client,
-        "get_market_data",
-        lambda **_: {
-            "spot": 1859.32,
-            "iv": 0.6,
-            "observed_at": now,
-            "protocol_fee_bps": 1_000,
-        },
-    )
-    monkeypatch.setattr(api_client, "get_quotes", lambda: [quote])
+    bundle = MagicMock()
+    bundle.market.return_value = {
+        "spot": 1859.32,
+        "iv": 0.6,
+        "observed_at": now,
+        "protocol_fee_bps": 1_000,
+    }
+    bundle.quotes.return_value = (quote,)
     ensure = MagicMock(
         return_value={
             "status": "creating",
@@ -408,16 +408,25 @@ def test_virtual_policy_quote_materializes_without_allocating(monkeypatch):
     )
     monkeypatch.setattr(api_client, "ensure_fund_series", ensure)
 
-    allocator._open(
-        {
-            "adapter_state": (0, b"", 0, 0, 0, 0),
-            "allocated": 0,
-            "pending_shares": 0,
-            "idle_assets": 1_000 * 10**6,
-            "block": 100,
-        }
-    )
+    state = {
+        "adapter_state": (0, b"", 0, 0, 0, 0),
+        "allocated": 0,
+        "pending_shares": 0,
+        "idle_assets": 1_000 * 10**6,
+        "block": 100,
+        "protocol_fee_bps": 1_000,
+        "treasury": "0x" + "56" * 20,
+        "quote_states": {"7": {"filled_amount": 0, "cancelled": False}},
+    }
+    if not snapshot_valid:
+        with pytest.raises(RuntimeError, match="snapshot expired"):
+            allocator._open(state, bundle)
+        ensure.assert_not_called()
+        return
 
+    allocator._open(state, bundle)
+
+    allocator.snapshots.require.assert_called_once_with(bundle)
     ensure.assert_called_once_with(
         adapter_address=allocator.adapter_address,
         quote=quote,

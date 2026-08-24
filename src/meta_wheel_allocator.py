@@ -18,13 +18,14 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from enum import IntEnum, StrEnum
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Any, Protocol, Sequence
 
 from eth_abi import encode
 
 from src import config
 from src.fund_allocator import premium_after_protocol_fee, premium_meets_floor
 from src.meta_wheel_policy import BPS, MetaWheelPolicy, load_meta_wheel_policy
+from src.snapshot_consumer import SnapshotConsumer, supervise_worker
 
 
 log = logging.getLogger(__name__)
@@ -484,6 +485,7 @@ class CanonicalReceipt:
     confirmations: int
     canonical: bool
     succeeded: bool
+    snapshot_bundle: Any | None = None
 
 
 @dataclass(frozen=True)
@@ -1413,7 +1415,7 @@ class MetaWheelAllocator:
             time.sleep(config.META_WHEEL_ALLOCATOR_INTERVAL_SECONDS)
 
 
-_chain_port_factory: Callable[[], MetaWheelChainPort] | None = None
+_chain_port_factory: Callable[..., MetaWheelChainPort] | None = None
 
 
 def install_chain_port_factory(factory: Callable[[], MetaWheelChainPort]) -> None:
@@ -1466,16 +1468,20 @@ def persistent_action_journal_path() -> Path:
     return resolved_path
 
 
-def _authoritative_chain_port_factory() -> MetaWheelChainPort:
+def _authoritative_chain_port_factory(
+    snapshots: SnapshotConsumer, transaction_w3: Any
+) -> MetaWheelChainPort:
     from src.meta_wheel_runtime import build_authoritative_chain_port
 
-    return build_authoritative_chain_port()
+    return build_authoritative_chain_port(snapshots, transaction_w3)
 
 
 install_chain_port_factory(_authoritative_chain_port_factory)
 
 
-def start() -> threading.Thread | None:
+def start(
+    snapshots: SnapshotConsumer | None = None, transaction_w3: Any = None
+) -> threading.Thread | None:
     if not config.META_WHEEL_ALLOCATOR_ENABLED:
         log.info("Meta Wheel allocator disabled")
         return None
@@ -1487,15 +1493,24 @@ def start() -> threading.Thread | None:
     if _chain_port_factory is None:
         raise RuntimeError("Meta Wheel contract ABI adapter is not installed")
     journal_path = persistent_action_journal_path()
-    allocator = MetaWheelAllocator(
-        policy_path=config.META_WHEEL_ALLOCATOR_POLICY_PATH,
-        approved_policy_hash=config.META_WHEEL_APPROVED_POLICY_SHA256 or "",
-        chain=_chain_port_factory(),
-        journal=SqliteActionJournal(journal_path),
-        confirmations=config.META_WHEEL_ALLOCATOR_CONFIRMATIONS,
-    )
+
+    def factory() -> MetaWheelAllocator:
+        if _chain_port_factory is _authoritative_chain_port_factory:
+            if snapshots is None or transaction_w3 is None:
+                raise RuntimeError("Meta Wheel snapshot consumer is required")
+            chain = _authoritative_chain_port_factory(snapshots, transaction_w3)
+        else:
+            chain = _chain_port_factory()
+        return MetaWheelAllocator(
+            policy_path=config.META_WHEEL_ALLOCATOR_POLICY_PATH,
+            approved_policy_hash=config.META_WHEEL_APPROVED_POLICY_SHA256 or "",
+            chain=chain,
+            journal=SqliteActionJournal(journal_path),
+            confirmations=config.META_WHEEL_ALLOCATOR_CONFIRMATIONS,
+        )
+
     thread = threading.Thread(
-        target=allocator.run_forever,
+        target=lambda: supervise_worker("meta-wheel-allocator", factory),
         name="meta-wheel-allocator",
         daemon=True,
     )

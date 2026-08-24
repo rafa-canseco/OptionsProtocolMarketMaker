@@ -28,6 +28,20 @@ def ws_url(path: str, **params: str) -> str:
     return urlunparse((scheme, parsed.netloc, parsed.path, "", query, ""))
 
 
+def get_snapshot_envelope(*, environment: str, chain_id: int) -> dict[str, Any]:
+    """Read one atomic recurrent-state envelope from Backend/Postgres."""
+    resp = _SESSION.get(
+        _url("/mm/snapshot"),
+        params={"environment": environment, "chain_id": chain_id},
+        timeout=_TIMEOUT,
+    )
+    resp.raise_for_status()
+    payload = resp.json()
+    if not isinstance(payload, dict):
+        raise RuntimeError("Atomic snapshot envelope is not an object")
+    return payload
+
+
 def get_market_data(
     asset: str = "eth",
     chain: str = "base",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -17,6 +17,7 @@ from web3.exceptions import TransactionNotFound
 
 from src import config
 from src.fund_tx import ConfirmedTransaction, send_confirmed_transaction
+from src.snapshot_consumer import SnapshotConsumer
 from src.meta_wheel_allocator import (
     ActionKind,
     CanonicalReceipt,
@@ -823,6 +824,7 @@ class Web3MetaWheelChainPort:
         transaction_sender: Callable[..., ConfirmedTransaction] = (
             send_confirmed_transaction
         ),
+        snapshot_consumer: SnapshotConsumer | None = None,
     ) -> None:
         self.manifest = manifest
         self.signers = signers
@@ -834,26 +836,23 @@ class Web3MetaWheelChainPort:
         self.quote_reader = quote_reader
         self.reconciler = reconciler
         self.w3 = w3 or Web3(Web3.HTTPProvider(config.RPC_URL))
-        if int(self.w3.eth.chain_id) != manifest.chain_id:
-            raise RuntimeError("Meta Wheel RPC chain differs from final manifest")
+        self.snapshot_consumer = snapshot_consumer
+        self._pre_send_generations: dict[str, int] = {}
+        self._decision_bundle = None
         self.strategy = strategy_contract or self.w3.eth.contract(
             address=manifest.strategy_manager,
             abi=_STRATEGY_MANAGER_ABI,
         )
-        for address in (
-            manifest.parent,
-            manifest.strategy_manager,
-            manifest.coordinator,
-            manifest.usdc,
-        ):
-            if not self.w3.eth.get_code(address):
-                raise RuntimeError(
-                    f"Meta Wheel manifest address has no code: {address}"
-                )
         self.transaction_sender = transaction_sender
 
     def read_snapshot(self, policy: MetaWheelPolicy) -> WheelSnapshot:
-        return self.snapshot_reader(policy)
+        if self.snapshot_consumer is None:
+            return self.snapshot_reader(policy)
+        bundle = self.snapshot_consumer.current()
+        snapshot = self.snapshot_reader(policy)
+        self.snapshot_consumer.require(bundle)
+        self._decision_bundle = bundle
+        return snapshot
 
     def list_quotes(self, snapshot: WheelSnapshot) -> Sequence[WheelQuote]:
         return self.quote_reader(snapshot)
@@ -904,13 +903,27 @@ class Web3MetaWheelChainPort:
                 self.manifest.coordinator,
                 managed_request.data,
             )
-        confirmed = self.transaction_sender(
-            w3=self.w3,
-            account=account,
-            function=function,
-            chain_id=self.manifest.chain_id,
-            confirmations=config.META_WHEEL_ALLOCATOR_CONFIRMATIONS,
-        )
+        if self.snapshot_consumer is not None:
+            if self._decision_bundle is None:
+                raise RuntimeError("Meta Wheel decision has no atomic snapshot")
+            self.snapshot_consumer.require(self._decision_bundle)
+            pre_send_generation = self._decision_bundle.generation
+        else:
+            pre_send_generation = 0
+        transaction_args = {
+            "w3": self.w3,
+            "account": account,
+            "function": function,
+            "chain_id": self.manifest.chain_id,
+            "confirmations": config.META_WHEEL_ALLOCATOR_CONFIRMATIONS,
+        }
+        if self.snapshot_consumer is not None:
+            decision_bundle = self._decision_bundle
+            transaction_args["decision_validator"] = lambda: (
+                self.snapshot_consumer.require(decision_bundle)
+            )
+        confirmed = self.transaction_sender(**transaction_args)
+        self._pre_send_generations[confirmed.tx_hash] = pre_send_generation
         return SubmittedAction(tx_hash=confirmed.tx_hash, nonce=confirmed.nonce)
 
     def receipt(self, tx_hash: str, confirmations: int) -> CanonicalReceipt | None:
@@ -928,7 +941,7 @@ class Web3MetaWheelChainPort:
             int(self.w3.eth.block_number) - block_number + 1,
             0,
         )
-        return CanonicalReceipt(
+        result = CanonicalReceipt(
             tx_hash=tx_hash,
             block_number=block_number,
             block_hash=Web3.to_hex(receipt.blockHash),
@@ -936,6 +949,25 @@ class Web3MetaWheelChainPort:
             canonical=canonical and observed_confirmations >= max(confirmations, 2),
             succeeded=int(receipt.status) == 1,
         )
+        if self.snapshot_consumer is not None and result.canonical and result.succeeded:
+            pre_send_generation = self._pre_send_generations.get(tx_hash)
+            if pre_send_generation is None:
+                baseline = (
+                    self._decision_bundle
+                    if self._decision_bundle is not None
+                    else self.snapshot_consumer.current()
+                )
+                self.snapshot_consumer.require(baseline)
+                pre_send_generation = baseline.generation
+                self._pre_send_generations[tx_hash] = pre_send_generation
+            post_receipt_bundle = self.snapshot_consumer.wait_after_receipt(
+                pre_send_generation=pre_send_generation,
+                receipt_block=result.block_number,
+                receipt_block_hash=result.block_hash,
+            )
+            result = replace(result, snapshot_bundle=post_receipt_bundle)
+            self._pre_send_generations.pop(tx_hash, None)
+        return result
 
     def reconcile(
         self, action: WheelAction, receipt: CanonicalReceipt
