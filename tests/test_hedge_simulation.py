@@ -9,6 +9,8 @@ import logging
 import time
 from unittest.mock import patch
 
+import pytest
+
 from src.position_tracker import PositionTracker
 
 logging.basicConfig(
@@ -617,6 +619,13 @@ def test_resolve_underlying_uses_solana_asset_map(mock_config):
     assert hedge_symbol == "xyz:TSLA"
     assert chain == "solana"
     _tracker._otoken_cache.clear()
+
+
+def test_resolve_underlying_rejects_unknown_otoken():
+    from src.main import _resolve_underlying
+
+    with pytest.raises(RuntimeError, match="Could not resolve underlying"):
+        _resolve_underlying("0xUNKNOWN")
 
 
 @patch("src.main.hedge_executor")
