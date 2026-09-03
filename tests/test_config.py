@@ -48,6 +48,42 @@ def _reload_config(env: dict[str, str]):
         sys.modules["src.config"] = config_module
 
 
+def test_base_assets_default_to_four_mainnet_routed_assets():
+    config = _reload_config(_base_env())
+
+    assert [asset.name for asset in config.ASSETS] == [
+        "nvdac",
+        "cbzec",
+        "cbhype",
+        "vvv",
+    ]
+    assert [asset.hedge_symbol for asset in config.ASSETS] == [
+        "NVDA",
+        "ZEC",
+        "HYPE",
+        "VVV",
+    ]
+    assert all(asset.max_exposure == 0.25 for asset in config.ASSETS)
+    assert all(asset.hedge_enabled for asset in config.ASSETS)
+
+
+def test_base_asset_hedge_env_overrides_are_independent():
+    config = _reload_config(
+        _base_env()
+        | {
+            "NVDAC_HEDGE_SYMBOL": "NVDA_ALT",
+            "CBZEC_MAX_EXPOSURE": "0.1",
+            "CBHYPE_HEDGE_ENABLED": "false",
+            "VVV_HEDGE_ENABLED": "true",
+        }
+    )
+
+    assert config.ASSET_MAP["nvdac"].hedge_symbol == "NVDA_ALT"
+    assert config.ASSET_MAP["cbzec"].max_exposure == 0.1
+    assert config.ASSET_MAP["cbhype"].hedge_enabled is False
+    assert config.ASSET_MAP["vvv"].hedge_enabled is True
+
+
 def test_solana_quotes_default_to_legacy_enabled_outside_production():
     env = _base_env() | {
         "SOLANA_PRIVATE_KEY": "base58-secret",

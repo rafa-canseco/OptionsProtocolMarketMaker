@@ -690,14 +690,7 @@ def _resolve_underlying(otoken_addr: str) -> tuple[str, str, str]:
         asset_cfg = _asset_map_for_chain(chain).get(underlying)
         if asset_cfg:
             return underlying, asset_cfg.hedge_symbol, chain
-    # Default to first configured asset (backward compat)
-    default = config.ASSETS[0]
-    log.warning(
-        "Could not resolve underlying for oToken %s, defaulting to %s",
-        otoken_addr[:10],
-        default.name,
-    )
-    return default.name, default.hedge_symbol, "base"
+    raise RuntimeError(f"Could not resolve underlying for oToken {otoken_addr[:10]}")
 
 
 def _handle_fill(

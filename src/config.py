@@ -351,8 +351,16 @@ META_WHEEL_FUND_KEY: str | None = _optional_env("META_WHEEL_FUND_KEY")
 
 
 # --- Multi-asset configuration ---
+_BASE_ASSET_DEFAULTS = {
+    "nvdac": ("NVDA", 0.25),
+    "cbzec": ("ZEC", 0.25),
+    "cbhype": ("HYPE", 0.25),
+    "vvv": ("VVV", 0.25),
+}
+
+
 def _parse_assets() -> list[AssetConfig]:
-    raw = os.getenv("ASSETS", "eth")
+    raw = os.getenv("ASSETS", ",".join(_BASE_ASSET_DEFAULTS))
     assets = []
     for name in raw.split(","):
         name = name.strip().lower()
@@ -366,7 +374,10 @@ def _parse_assets() -> list[AssetConfig]:
                 file=sys.stderr,
             )
             sys.exit(1)
-        max_exp = float(os.getenv(f"{prefix}_MAX_EXPOSURE", "1.0"))
+        default_symbol, default_max_exposure = _BASE_ASSET_DEFAULTS.get(
+            name, (name.upper(), 1.0)
+        )
+        max_exp = float(os.getenv(f"{prefix}_MAX_EXPOSURE", str(default_max_exposure)))
         if not 0.0 < max_exp <= 1.0:
             print(
                 f"FATAL: {prefix}_MAX_EXPOSURE must be in (0, 1], got {max_exp}",
@@ -376,7 +387,7 @@ def _parse_assets() -> list[AssetConfig]:
         assets.append(
             AssetConfig(
                 name=name,
-                hedge_symbol=os.getenv(f"{prefix}_HEDGE_SYMBOL", name.upper()),
+                hedge_symbol=os.getenv(f"{prefix}_HEDGE_SYMBOL", default_symbol),
                 leverage=leverage,
                 max_exposure=max_exp,
                 hedge_enabled=_env_flag(f"{prefix}_HEDGE_ENABLED", default=True),
