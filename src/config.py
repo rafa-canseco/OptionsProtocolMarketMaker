@@ -199,6 +199,16 @@ SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
 SUPABASE_RECOVERY_ENABLED: bool = _env_flag("SUPABASE_RECOVERY_ENABLED", default=True)
 
+# --- Base routed settlement (explicit opt-in, independently gated) ---
+ROUTED_SETTLEMENT_ENABLED: bool = _env_flag("ROUTED_SETTLEMENT_ENABLED", default=False)
+NVDAC_SETTLEMENT_ENABLED: bool = _env_flag("NVDAC_SETTLEMENT_ENABLED", default=False)
+PAIR_ROUTING_SWAP_ROUTER_ADDRESS: str | None = _optional_env(
+    "PAIR_ROUTING_SWAP_ROUTER_ADDRESS"
+)
+NVDAC_SETTLEMENT_ADAPTER_ADDRESS: str | None = _optional_env(
+    "NVDAC_SETTLEMENT_ADAPTER_ADDRESS"
+)
+
 # --- Base Sepolia tokenized CSP fund allocator (explicit opt-in) ---
 FUND_ALLOCATOR_ENABLED: bool = _env_flag("FUND_ALLOCATOR_ENABLED", default=False)
 FUND_ALLOCATOR_PRIVATE_KEY: str | None = _optional_env("FUND_ALLOCATOR_PRIVATE_KEY")
