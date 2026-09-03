@@ -398,6 +398,58 @@ def test_init_disables_asset_when_symbol_is_missing_from_universe(
     assert mock_exchange_cls.return_value.update_leverage.call_count == 3
 
 
+@patch("src.config.HEDGE_MODE", "live")
+@patch("src.config.HYPERLIQUID_ACCOUNT_MODE", "disabled")
+@patch("src.hedge_executor.Exchange")
+@patch("src.hedge_executor.Info")
+@patch("src.hedge_executor.eth_account.Account.from_key")
+def test_init_discovers_and_routes_namespaced_nvda_hedge(
+    mock_account, mock_info_cls, mock_exchange_cls
+):
+    wallet = MagicMock()
+    wallet.address = "0x1111111111111111111111111111111111111111"
+    mock_account.return_value = wallet
+    default_info = MagicMock()
+    default_info.meta.return_value = {
+        "universe": [{"name": symbol} for symbol in ("ZEC", "HYPE", "VVV")]
+    }
+    state = {
+        "marginSummary": {"accountValue": "1000"},
+        "withdrawable": "500",
+        "assetPositions": [],
+    }
+    default_info.user_state.return_value = state
+    xyz_info = MagicMock()
+    xyz_info.meta.return_value = {"universe": [{"name": "xyz:NVDA"}]}
+    xyz_info.user_state.return_value = state
+    xyz_info.coin_to_asset = {}
+    mock_info_cls.side_effect = [default_info, xyz_info]
+    default_exchange = MagicMock()
+    xyz_exchange = MagicMock()
+    xyz_exchange.market_open.return_value = MOCK_OPEN_RESULT
+    mock_exchange_cls.side_effect = [default_exchange, xyz_exchange]
+    assets = [
+        hedge_executor.config.AssetConfig(name, symbol, 3, exposure)
+        for name, symbol, exposure in (
+            ("nvdac", "xyz:NVDA", 0.1),
+            ("cbzec", "ZEC", 0.2),
+            ("cbhype", "HYPE", 0.3),
+            ("vvv", "VVV", 0.4),
+        )
+    ]
+
+    hedge_executor.init(assets)
+    result = hedge_executor.open_hedge("xyz:NVDA", True, 1.0)
+
+    assert hedge_executor._active_symbols == {"xyz:NVDA", "ZEC", "HYPE", "VVV"}
+    xyz_exchange.update_leverage.assert_called_once_with(3, "xyz:NVDA", is_cross=True)
+    xyz_exchange.market_open.assert_called_once_with(
+        "xyz:NVDA", True, 1.0, slippage=0.01
+    )
+    default_exchange.market_open.assert_not_called()
+    assert result is not None
+
+
 def test_dex_for_symbol_supports_builder_perps():
     """Prefixed hedge symbols resolve to the expected perp dex."""
     assert hedge_executor._dex_for_symbol("ETH") == ""

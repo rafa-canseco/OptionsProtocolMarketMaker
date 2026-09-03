@@ -48,8 +48,27 @@ def _reload_config(env: dict[str, str]):
         sys.modules["src.config"] = config_module
 
 
-def test_base_assets_default_to_four_mainnet_routed_assets():
+def test_base_assets_preserve_legacy_default_until_explicitly_enabled():
     config = _reload_config(_base_env())
+
+    assert [asset.name for asset in config.ASSETS] == ["eth"]
+
+
+def test_four_base_assets_are_configured_only_by_explicit_env():
+    config = _reload_config(
+        _base_env()
+        | {
+            "ASSETS": "nvdac,cbzec,cbhype,vvv",
+            "NVDAC_MAX_EXPOSURE": "0.1",
+            "NVDAC_HEDGE_ENABLED": "true",
+            "CBZEC_MAX_EXPOSURE": "0.2",
+            "CBZEC_HEDGE_ENABLED": "true",
+            "CBHYPE_MAX_EXPOSURE": "0.3",
+            "CBHYPE_HEDGE_ENABLED": "false",
+            "VVV_MAX_EXPOSURE": "0.4",
+            "VVV_HEDGE_ENABLED": "true",
+        }
+    )
 
     assert [asset.name for asset in config.ASSETS] == [
         "nvdac",
@@ -58,30 +77,31 @@ def test_base_assets_default_to_four_mainnet_routed_assets():
         "vvv",
     ]
     assert [asset.hedge_symbol for asset in config.ASSETS] == [
-        "NVDA",
+        "xyz:NVDA",
         "ZEC",
         "HYPE",
         "VVV",
     ]
-    assert all(asset.max_exposure == 0.25 for asset in config.ASSETS)
-    assert all(asset.hedge_enabled for asset in config.ASSETS)
+    assert [asset.max_exposure for asset in config.ASSETS] == [0.1, 0.2, 0.3, 0.4]
+    assert [asset.hedge_enabled for asset in config.ASSETS] == [
+        True,
+        True,
+        False,
+        True,
+    ]
 
 
-def test_base_asset_hedge_env_overrides_are_independent():
+def test_opt_in_base_asset_requires_approved_max_exposure_env():
+    with pytest.raises(SystemExit):
+        _reload_config(_base_env() | {"ASSETS": "nvdac"})
+
+
+def test_opt_in_base_asset_hedge_defaults_disabled_without_explicit_enable():
     config = _reload_config(
-        _base_env()
-        | {
-            "NVDAC_HEDGE_SYMBOL": "NVDA_ALT",
-            "CBZEC_MAX_EXPOSURE": "0.1",
-            "CBHYPE_HEDGE_ENABLED": "false",
-            "VVV_HEDGE_ENABLED": "true",
-        }
+        _base_env() | {"ASSETS": "nvdac", "NVDAC_MAX_EXPOSURE": "0.1"}
     )
 
-    assert config.ASSET_MAP["nvdac"].hedge_symbol == "NVDA_ALT"
-    assert config.ASSET_MAP["cbzec"].max_exposure == 0.1
-    assert config.ASSET_MAP["cbhype"].hedge_enabled is False
-    assert config.ASSET_MAP["vvv"].hedge_enabled is True
+    assert config.ASSET_MAP["nvdac"].hedge_enabled is False
 
 
 def test_solana_quotes_default_to_legacy_enabled_outside_production():

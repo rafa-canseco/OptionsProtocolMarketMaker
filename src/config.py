@@ -351,16 +351,16 @@ META_WHEEL_FUND_KEY: str | None = _optional_env("META_WHEEL_FUND_KEY")
 
 
 # --- Multi-asset configuration ---
-_BASE_ASSET_DEFAULTS = {
-    "nvdac": ("NVDA", 0.25),
-    "cbzec": ("ZEC", 0.25),
-    "cbhype": ("HYPE", 0.25),
-    "vvv": ("VVV", 0.25),
+_OPT_IN_BASE_HEDGE_SYMBOLS = {
+    "nvdac": "xyz:NVDA",
+    "cbzec": "ZEC",
+    "cbhype": "HYPE",
+    "vvv": "VVV",
 }
 
 
 def _parse_assets() -> list[AssetConfig]:
-    raw = os.getenv("ASSETS", ",".join(_BASE_ASSET_DEFAULTS))
+    raw = os.getenv("ASSETS", "eth")
     assets = []
     for name in raw.split(","):
         name = name.strip().lower()
@@ -374,10 +374,15 @@ def _parse_assets() -> list[AssetConfig]:
                 file=sys.stderr,
             )
             sys.exit(1)
-        default_symbol, default_max_exposure = _BASE_ASSET_DEFAULTS.get(
-            name, (name.upper(), 1.0)
-        )
-        max_exp = float(os.getenv(f"{prefix}_MAX_EXPOSURE", str(default_max_exposure)))
+        default_symbol = _OPT_IN_BASE_HEDGE_SYMBOLS.get(name, name.upper())
+        max_exposure_raw = _optional_env(f"{prefix}_MAX_EXPOSURE")
+        if name in _OPT_IN_BASE_HEDGE_SYMBOLS and max_exposure_raw is None:
+            print(
+                f"FATAL: {prefix}_MAX_EXPOSURE is required for opt-in asset {name}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        max_exp = float(max_exposure_raw or "1.0")
         if not 0.0 < max_exp <= 1.0:
             print(
                 f"FATAL: {prefix}_MAX_EXPOSURE must be in (0, 1], got {max_exp}",
@@ -390,7 +395,10 @@ def _parse_assets() -> list[AssetConfig]:
                 hedge_symbol=os.getenv(f"{prefix}_HEDGE_SYMBOL", default_symbol),
                 leverage=leverage,
                 max_exposure=max_exp,
-                hedge_enabled=_env_flag(f"{prefix}_HEDGE_ENABLED", default=True),
+                hedge_enabled=_env_flag(
+                    f"{prefix}_HEDGE_ENABLED",
+                    default=name not in _OPT_IN_BASE_HEDGE_SYMBOLS,
+                ),
             )
         )
     return assets
