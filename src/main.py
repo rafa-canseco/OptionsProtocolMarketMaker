@@ -36,6 +36,7 @@ from src.quote_builder import build_quotes, to_api_payload, to_solana_api_payloa
 from src.signer import (
     build_domain,
     build_solana_quote_message,
+    read_maker_nonce,
     read_maker_nonce_solana,
     sign_quote,
     sign_quote_solana,
@@ -153,23 +154,22 @@ def run_cycle(
     snapshot_consumer: SnapshotConsumer | None = None,
 ) -> dict | None:
     """Single quote-refresh cycle across all chains and assets."""
-    base_enabled = any(chain.name == "base" for chain in config.CHAINS)
-    if base_enabled:
+    v2_base_enabled = config.V2_SNAPSHOT_ENABLED and any(
+        chain.name == "base" for chain in config.CHAINS
+    )
+    base_snapshot = None
+    if v2_base_enabled:
         if snapshot_bundle is None or snapshot_consumer is None:
             raise RuntimeError("Fresh atomic Base snapshot is unavailable")
         snapshot_consumer.require(snapshot_bundle)
-    base_snapshot = (
-        snapshot_bundle.market_maker(
+        base_snapshot = snapshot_bundle.market_maker(
             expected_address=mm_address,
             expected_usdc_address=config.USDC_ADDRESS,
             expected_allowance_spender=config.MARGIN_POOL_ADDRESS,
         )
-        if snapshot_bundle is not None
-        else {}
-    )
     # 1. Delete stale quotes from previous cycle (per-chain)
     for chain_cfg in config.CHAINS:
-        if chain_cfg.name == "base":
+        if v2_base_enabled and chain_cfg.name == "base":
             snapshot_consumer.require(snapshot_bundle)
         try:
             deleted = api_client.delete_quotes(chain=chain_cfg.name)
@@ -182,7 +182,7 @@ def run_cycle(
             )
 
     # 2. Poll fills via REST as fallback (WS may miss events)
-    if base_enabled:
+    if v2_base_enabled:
         snapshot_consumer.require(snapshot_bundle)
     _poll_fills_rest(snapshot_bundle, snapshot_consumer)
 
@@ -352,7 +352,7 @@ def _run_asset_cycle(
     chain_label = f"{chain}/{asset_name}".upper()
     mkt = _get_market(asset_name, chain)
 
-    if chain == "base":
+    if chain == "base" and config.V2_SNAPSHOT_ENABLED:
         if snapshot_bundle is None or snapshot_consumer is None:
             raise RuntimeError("Fresh atomic Base market snapshot is unavailable")
         snapshot_consumer.require(snapshot_bundle)
@@ -462,11 +462,13 @@ def _quote_and_submit(
             config.SOLANA_BATCH_SETTLER,
             _solana_maker_pubkey,
         )
-    else:
+    elif config.V2_SNAPSHOT_ENABLED:
         try:
             nonce = int(base_snapshot["maker_nonce"])
         except (KeyError, TypeError, ValueError) as exc:
             raise RuntimeError("Atomic Base quote nonce is unavailable") from exc
+    else:
+        nonce = read_maker_nonce(w3, config.BATCH_SETTLER, mm_address)
 
     quotes = build_quotes(
         market,
@@ -485,11 +487,13 @@ def _quote_and_submit(
     if chain == "solana":
         payloads = _sign_quotes_solana(quotes)
     else:
-        if snapshot_consumer is None or snapshot_bundle is None:
-            raise RuntimeError("Fresh atomic Base snapshot is unavailable")
-        snapshot_consumer.require(snapshot_bundle)
+        if config.V2_SNAPSHOT_ENABLED:
+            if snapshot_consumer is None or snapshot_bundle is None:
+                raise RuntimeError("Fresh atomic Base snapshot is unavailable")
+            snapshot_consumer.require(snapshot_bundle)
         payloads = _sign_quotes_base(quotes, domain)
-        snapshot_consumer.require(snapshot_bundle)
+        if config.V2_SNAPSHOT_ENABLED:
+            snapshot_consumer.require(snapshot_bundle)
 
     result = api_client.submit_quotes(payloads)
     log.info(
@@ -652,8 +656,8 @@ def _log_capacity_snapshot(
 
 
 def _poll_fills_rest(
-    snapshot_bundle: SnapshotBundle | None,
-    snapshot_consumer: SnapshotConsumer | None,
+    snapshot_bundle: SnapshotBundle | None = None,
+    snapshot_consumer: SnapshotConsumer | None = None,
 ) -> None:
     """Check for new fills via REST API as WS fallback."""
     # Need at least one asset with market data
@@ -664,9 +668,10 @@ def _poll_fills_rest(
     except Exception:
         log.warning("Failed to poll fills", exc_info=True)
         return
-    if snapshot_bundle is None or snapshot_consumer is None:
-        raise RuntimeError("Fresh atomic fill snapshot is unavailable")
-    snapshot_consumer.require(snapshot_bundle)
+    if config.V2_SNAPSHOT_ENABLED:
+        if snapshot_bundle is None or snapshot_consumer is None:
+            raise RuntimeError("Fresh atomic fill snapshot is unavailable")
+        snapshot_consumer.require(snapshot_bundle)
     for fill in fills:
         tx = fill.get("tx_hash", "")
         if tx and tx not in _seen_tx_hashes:
@@ -696,14 +701,25 @@ def _resolve_underlying(otoken_addr: str) -> tuple[str, str, str]:
 def _handle_fill(
     fill: dict,
     *,
-    snapshot_consumer: SnapshotConsumer,
+    snapshot_consumer: SnapshotConsumer | None = None,
     snapshot_bundle: SnapshotBundle | None = None,
 ) -> None:
-    """Process one fill only while its exact atomic snapshot remains current."""
-    bundle = (
-        snapshot_bundle if snapshot_bundle is not None else snapshot_consumer.current()
-    )
-    snapshot_consumer.require(bundle)
+    """Process a fill using V1 market state or a required current V2 snapshot."""
+    bundle = None
+    decision_validator = None
+    if config.V2_SNAPSHOT_ENABLED:
+        if snapshot_consumer is None:
+            raise RuntimeError("Fresh atomic fill snapshot is unavailable")
+        bundle = (
+            snapshot_bundle
+            if snapshot_bundle is not None
+            else snapshot_consumer.current()
+        )
+
+        def decision_validator():
+            snapshot_consumer.require(bundle)
+
+        decision_validator()
     with _fill_lock:
         tx = fill.get("tx_hash", "")
         existing_position = next(
@@ -715,7 +731,7 @@ def _handle_fill(
 
         otoken_addr = fill.get("otoken_address", "")
         underlying, hedge_symbol, chain = _resolve_underlying(otoken_addr)
-        if chain == "base":
+        if chain == "base" and bundle is not None:
             market = bundle.market(underlying)
             mkt = MarketSnapshot(spot=float(market["spot"]), iv=float(market["iv"]))
         else:
@@ -733,7 +749,8 @@ def _handle_fill(
 
         try:
             if existing_position is None:
-                snapshot_consumer.require(bundle)
+                if decision_validator is not None:
+                    decision_validator()
                 added = _tracker.add_position(
                     fill,
                     mkt.spot,
@@ -741,7 +758,7 @@ def _handle_fill(
                     config.RISK_FREE_RATE,
                     underlying=underlying,
                     hedge_symbol=hedge_symbol,
-                    decision_validator=lambda: snapshot_consumer.require(bundle),
+                    decision_validator=decision_validator,
                 )
                 if added is None:
                     return
@@ -752,14 +769,16 @@ def _handle_fill(
                     underlying.upper(),
                 )
                 return
-            snapshot_consumer.require(bundle)
+            if decision_validator is not None:
+                decision_validator()
             _tracker.rebalance_hedge(
                 mkt.spot,
                 underlying,
                 hedge_symbol,
-                decision_validator=lambda: snapshot_consumer.require(bundle),
+                decision_validator=decision_validator,
             )
-            snapshot_consumer.require(bundle)
+            if decision_validator is not None:
+                decision_validator()
             _tracker.log_portfolio(mkt.spot)
             if tx:
                 _seen_tx_hashes.add(tx)
@@ -795,16 +814,18 @@ def main() -> None:
     mm_address = Account.from_key(config.MM_PRIVATE_KEY).address
     transaction_w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
     domain = build_domain(config.CHAIN_ID, config.BATCH_SETTLER)
-    snapshot_consumer = SnapshotConsumer(
-        lambda: api_client.get_snapshot_envelope(
+    snapshot_consumer = None
+    if config.V2_SNAPSHOT_ENABLED:
+        snapshot_consumer = SnapshotConsumer(
+            lambda: api_client.get_snapshot_envelope(
+                environment=config.SNAPSHOT_ENVIRONMENT,
+                chain_id=config.CHAIN_ID,
+            ),
             environment=config.SNAPSHOT_ENVIRONMENT,
             chain_id=config.CHAIN_ID,
-        ),
-        environment=config.SNAPSHOT_ENVIRONMENT,
-        chain_id=config.CHAIN_ID,
-        poll_interval_seconds=config.SNAPSHOT_POLL_INTERVAL_SECONDS,
-    )
-    snapshot_consumer.start()
+            poll_interval_seconds=config.SNAPSHOT_POLL_INTERVAL_SECONDS,
+        )
+        snapshot_consumer.start()
 
     # Explicit opt-in: fail fast if the operator enabled publishing but init fails.
     if config.SOLANA_QUOTE_PUBLISHING_ENABLED:
@@ -824,6 +845,7 @@ def main() -> None:
     log.info("  Base RPC:    configured")
     log.info("  Chains:      %s", [c.name for c in config.CHAINS])
     log.info("  Base assets: %s", [a.name for a in config.ASSETS])
+    log.info("  V2 snapshot mode: %s", config.V2_SNAPSHOT_ENABLED)
     log.info(
         "  Solana quote publishing: %s",
         "enabled" if config.SOLANA_QUOTE_PUBLISHING_ENABLED else "disabled",
@@ -887,11 +909,12 @@ def main() -> None:
         lambda fill: _handle_fill(fill, snapshot_consumer=snapshot_consumer)
     )
     fill_listener.start()
-    fund_allocator.start(snapshot_consumer, transaction_w3)
-    fund_operations_keeper.start(snapshot_consumer, transaction_w3)
-    covered_call_allocator.start(snapshot_consumer, transaction_w3)
-    covered_call_operations_keeper.start(snapshot_consumer, transaction_w3)
-    meta_wheel_allocator.start(snapshot_consumer, transaction_w3)
+    if config.V2_SNAPSHOT_ENABLED:
+        fund_allocator.start(snapshot_consumer, transaction_w3)
+        fund_operations_keeper.start(snapshot_consumer, transaction_w3)
+        covered_call_allocator.start(snapshot_consumer, transaction_w3)
+        covered_call_operations_keeper.start(snapshot_consumer, transaction_w3)
+        meta_wheel_allocator.start(snapshot_consumer, transaction_w3)
 
     cycle = 0
     while True:
@@ -903,7 +926,7 @@ def main() -> None:
                 transaction_w3,
                 domain,
                 mm_address,
-                snapshot_consumer.current(),
+                snapshot_consumer.current() if snapshot_consumer is not None else None,
                 snapshot_consumer,
             )
         except Exception:

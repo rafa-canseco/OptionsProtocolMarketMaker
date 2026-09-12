@@ -395,7 +395,7 @@ class CspFundOperationsKeeper:
 
 
 def start(snapshots: SnapshotConsumer, transaction_w3: Web3) -> threading.Thread | None:
-    if not config.FUND_OPERATIONS_KEEPER_ENABLED:
+    if not config.V2_SNAPSHOT_ENABLED or not config.FUND_OPERATIONS_KEEPER_ENABLED:
         log.info("Fund operations keeper disabled")
         return None
     thread = threading.Thread(

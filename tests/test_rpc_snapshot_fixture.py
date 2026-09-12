@@ -78,6 +78,7 @@ class EmptyTracker:
 def test_canonical_fixture_drives_every_recurrent_seam_without_provider_reads(
     monkeypatch,
 ):
+    monkeypatch.setattr(config, "V2_SNAPSHOT_ENABLED", True)
     raw = json.loads(FIXTURE.read_text())
     assert [fund["fund_type"] for fund in raw["funds"]] == [
         "csp",
