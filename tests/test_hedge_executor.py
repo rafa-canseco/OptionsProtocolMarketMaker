@@ -61,6 +61,7 @@ def _setup_live_mode():
     hedge_executor._address = "0xTEST"
     hedge_executor._api_url = "https://api.hyperliquid.xyz"
     hedge_executor._initialized_dexs = ("",)
+    hedge_executor._active_symbols = {"ETH"}
     hedge_executor._dex_infos = {}
     hedge_executor._dex_exchanges = {}
     hedge_executor._account_abstraction = "disabled"
@@ -245,6 +246,19 @@ def test_open_hedge_handles_failure():
     assert result is None
 
 
+@patch("src.config.HEDGE_MODE", "live")
+def test_live_orders_reject_symbols_not_verified_at_init(caplog):
+    _setup_live_mode()
+
+    with caplog.at_level(logging.ERROR):
+        assert hedge_executor.open_hedge("NVDA", True, 1.0) is None
+        assert hedge_executor.close_hedge("NVDA") is None
+
+    hedge_executor._exchange.market_open.assert_not_called()
+    hedge_executor._exchange.market_close.assert_not_called()
+    assert caplog.text.count("Hyperliquid hedge symbol is not active: NVDA") == 2
+
+
 def test_simulate_mode_no_api_calls():
     """Simulate mode never touches Hyperliquid API."""
     hedge_executor._exchange = None
@@ -348,6 +362,92 @@ def test_is_hedge_ready_requires_initialized_symbol():
 
     assert hedge_executor.is_hedge_ready("SOL") is True
     assert hedge_executor.is_hedge_ready("TSLAX") is False
+
+
+@patch("src.config.HEDGE_MODE", "live")
+@patch("src.config.HYPERLIQUID_ACCOUNT_MODE", "disabled")
+@patch("src.hedge_executor.Exchange")
+@patch("src.hedge_executor.Info")
+@patch("src.hedge_executor.eth_account.Account.from_key")
+def test_init_disables_asset_when_symbol_is_missing_from_universe(
+    mock_account, mock_info_cls, mock_exchange_cls, caplog
+):
+    wallet = MagicMock()
+    wallet.address = "0x1111111111111111111111111111111111111111"
+    mock_account.return_value = wallet
+    info = mock_info_cls.return_value
+    info.meta.return_value = {
+        "universe": [{"name": symbol} for symbol in ("ZEC", "HYPE", "VVV")]
+    }
+    assets = [
+        hedge_executor.config.AssetConfig(name, symbol, 3, 0.25)
+        for name, symbol in (
+            ("nvdac", "NVDA"),
+            ("cbzec", "ZEC"),
+            ("cbhype", "HYPE"),
+            ("vvv", "VVV"),
+        )
+    ]
+
+    with caplog.at_level(logging.ERROR):
+        hedge_executor.init(assets)
+
+    assert hedge_executor._active_symbols == {"ZEC", "HYPE", "VVV"}
+    assert hedge_executor.is_hedge_ready("NVDA") is False
+    assert "Hyperliquid symbol unavailable for NVDAC: NVDA" in caplog.text
+    assert mock_exchange_cls.return_value.update_leverage.call_count == 3
+
+
+@patch("src.config.HEDGE_MODE", "live")
+@patch("src.config.HYPERLIQUID_ACCOUNT_MODE", "disabled")
+@patch("src.hedge_executor.Exchange")
+@patch("src.hedge_executor.Info")
+@patch("src.hedge_executor.eth_account.Account.from_key")
+def test_init_discovers_and_routes_namespaced_nvda_hedge(
+    mock_account, mock_info_cls, mock_exchange_cls
+):
+    wallet = MagicMock()
+    wallet.address = "0x1111111111111111111111111111111111111111"
+    mock_account.return_value = wallet
+    default_info = MagicMock()
+    default_info.meta.return_value = {
+        "universe": [{"name": symbol} for symbol in ("ZEC", "HYPE", "VVV")]
+    }
+    state = {
+        "marginSummary": {"accountValue": "1000"},
+        "withdrawable": "500",
+        "assetPositions": [],
+    }
+    default_info.user_state.return_value = state
+    xyz_info = MagicMock()
+    xyz_info.meta.return_value = {"universe": [{"name": "xyz:NVDA"}]}
+    xyz_info.user_state.return_value = state
+    xyz_info.coin_to_asset = {}
+    mock_info_cls.side_effect = [default_info, xyz_info]
+    default_exchange = MagicMock()
+    xyz_exchange = MagicMock()
+    xyz_exchange.market_open.return_value = MOCK_OPEN_RESULT
+    mock_exchange_cls.side_effect = [default_exchange, xyz_exchange]
+    assets = [
+        hedge_executor.config.AssetConfig(name, symbol, 3, exposure)
+        for name, symbol, exposure in (
+            ("nvdac", "xyz:NVDA", 0.1),
+            ("cbzec", "ZEC", 0.2),
+            ("cbhype", "HYPE", 0.3),
+            ("vvv", "VVV", 0.4),
+        )
+    ]
+
+    hedge_executor.init(assets)
+    result = hedge_executor.open_hedge("xyz:NVDA", True, 1.0)
+
+    assert hedge_executor._active_symbols == {"xyz:NVDA", "ZEC", "HYPE", "VVV"}
+    xyz_exchange.update_leverage.assert_called_once_with(3, "xyz:NVDA", is_cross=True)
+    xyz_exchange.market_open.assert_called_once_with(
+        "xyz:NVDA", True, 1.0, slippage=0.01
+    )
+    default_exchange.market_open.assert_not_called()
+    assert result is not None
 
 
 def test_dex_for_symbol_supports_builder_perps():

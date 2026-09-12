@@ -210,7 +210,10 @@ class CoveredCallFundOperationsKeeper:
 
 
 def start(snapshots: SnapshotConsumer, transaction_w3: Web3) -> threading.Thread | None:
-    if not config.COVERED_CALL_OPERATIONS_KEEPER_ENABLED:
+    if (
+        not config.V2_SNAPSHOT_ENABLED
+        or not config.COVERED_CALL_OPERATIONS_KEEPER_ENABLED
+    ):
         log.info("Covered-call operations keeper disabled")
         return None
     thread = threading.Thread(

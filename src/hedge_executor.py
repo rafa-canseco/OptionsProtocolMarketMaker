@@ -361,6 +361,9 @@ def open_hedge(asset: str, is_buy: bool, size: float) -> dict | None:
         )
         return None
 
+    if asset not in _active_symbols:
+        log.error("Hyperliquid hedge symbol is not active: %s", asset)
+        return None
     exchange = _exchange_for_symbol(asset)
     if not exchange:
         log.error("Hyperliquid not initialized, cannot hedge")
@@ -415,6 +418,9 @@ def close_hedge(asset: str, size: float | None = None) -> dict | None:
         log.info("[HEDGE CLOSE SIMULATED] %s size=%s", asset, size)
         return None
 
+    if asset not in _active_symbols:
+        log.error("Hyperliquid hedge symbol is not active: %s", asset)
+        return None
     exchange = _exchange_for_symbol(asset)
     if not exchange:
         log.error("Hyperliquid not initialized, cannot close")

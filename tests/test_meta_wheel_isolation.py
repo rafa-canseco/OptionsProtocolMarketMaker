@@ -11,6 +11,11 @@ from src.covered_call_allocator import (
 from src.fund_allocator import liquid_collateral_target, load_testnet_policy
 
 
+@pytest.fixture(autouse=True)
+def _enable_v2_snapshots(monkeypatch):
+    monkeypatch.setattr(config, "V2_SNAPSHOT_ENABLED", True)
+
+
 def _clear_railway_environment(monkeypatch):
     for name in (
         "RAILWAY_ENVIRONMENT_ID",
