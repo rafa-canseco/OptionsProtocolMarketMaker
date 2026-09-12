@@ -129,6 +129,8 @@ if DEADLINE_SECONDS < MIN_LAZY_QUOTE_TTL_SECONDS:
     )
     sys.exit(1)
 CHAIN_ID: int = int(os.getenv("CHAIN_ID", "84532"))
+# V1 manual trading is independent of undeployed V2 funds. Never auto-fallback.
+V2_SNAPSHOT_ENABLED: bool = _env_flag("V2_SNAPSHOT_ENABLED", default=False)
 SNAPSHOT_ENVIRONMENT: str = _current_environment() or "development"
 SNAPSHOT_POLL_INTERVAL_SECONDS: float = max(
     float(os.getenv("SNAPSHOT_POLL_INTERVAL_SECONDS", "2")), 0.1

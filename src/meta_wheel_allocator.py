@@ -1482,7 +1482,7 @@ install_chain_port_factory(_authoritative_chain_port_factory)
 def start(
     snapshots: SnapshotConsumer | None = None, transaction_w3: Any = None
 ) -> threading.Thread | None:
-    if not config.META_WHEEL_ALLOCATOR_ENABLED:
+    if not config.V2_SNAPSHOT_ENABLED or not config.META_WHEEL_ALLOCATOR_ENABLED:
         log.info("Meta Wheel allocator disabled")
         return None
     # Activation is impossible until the exact B1N-419 manifest and the two

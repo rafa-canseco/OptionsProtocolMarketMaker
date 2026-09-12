@@ -119,6 +119,22 @@ def test_solana_quotes_default_to_legacy_enabled_outside_production():
     assert [chain.name for chain in config.CHAINS] == ["base", "solana"]
 
 
+@pytest.mark.parametrize(
+    ("raw", "enabled"), ((None, False), ("false", False), ("true", True))
+)
+def test_v2_snapshots_require_explicit_opt_in(raw, enabled):
+    env = _base_env()
+    if raw is not None:
+        env["V2_SNAPSHOT_ENABLED"] = raw
+
+    assert _reload_config(env).V2_SNAPSHOT_ENABLED is enabled
+
+
+def test_v2_snapshot_flag_rejects_invalid_value():
+    with pytest.raises(SystemExit):
+        _reload_config(_base_env() | {"V2_SNAPSHOT_ENABLED": "ture"})
+
+
 def test_covered_call_workers_are_disabled_by_default():
     config = _reload_config(_base_env())
 
@@ -254,8 +270,10 @@ def test_solana_quotes_enable_only_with_explicit_flag():
     assert [chain.name for chain in config.CHAINS] == ["base", "solana"]
 
 
-def test_solana_quotes_default_to_disabled_in_production():
+@pytest.mark.parametrize("snapshot_mode", ("false", "true"))
+def test_solana_quotes_default_to_disabled_in_production(snapshot_mode):
     env = _base_env() | {
+        "V2_SNAPSHOT_ENABLED": snapshot_mode,
         "SOLANA_PRIVATE_KEY": "base58-secret",
         "SOLANA_RPC_URL": "https://solana-rpc.example.com",
         "SOLANA_ASSETS": "sol,tslax",

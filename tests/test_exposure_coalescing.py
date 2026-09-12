@@ -9,6 +9,11 @@ from src import main as mm_main
 from src.snapshot_consumer import SnapshotUnavailable
 
 
+@pytest.fixture(autouse=True)
+def _enable_v2_snapshots(monkeypatch):
+    monkeypatch.setattr(mm_main.config, "V2_SNAPSHOT_ENABLED", True)
+
+
 def test_base_quote_publication_rechecks_snapshot_after_signing(monkeypatch):
     cap = SimpleNamespace(
         status="active",

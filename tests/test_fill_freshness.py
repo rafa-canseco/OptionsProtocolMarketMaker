@@ -12,6 +12,11 @@ from src.snapshot_consumer import SnapshotUnavailable
 FILL = {"tx_hash": "0xfill", "otoken_address": "0xotoken"}
 
 
+@pytest.fixture(autouse=True)
+def _enable_v2_snapshots(monkeypatch):
+    monkeypatch.setattr(main.config, "V2_SNAPSHOT_ENABLED", True)
+
+
 def _fill_runtime(monkeypatch):
     tracker = MagicMock()
     tracker.positions = []
