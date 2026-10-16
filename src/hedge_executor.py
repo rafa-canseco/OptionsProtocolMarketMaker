@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -29,6 +30,8 @@ _dex_infos: dict[str, Info] = {}
 _api_url: str = ""
 _account_abstraction: str = "disabled"
 _spot_state_cache: dict[str, Any] = {"ts": 0.0, "state": None}
+_order_lock = threading.Lock()
+_last_order_completed_ms = 0
 
 _UNIFIED_ACCOUNT_MODES = {"unifiedAccount", "portfolioMargin"}
 _SPOT_STATE_TTL_SECONDS = 2.0
@@ -57,6 +60,19 @@ def _iter_initialized_dexs() -> tuple[str, ...]:
 
 def _is_unified_account_mode() -> bool:
     return _account_abstraction in _UNIFIED_ACCOUNT_MODES
+
+
+def _serialized_order(call):
+    """Serialize signer use and reserve a distinct millisecond nonce."""
+    global _last_order_completed_ms
+    with _order_lock:
+        now_ms = int(time.time() * 1000)
+        if now_ms <= _last_order_completed_ms:
+            time.sleep((_last_order_completed_ms + 1 - now_ms) / 1000)
+        try:
+            return call()
+        finally:
+            _last_order_completed_ms = int(time.time() * 1000)
 
 
 def _post_info(payload: dict[str, Any]) -> Any:
@@ -185,8 +201,18 @@ def init(assets: list[AssetConfig] | None = None) -> None:
     # Empty spot_meta bypasses SDK bug where testnet spot token
     # indices are out of range. Perp metadata still loads fine.
     empty_spot: dict = {"universe": [], "tokens": []}
-    _info = Info(api_url, skip_ws=True, spot_meta=empty_spot)
-    _exchange = Exchange(wallet, api_url, spot_meta=empty_spot)
+    _info = Info(
+        api_url,
+        skip_ws=True,
+        spot_meta=empty_spot,
+        timeout=config.HYPERLIQUID_TIMEOUT_SECONDS,
+    )
+    _exchange = Exchange(
+        wallet,
+        api_url,
+        spot_meta=empty_spot,
+        timeout=config.HYPERLIQUID_TIMEOUT_SECONDS,
+    )
     _dex_infos = {}
     _dex_exchanges = {}
     for dex in perp_dexs:
@@ -195,12 +221,14 @@ def init(assets: list[AssetConfig] | None = None) -> None:
             skip_ws=True,
             spot_meta=empty_spot,
             perp_dexs=[dex],
+            timeout=config.HYPERLIQUID_TIMEOUT_SECONDS,
         )
         _dex_exchanges[dex] = Exchange(
             wallet,
             api_url,
             spot_meta=empty_spot,
             perp_dexs=[dex],
+            timeout=config.HYPERLIQUID_TIMEOUT_SECONDS,
         )
     _active_symbols = set()
     _account_abstraction = _detect_account_abstraction()
@@ -375,8 +403,10 @@ def open_hedge(asset: str, is_buy: bool, size: float) -> dict | None:
         return None
 
     try:
-        result = exchange.market_open(
-            asset, is_buy, size, slippage=config.HEDGE_SLIPPAGE
+        result = _serialized_order(
+            lambda: exchange.market_open(
+                asset, is_buy, size, slippage=config.HEDGE_SLIPPAGE
+            )
         )
         if result["status"] == "ok":
             statuses = result["response"]["data"]["statuses"]
@@ -429,11 +459,15 @@ def close_hedge(asset: str, size: float | None = None) -> dict | None:
     try:
         if size is not None:
             size = _round_size(asset, size)
-            result = exchange.market_close(
-                asset, sz=size, slippage=config.HEDGE_SLIPPAGE
+            result = _serialized_order(
+                lambda: exchange.market_close(
+                    asset, sz=size, slippage=config.HEDGE_SLIPPAGE
+                )
             )
         else:
-            result = exchange.market_close(asset, slippage=config.HEDGE_SLIPPAGE)
+            result = _serialized_order(
+                lambda: exchange.market_close(asset, slippage=config.HEDGE_SLIPPAGE)
+            )
 
         if result and result["status"] == "ok":
             statuses = result["response"]["data"]["statuses"]

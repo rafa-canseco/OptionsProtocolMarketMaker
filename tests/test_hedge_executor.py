@@ -4,6 +4,7 @@ Verifies the live execution path: open, close, adjust hedges.
 """
 
 import logging
+import threading
 import time
 from unittest.mock import MagicMock, patch
 
@@ -66,6 +67,7 @@ def _setup_live_mode():
     hedge_executor._dex_exchanges = {}
     hedge_executor._account_abstraction = "disabled"
     hedge_executor._spot_state_cache = {"ts": 0.0, "state": None}
+    hedge_executor._last_order_completed_ms = 0
 
 
 @patch("src.config.HEDGE_MODE", "live")
@@ -82,6 +84,34 @@ def test_open_hedge_calls_market_open():
     assert result is not None
     assert result["size"] == 1.08
     assert result["avg_price"] == 1973.50
+
+
+@patch("src.config.HEDGE_MODE", "live")
+def test_concurrent_hedges_use_distinct_serialized_nonces():
+    _setup_live_mode()
+    call_milliseconds = []
+    barrier = threading.Barrier(3)
+
+    def market_open(*_args, **_kwargs):
+        call_milliseconds.append(int(time.time() * 1000))
+        return MOCK_OPEN_RESULT
+
+    hedge_executor._exchange.market_open.side_effect = market_open
+
+    def submit():
+        barrier.wait()
+        hedge_executor.open_hedge("ETH", True, 1.08)
+
+    threads = [threading.Thread(target=submit) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    barrier.wait()
+    for thread in threads:
+        thread.join(timeout=1)
+
+    assert all(not thread.is_alive() for thread in threads)
+    assert len(call_milliseconds) == 2
+    assert len(set(call_milliseconds)) == 2
 
 
 @patch("src.config.HEDGE_MODE", "live")
