@@ -9,6 +9,7 @@ import math
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -214,11 +215,27 @@ def run_cycle(
     # transitional telemetry; post-publication semantics are deferred.
     exposure_snapshot = _fetch_cycle_exposure()
 
-    # 5. Per-chain, per-asset: fetch market data, quote, sign, submit
-    for chain_cfg in config.CHAINS:
-        for asset_cfg in chain_cfg.assets:
-            try:
-                _run_asset_cycle(
+    # 5. Per-chain, per-asset: fetch market data, quote, sign, submit.
+    # V1 assets are independent, so parallel work keeps all capacity reports
+    # inside the backend's fail-closed freshness window. Preserve sequential V2
+    # snapshot consumption until that disabled path is explicitly qualified.
+    jobs = [
+        (chain_cfg, asset_cfg)
+        for chain_cfg in config.CHAINS
+        for asset_cfg in chain_cfg.assets
+    ]
+    if not jobs:
+        return exposure_snapshot
+    with ThreadPoolExecutor(
+        max_workers=1 if v2_base_enabled else len(jobs),
+        thread_name_prefix="asset-cycle",
+    ) as pool:
+        futures = [
+            (
+                chain_cfg,
+                asset_cfg,
+                pool.submit(
+                    _run_asset_cycle,
                     w3=w3 if chain_cfg.name == "base" else None,
                     domain=domain if chain_cfg.name == "base" else None,
                     mm_address=mm_address,
@@ -232,7 +249,13 @@ def run_cycle(
                     snapshot_consumer=(
                         snapshot_consumer if chain_cfg.name == "base" else None
                     ),
-                )
+                ),
+            )
+            for chain_cfg, asset_cfg in jobs
+        ]
+        for chain_cfg, asset_cfg, future in futures:
+            try:
+                future.result()
             except Exception:
                 log.error(
                     "Asset cycle failed for %s/%s",
@@ -810,9 +833,19 @@ def _init_solana() -> None:
     _solana_maker_pubkey = str(_solana_keypair.pubkey())
 
 
+def _build_transaction_web3() -> Web3:
+    return Web3(
+        Web3.HTTPProvider(
+            config.RPC_URL,
+            request_kwargs={"timeout": config.BASE_RPC_TIMEOUT_SECONDS},
+            exception_retry_configuration=None,
+        )
+    )
+
+
 def main() -> None:
     mm_address = Account.from_key(config.MM_PRIVATE_KEY).address
-    transaction_w3 = Web3(Web3.HTTPProvider(config.RPC_URL))
+    transaction_w3 = _build_transaction_web3()
     domain = build_domain(config.CHAIN_ID, config.BATCH_SETTLER)
     snapshot_consumer = None
     if config.V2_SNAPSHOT_ENABLED:

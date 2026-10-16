@@ -108,6 +108,12 @@ RPC_URL: str = _require("RPC_URL")
 REFRESH_INTERVAL: int = int(os.getenv("REFRESH_INTERVAL", "60"))
 REFRESH_INTERVAL_FAST: int = max(int(os.getenv("REFRESH_INTERVAL_FAST", "30")), 5)
 FAST_REFRESH_HOURS: int = max(int(os.getenv("FAST_REFRESH_HOURS", "6")), 1)
+HYPERLIQUID_TIMEOUT_SECONDS: float = max(
+    float(os.getenv("HYPERLIQUID_TIMEOUT_SECONDS", "10")), 1.0
+)
+BASE_RPC_TIMEOUT_SECONDS: float = max(
+    float(os.getenv("BASE_RPC_TIMEOUT_SECONDS", "10")), 1.0
+)
 SPREAD_BPS: int = int(os.getenv("SPREAD_BPS", "200"))
 MAX_AMOUNT: int = int(os.getenv("MAX_AMOUNT", "500000000"))
 DEADLINE_SECONDS: int = int(os.getenv("DEADLINE_SECONDS", "300"))
