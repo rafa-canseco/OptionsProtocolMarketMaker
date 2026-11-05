@@ -102,6 +102,7 @@ _solana_maker_pubkey: str = ""  # base58 pubkey string
 class MarketSnapshot:
     spot: float = 0.0
     iv: float = 0.0
+    observed_at: int = 0
 
 
 _tracker = PositionTracker()
@@ -385,6 +386,7 @@ def _run_asset_cycle(
     otokens = market.get("available_otokens", [])
     mkt.spot = market["spot"]
     mkt.iv = market["iv"]
+    mkt.observed_at = int(market.get("observed_at") or time.time())
     log.info(
         "Market [%s]: spot=%.2f iv=%.4f oTokens=%d",
         chain_label,
@@ -553,6 +555,7 @@ def _calculate_and_report_capacity(
 
     is_internal = config.MM_TYPE == "internal"
     cap_payload = cap.to_dict(internal=is_internal)
+    cap_payload.update({"spot": mkt.spot, "spot_observed_at": mkt.observed_at})
     log.info(
         "Capacity [%s/%s]: %.2f units ($%.0f) status=%s",
         chain.upper(),
