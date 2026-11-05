@@ -13,6 +13,7 @@ _SESSION = requests.Session()
 _SESSION.headers.update({"X-API-Key": MM_API_KEY})
 
 _TIMEOUT = 15
+_MARKET_TIMEOUT = 25
 _MATERIALIZATION_TIMEOUT = 180
 
 
@@ -50,7 +51,7 @@ def get_market_data(
     params: dict[str, str] = {"asset": asset}
     if chain != "base":
         params["chain"] = chain
-    resp = _SESSION.get(_url("/mm/market"), params=params, timeout=_TIMEOUT)
+    resp = _SESSION.get(_url("/mm/market"), params=params, timeout=_MARKET_TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 
