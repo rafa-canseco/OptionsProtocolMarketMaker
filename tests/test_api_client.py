@@ -25,6 +25,21 @@ def test_protocol_fee_policy_requires_valid_backend_value(market):
         api_client.require_protocol_fee_match(market, 1_000)
 
 
+def test_market_read_allows_backend_source_validation_budget():
+    from src import api_client
+
+    response = MagicMock()
+    response.json.return_value = {"spot": 42.0}
+    with patch.object(api_client._SESSION, "get", return_value=response) as get:
+        assert api_client.get_market_data("cbhype") == {"spot": 42.0}
+
+    get.assert_called_once_with(
+        api_client._url("/mm/market"),
+        params={"asset": "cbhype"},
+        timeout=api_client._MARKET_TIMEOUT,
+    )
+
+
 def test_report_capacity_posts_payload():
     """report_capacity POSTs to /mm/capacity."""
     from src import api_client
