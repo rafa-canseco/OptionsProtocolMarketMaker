@@ -127,7 +127,9 @@ def test_v1_cycle_uses_legacy_market_capacity_nonce_and_real_quote_signature(run
         urlsplit(request.args[0]).path for request in runtime.session.get.call_args_list
     ] == ["/mm/fills", "/mm/exposure", "/mm/market"]
     runtime.session.get.assert_any_call(
-        main.api_client._url("/mm/market"), params={"asset": "eth"}, timeout=15
+        main.api_client._url("/mm/market"),
+        params={"asset": "eth"},
+        timeout=main.api_client._MARKET_TIMEOUT,
     )
     owner = runtime.address[2:].lower().zfill(64)
     spender = config.MARGIN_POOL_ADDRESS[2:].lower().zfill(64)
