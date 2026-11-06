@@ -169,10 +169,12 @@ def run_cycle(
             expected_usdc_address=config.USDC_ADDRESS,
             expected_allowance_spender=config.MARGIN_POOL_ADDRESS,
         )
-    # 1. Delete stale quotes from previous cycle (per-chain)
+    # 1. Delete stale quotes from previous cycle (per-chain).
+    # Base quotes expire by signed deadline and are replaced per oToken on submit;
+    # retaining them avoids an empty market when one asset refresh is transiently unavailable.
     for chain_cfg in config.CHAINS:
-        if v2_base_enabled and chain_cfg.name == "base":
-            snapshot_consumer.require(snapshot_bundle)
+        if chain_cfg.name == "base":
+            continue
         try:
             deleted = api_client.delete_quotes(chain=chain_cfg.name)
             log.info("Deleted previous %s quotes: %s", chain_cfg.name, deleted)
