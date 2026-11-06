@@ -74,6 +74,7 @@ def test_single_asset_cycle_reads_exposure_once(monkeypatch):
     result = mm_main.run_cycle(Mock(), {}, "0xmaker", bundle, snapshots)
 
     assert result is exposure
+    mm_main.api_client.delete_quotes.assert_not_called()
     get_exposure.assert_called_once_with()
     assert run_asset.call_count == len(assets)
     assert run_asset.call_args.kwargs["exposure_snapshot"] is exposure
@@ -147,8 +148,7 @@ def test_exposure_failure_never_fabricates_snapshot_or_bypasses_capacity_gate(
     ("requirements", "expected_deletions"),
     (
         ([SnapshotUnavailable("expired at entry")], 0),
-        ([None, SnapshotUnavailable("expired before deletion")], 0),
-        ([None, None, SnapshotUnavailable("expired before fill poll")], 1),
+        ([None, SnapshotUnavailable("expired before fill poll")], 0),
     ),
 )
 def test_expired_cycle_snapshot_prevents_unguarded_quote_side_effects(
