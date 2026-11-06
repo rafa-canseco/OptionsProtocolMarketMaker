@@ -120,9 +120,7 @@ def _published_quotes(runtime):
 def test_v1_cycle_uses_legacy_market_capacity_nonce_and_real_quote_signature(runtime):
     main.run_cycle(runtime.w3, runtime.domain, runtime.address)
 
-    runtime.session.delete.assert_called_once_with(
-        main.api_client._url("/mm/quotes"), params={"chain": "base"}, timeout=15
-    )
+    runtime.session.delete.assert_not_called()
     assert [
         urlsplit(request.args[0]).path for request in runtime.session.get.call_args_list
     ] == ["/mm/fills", "/mm/exposure", "/mm/market"]
