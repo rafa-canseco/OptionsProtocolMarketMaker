@@ -14,6 +14,7 @@ _SESSION.headers.update({"X-API-Key": MM_API_KEY})
 
 _TIMEOUT = 15
 _MARKET_TIMEOUT = 25
+_QUOTE_TIMEOUT = 30
 _MATERIALIZATION_TIMEOUT = 180
 
 
@@ -80,7 +81,7 @@ def submit_quotes(quotes: list[dict[str, Any]]) -> dict[str, Any]:
     resp = _SESSION.post(
         _url("/mm/quotes"),
         json={"quotes": quotes},
-        timeout=_TIMEOUT,
+        timeout=_QUOTE_TIMEOUT,
     )
     resp.raise_for_status()
     return resp.json()
