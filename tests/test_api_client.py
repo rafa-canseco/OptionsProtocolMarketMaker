@@ -40,6 +40,21 @@ def test_market_read_allows_backend_source_validation_budget():
     )
 
 
+def test_quote_submission_allows_backend_preflight_budget():
+    from src import api_client
+
+    response = MagicMock()
+    response.json.return_value = {"accepted": 1}
+    with patch.object(api_client._SESSION, "post", return_value=response) as post:
+        assert api_client.submit_quotes([{"quote_id": 1}]) == {"accepted": 1}
+
+    post.assert_called_once_with(
+        api_client._url("/mm/quotes"),
+        json={"quotes": [{"quote_id": 1}]},
+        timeout=api_client._QUOTE_TIMEOUT,
+    )
+
+
 def test_report_capacity_posts_payload():
     """report_capacity POSTs to /mm/capacity."""
     from src import api_client
