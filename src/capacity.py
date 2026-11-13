@@ -305,6 +305,7 @@ def calculate_capacity_internal(
     *,
     chain: str = "base",
     base_snapshot: Mapping[str, Any] | None = None,
+    base_capacity_reads: tuple[float, float] | None = None,
 ) -> CapacityReport:
     """Calculate MM capacity for a specific asset.
 
@@ -338,6 +339,8 @@ def calculate_capacity_internal(
                 )
             except (KeyError, TypeError, ValueError) as exc:
                 raise RuntimeError("Atomic Base capacity state is incomplete") from exc
+        elif base_capacity_reads is not None:
+            usdc_balance, usdc_allowance = base_capacity_reads
         else:
             usdc_balance = _read_usdc_balance(w3, mm_address)
             usdc_allowance = _read_usdc_allowance(w3, mm_address)

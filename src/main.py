@@ -9,7 +9,7 @@ import math
 import sys
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from urllib.parse import urlsplit
 
@@ -30,7 +30,12 @@ from src import (
     meta_wheel_allocator,
     trade_logger,
 )
-from src.capacity import calculate_capacity_internal, solana_call_capacity_raw
+from src.capacity import (
+    _read_usdc_allowance,
+    _read_usdc_balance,
+    calculate_capacity_internal,
+    solana_call_capacity_raw,
+)
 from src.position_tracker import PositionTracker, resume_pending_hedge_reconciliations
 from src.pricer import check_iv_divergence, validate_iv
 from src.quote_builder import build_quotes, to_api_payload, to_solana_api_payload
@@ -114,6 +119,47 @@ _fill_lock = threading.Lock()
 SPOT_HISTORY_MAX = 100
 
 
+class _CycleBaseReads:
+    """Single-flight Base reads scoped to one V1 quote cycle."""
+
+    def __init__(self, w3: Web3, mm_address: str) -> None:
+        self.w3 = w3
+        self.mm_address = mm_address
+        self._lock = threading.Lock()
+        self._reads = {}
+
+    def get(self, key: str, load):
+        with self._lock:
+            future = self._reads.get(key)
+            if future is None:
+                future = Future()
+                self._reads[key] = future
+                owner = True
+            else:
+                owner = False
+        if owner:
+            try:
+                future.set_result(load())
+            except Exception as exc:
+                future.set_exception(exc)
+        return future.result()
+
+    def capacity(self) -> tuple[float, float]:
+        return self.get(
+            "capacity",
+            lambda: (
+                _read_usdc_balance(self.w3, self.mm_address),
+                _read_usdc_allowance(self.w3, self.mm_address),
+            ),
+        )
+
+    def nonce(self) -> int:
+        return self.get(
+            "nonce",
+            lambda: read_maker_nonce(self.w3, config.BATCH_SETTLER, self.mm_address),
+        )
+
+
 def _get_market(asset: str, chain: str = "base") -> MarketSnapshot:
     key = f"{chain}/{asset}"
     if key not in _market:
@@ -160,6 +206,11 @@ def run_cycle(
         chain.name == "base" for chain in config.CHAINS
     )
     base_snapshot = None
+    base_reads = (
+        _CycleBaseReads(w3, mm_address)
+        if not v2_base_enabled and any(chain.name == "base" for chain in config.CHAINS)
+        else None
+    )
     if v2_base_enabled:
         if snapshot_bundle is None or snapshot_consumer is None:
             raise RuntimeError("Fresh atomic Base snapshot is unavailable")
@@ -252,6 +303,7 @@ def run_cycle(
                     snapshot_consumer=(
                         snapshot_consumer if chain_cfg.name == "base" else None
                     ),
+                    base_reads=base_reads if chain_cfg.name == "base" else None,
                 ),
             )
             for chain_cfg, asset_cfg in jobs
@@ -372,6 +424,7 @@ def _run_asset_cycle(
     base_snapshot: dict | None = None,
     snapshot_bundle: SnapshotBundle | None = None,
     snapshot_consumer: SnapshotConsumer | None = None,
+    base_reads: _CycleBaseReads | None = None,
 ) -> None:
     """Quote-refresh for a single asset on a given chain."""
     asset_name = asset_cfg.name
@@ -447,6 +500,7 @@ def _run_asset_cycle(
         base_snapshot,
         snapshot_bundle,
         snapshot_consumer,
+        base_reads,
     )
 
 
@@ -460,6 +514,7 @@ def _quote_and_submit(
     base_snapshot=None,
     snapshot_bundle=None,
     snapshot_consumer=None,
+    base_reads: _CycleBaseReads | None = None,
 ) -> None:
     """Build quotes, sign per-chain, and submit to backend."""
     asset_name = asset_cfg.name
@@ -474,6 +529,7 @@ def _quote_and_submit(
         asset_cfg,
         chain,
         base_snapshot,
+        base_reads.capacity() if chain == "base" and base_reads is not None else None,
     )
     if cap is None or cap.status == "full":
         return
@@ -495,7 +551,11 @@ def _quote_and_submit(
         except (KeyError, TypeError, ValueError) as exc:
             raise RuntimeError("Atomic Base quote nonce is unavailable") from exc
     else:
-        nonce = read_maker_nonce(w3, config.BATCH_SETTLER, mm_address)
+        nonce = (
+            base_reads.nonce()
+            if base_reads is not None
+            else read_maker_nonce(w3, config.BATCH_SETTLER, mm_address)
+        )
 
     quotes = build_quotes(
         market,
@@ -534,7 +594,13 @@ def _quote_and_submit(
 
 
 def _calculate_and_report_capacity(
-    w3, mkt, mm_address, asset_cfg, chain="base", base_snapshot=None
+    w3,
+    mkt,
+    mm_address,
+    asset_cfg,
+    chain="base",
+    base_snapshot=None,
+    base_capacity_reads=None,
 ):
     """Calculate capacity, report to backend. Returns cap or None."""
     try:
@@ -546,6 +612,7 @@ def _calculate_and_report_capacity(
             asset_config=asset_cfg,
             chain=chain,
             base_snapshot=base_snapshot,
+            base_capacity_reads=base_capacity_reads,
         )
     except Exception:
         log.warning(

@@ -1,6 +1,7 @@
 """B1N-517: V1 quoting stays independent of the opt-in V2 fund snapshot."""
 
 import json
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, call
@@ -209,6 +210,78 @@ def test_v1_fills_use_cached_market_and_retry_hedging_without_duplicate_position
         urlsplit(request.args[0]).path != "/mm/snapshot"
         for request in runtime.session.get.call_args_list
     )
+
+
+def _configure_multi_asset_runtime(runtime, monkeypatch):
+    second = config.AssetConfig("btc", "BTC", leverage=2, max_exposure=0.5)
+    assets = (runtime.asset, second)
+    monkeypatch.setattr(config, "ASSETS", list(assets))
+    monkeypatch.setattr(
+        config,
+        "CHAINS",
+        [config.ChainConfig("base", assets)],
+    )
+    return second
+
+
+def test_v1_multi_asset_cycle_shares_reads_and_refreshes_next_cycle(
+    runtime, monkeypatch
+):
+    _configure_multi_asset_runtime(runtime, monkeypatch)
+    barrier = threading.Barrier(2)
+    get = runtime.session.get.side_effect
+
+    def concurrent_market_get(url, **kwargs):
+        if urlsplit(url).path == "/mm/market":
+            barrier.wait(timeout=2)
+        return get(url, **kwargs)
+
+    runtime.session.get.side_effect = concurrent_market_get
+
+    for cycle in (1, 2):
+        main.run_cycle(runtime.w3, runtime.domain, runtime.address)
+        assert runtime.w3.eth.call.call_count == cycle * 2
+        nonce_reader = runtime.w3.eth.contract.return_value.functions.makerNonce
+        assert nonce_reader.return_value.call.call_count == cycle
+
+    quotes = _published_quotes(runtime)
+    assert len(quotes) == 4
+    assert {quote["maker_nonce"] for quote in quotes} == {7}
+
+
+def test_v1_multi_asset_early_market_exit_does_not_prefetch_reads(runtime, monkeypatch):
+    _configure_multi_asset_runtime(runtime, monkeypatch)
+    runtime.market["available_otokens"] = []
+
+    main.run_cycle(runtime.w3, runtime.domain, runtime.address)
+
+    runtime.w3.eth.call.assert_not_called()
+    runtime.w3.eth.contract.assert_not_called()
+    assert _published_quotes(runtime) == []
+
+
+@pytest.mark.parametrize("failure", ("balance", "allowance", "nonce"))
+def test_v1_multi_asset_shared_read_failure_fails_closed_once(
+    runtime, monkeypatch, failure
+):
+    _configure_multi_asset_runtime(runtime, monkeypatch)
+    error = RuntimeError("Base RPC unavailable")
+    if failure == "balance":
+        runtime.w3.eth.call.side_effect = error
+    elif failure == "allowance":
+        runtime.w3.eth.call.side_effect = [
+            (1_000 * 10**6).to_bytes(32, "big"),
+            error,
+        ]
+    else:
+        runtime.w3.eth.contract.return_value.functions.makerNonce.return_value.call.side_effect = error
+
+    main.run_cycle(runtime.w3, runtime.domain, runtime.address)
+
+    assert _published_quotes(runtime) == []
+    assert runtime.w3.eth.call.call_count == (1 if failure == "balance" else 2)
+    nonce_reader = runtime.w3.eth.contract.return_value.functions.makerNonce
+    assert nonce_reader.return_value.call.call_count == (0 if failure != "nonce" else 1)
 
 
 @pytest.mark.parametrize("failure", ("market", "capacity", "nonce"))
