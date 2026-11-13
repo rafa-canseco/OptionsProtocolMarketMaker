@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
+import uuid
 from dataclasses import dataclass
 from collections.abc import Callable
 from typing import Any
@@ -81,6 +83,235 @@ class Position:
 
 
 HEDGE_REBALANCE_THRESHOLD = 0.001  # minimum ETH diff to trigger rebalance
+_HEDGE_FILL_WINDOW_MS = 120_000
+_MAX_FILL_WINDOWS_PER_ATTEMPT = 10
+_PENDING_STATUSES = {"submitted", "partial", "unreconciled"}
+_TERMINAL_VENUE_STATUSES = {"filled", "canceled", "cancelled", "rejected"}
+_SAFE_HEDGE_ERRORS = {
+    "missing_order_id",
+    "order_fills_not_visible",
+    "order_fills_incomplete",
+    "order_not_terminal",
+    "venue_order_rejected",
+    "venue_order_canceled",
+    "live_hedge_order_failed",
+}
+_pending_records: dict[str, dict[str, Any]] = {}
+_pending_lock = threading.Lock()
+_pending_worker_started = False
+
+
+def reconcile_hedge_execution(record: dict[str, Any]) -> dict[str, Any]:
+    """Update one order from authoritative venue status and all visible fills."""
+    record["reconcile_attempts"] = int(record.get("reconcile_attempts", 0)) + 1
+    record["last_reconciled_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    if record.get("order_id") is None:
+        record.update(status="unreconciled", error="missing_order_id")
+        trade_logger.log_hedge_execution(record)
+        return record
+    oid = int(record["order_id"])
+    try:
+        response = hedge_executor.get_order_status(record["hedge_symbol"], oid)
+        top_status = response.get("status", "") if isinstance(response, dict) else ""
+        order = response.get("order", {}) if isinstance(response, dict) else {}
+        venue_status = str(order.get("status", top_status)).lower()
+        record["venue_order_status"] = venue_status or "unknown"
+        started = int(record.get("order_started_ms", 0))
+        now_ms = int(time.time() * 1000)
+        terminal = venue_status in _TERMINAL_VENUE_STATUSES or venue_status.endswith(
+            ("canceled", "rejected")
+        )
+        status_time = order.get("statusTimestamp") if isinstance(order, dict) else None
+        if status_time is None and isinstance(response, dict):
+            status_time = response.get("statusTimestamp")
+        target_end = (
+            int(status_time) + _HEDGE_FILL_WINDOW_MS
+            if terminal and status_time is not None
+            else now_ms
+        )
+        cursor = max(started, int(record.get("_fill_cursor_ms", started)))
+        fills_by_id = {}
+        for fill in record.get("_observed_fills", []):
+            tid = fill.get("tid")
+            key = (
+                ("tid", str(tid))
+                if tid is not None
+                else (
+                    "tuple",
+                    str(
+                        (
+                            fill.get("oid"),
+                            fill.get("time"),
+                            fill.get("sz"),
+                            fill.get("px"),
+                            fill.get("fee"),
+                        )
+                    ),
+                )
+            )
+            fills_by_id[key] = fill
+        windows_scanned = 0
+        while cursor < target_end and windows_scanned < _MAX_FILL_WINDOWS_PER_ATTEMPT:
+            window_end = min(cursor + _HEDGE_FILL_WINDOW_MS, target_end)
+            for fill in hedge_executor.get_order_fills(
+                record["hedge_symbol"], oid, cursor, window_end
+            ):
+                tid = fill.get("tid")
+                key = (
+                    ("tid", str(tid))
+                    if tid is not None
+                    else (
+                        "tuple",
+                        str(
+                            (
+                                fill.get("oid"),
+                                fill.get("time"),
+                                fill.get("sz"),
+                                fill.get("px"),
+                                fill.get("fee"),
+                            )
+                        ),
+                    )
+                )
+                fills_by_id[key] = {
+                    field: fill.get(field)
+                    for field in ("tid", "oid", "time", "sz", "px", "fee", "feeToken")
+                    if field in fill
+                }
+            cursor = window_end
+            windows_scanned += 1
+        record["_fill_cursor_ms"] = cursor
+        record["_observed_fills"] = list(fills_by_id.values())
+        fills = list(fills_by_id.values())
+        fill_history_complete = cursor >= target_end
+        qty = sum(float(fill.get("sz", 0)) for fill in fills)
+        notional = sum(
+            float(fill.get("sz", 0)) * float(fill.get("px", 0)) for fill in fills
+        )
+        record.update(
+            filled_size=qty,
+            average_fill_price=notional / qty if qty else None,
+            fee=sum(float(fill.get("fee", 0)) for fill in fills),
+            fee_token=next(
+                (fill.get("feeToken") for fill in fills if fill.get("feeToken")), None
+            ),
+            fill_count=len(fills),
+            error=None,
+        )
+        terminal = venue_status in _TERMINAL_VENUE_STATUSES or venue_status.endswith(
+            ("canceled", "rejected")
+        )
+        if venue_status == "unknownoid" or not terminal:
+            record.update(status="unreconciled", error="order_not_terminal")
+        elif not fill_history_complete:
+            record.update(status="unreconciled", error="order_fills_incomplete")
+        elif venue_status == "filled" and not fills:
+            record.update(status="unreconciled", error="order_fills_not_visible")
+        elif venue_status == "filled" and qty < float(record["requested_size"]) - 1e-9:
+            record.update(status="unreconciled", error="order_fills_incomplete")
+        elif venue_status == "filled":
+            record.update(status="filled")
+        elif qty:
+            record.update(status="partial")
+        else:
+            record.update(
+                status="failed",
+                error="venue_order_rejected"
+                if "reject" in venue_status
+                else "venue_order_canceled",
+            )
+        if fills:
+            positions = hedge_executor.get_positions_strict(record["hedge_symbol"])
+            observed = next(
+                (p["size"] for p in positions if p["coin"] == record["hedge_symbol"]),
+                0.0,
+            )
+            record.update(
+                observed_post_position=observed,
+                residual_delta=observed + float(record["net_option_delta"]),
+            )
+    except Exception as exc:
+        record.update(status="unreconciled", error=type(exc).__name__)
+    trade_logger.log_hedge_execution(record)
+    return record
+
+
+def _is_terminal_partial(record: dict[str, Any]) -> bool:
+    return record.get("status") == "partial" and str(
+        record.get("venue_order_status", "")
+    ).endswith(("canceled", "cancelled", "rejected"))
+
+
+def _pending_worker() -> None:
+    while True:
+        time.sleep(0.25)
+        with _pending_lock:
+            records = [
+                (key, current, current.copy())
+                for key, current in _pending_records.items()
+            ]
+        for key, registered, record in records:
+            if float(record.get("_next_retry_at", 0)) > time.time():
+                continue
+            result = reconcile_hedge_execution(record)
+            with _pending_lock:
+                if _pending_records.get(key) is not registered:
+                    continue
+                if result["status"] in {"filled", "failed"} or _is_terminal_partial(
+                    result
+                ):
+                    _pending_records.pop(key, None)
+                else:
+                    attempts = int(result.get("_retry_attempts", 0)) + 1
+                    result["_retry_attempts"] = attempts
+                    result["_next_retry_at"] = time.time() + min(2**attempts, 60)
+                    _pending_records[key] = result
+                    trade_logger.log_hedge_execution(result)
+
+
+def _ensure_pending_worker() -> None:
+    global _pending_worker_started
+    with _pending_lock:
+        if not _pending_worker_started:
+            _pending_worker_started = True
+            threading.Thread(
+                target=_pending_worker, name="hedge-pending-worker", daemon=True
+            ).start()
+
+
+def _schedule_hedge_reconciliation(record: dict[str, Any]) -> None:
+    key = str(record.get("rebalance_id", record.get("order_id", id(record))))
+    if record.get("execution_mode") != "live" or record.get("order_id") is None:
+        return
+    pending = record.copy()
+    pending.setdefault("_retry_attempts", 0)
+    pending.setdefault("_next_retry_at", time.time())
+    with _pending_lock:
+        existing = _pending_records.get(key)
+        if existing is not None and existing.get("order_id") == pending.get("order_id"):
+            return
+        _pending_records[key] = pending
+    _ensure_pending_worker()
+
+
+def resume_pending_hedge_reconciliations() -> int:
+    """Rebuild latest pending executions from the durable JSONL log."""
+    trade_logger.start_hedge_upsert_replay()
+    latest: dict[str, dict[str, Any]] = {}
+    for event in trade_logger.read_events():
+        if event.get("event") == "hedge_execution" and event.get("rebalance_id"):
+            latest[event["rebalance_id"]] = event
+    resumed = [
+        event
+        for event in latest.values()
+        if event.get("execution_mode") == "live"
+        and event.get("order_id") is not None
+        and event.get("status") in _PENDING_STATUSES
+        and not _is_terminal_partial(event)
+    ]
+    for record in resumed:
+        _schedule_hedge_reconciliation(record)
+    return len(resumed)
 
 
 class PositionTracker:
@@ -375,14 +606,68 @@ class PositionTracker:
 
         target_size = -net_d
         diff = target_size - current_size
-
+        rebalance_id = str(uuid.uuid4())
+        record = {
+            "rebalance_id": rebalance_id,
+            "chain": next(
+                (
+                    p.chain
+                    for p in self.open_positions(underlying)
+                    if p.hedge_symbol == hedge_symbol
+                ),
+                "base",
+            ),
+            "underlying": underlying,
+            "hedge_symbol": hedge_symbol,
+            "decision_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "execution_mode": config.HEDGE_MODE,
+            "configured_threshold": HEDGE_REBALANCE_THRESHOLD,
+            "spot": spot,
+            "decision_reason": "threshold_noop"
+            if abs(diff) <= HEDGE_REBALANCE_THRESHOLD
+            else "rebalance",
+            "side": None
+            if abs(diff) <= HEDGE_REBALANCE_THRESHOLD
+            else ("BUY" if diff > 0 else "SELL"),
+            "status": "noop" if abs(diff) <= HEDGE_REBALANCE_THRESHOLD else "submitted",
+            "net_option_delta": net_d,
+            "current_hedge_position": current_size,
+            "target_hedge_position": target_size,
+            "signed_difference": diff,
+            "expected_post_position": target_size,
+            "requested_size": abs(diff),
+            "filled_size": 0.0,
+            "fee": 0.0,
+            "fill_count": 0,
+        }
         if abs(diff) <= HEDGE_REBALANCE_THRESHOLD:
+            trade_logger.log_hedge_execution(record)
             return None
 
         is_buy = bool(diff > 0)
         if decision_validator is not None:
             decision_validator()
-        fill = hedge_executor.open_hedge(hedge_symbol, is_buy, float(abs(diff)))
+        order_started_ms = int(time.time() * 1000)
+        try:
+            fill = hedge_executor.open_hedge(hedge_symbol, is_buy, float(abs(diff)))
+        except Exception as error:
+            record.update(status="failed", error=type(error).__name__)
+            trade_logger.log_hedge_execution(record)
+            raise
+        if not fill and config.HEDGE_MODE == "live":
+            record.update(status="failed", error="live_hedge_order_failed")
+            trade_logger.log_hedge_execution(record)
+            raise RuntimeError(f"Live hedge order failed for {hedge_symbol}")
+        if fill:
+            record.update(
+                order_id=fill.get("oid"),
+                order_started_ms=order_started_ms,
+                status="submitted" if fill.get("oid") is not None else "unreconciled",
+                error=None if fill.get("oid") is not None else "missing_order_id",
+            )
+            trade_logger.log_hedge_execution(record)
+            if fill.get("oid") is not None:
+                _schedule_hedge_reconciliation(record)
 
         if fill:
             log.info(
@@ -410,6 +695,8 @@ class PositionTracker:
             if decision_validator is not None:
                 decision_validator()
             self._simulated_hedge[underlying] = target_size
+            record.update(status="submitted")
+            trade_logger.log_hedge_execution(record)
 
         return fill
 

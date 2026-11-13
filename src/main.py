@@ -31,7 +31,7 @@ from src import (
     trade_logger,
 )
 from src.capacity import calculate_capacity_internal, solana_call_capacity_raw
-from src.position_tracker import PositionTracker
+from src.position_tracker import PositionTracker, resume_pending_hedge_reconciliations
 from src.pricer import check_iv_divergence, validate_iv
 from src.quote_builder import build_quotes, to_api_payload, to_solana_api_payload
 from src.signer import (
@@ -924,6 +924,7 @@ def main() -> None:
         )
 
     hedge_executor.init()
+    resume_pending_hedge_reconciliations()
 
     # Recover open positions from trade history
     restored = recover_positions(_tracker)
