@@ -434,6 +434,28 @@ def open_hedge(asset: str, is_buy: bool, size: float) -> dict | None:
     return None
 
 
+def get_order_status(asset: str, oid: int) -> dict[str, Any]:
+    """Return Hyperliquid's order-status response for an order id."""
+    info = _dex_infos.get(_dex_for_symbol(asset)) if _dex_for_symbol(asset) else _info
+    if not info or not _address:
+        raise RuntimeError("Hyperliquid info client is unavailable")
+    return info.query_order_by_oid(_address, oid)
+
+
+def get_order_fills(
+    asset: str, oid: int, start_time_ms: int, end_time_ms: int
+) -> list[dict[str, Any]]:
+    """Return fills for one order within a bounded venue-time window."""
+    info = _dex_infos.get(_dex_for_symbol(asset)) if _dex_for_symbol(asset) else _info
+    if not info or not _address:
+        raise RuntimeError("Hyperliquid info client is unavailable")
+    return [
+        fill
+        for fill in info.user_fills_by_time(_address, start_time_ms, end_time_ms)
+        if int(fill.get("oid", -1)) == oid
+    ]
+
+
 def close_hedge(asset: str, size: float | None = None) -> dict | None:
     """Close a hedge position via market order.
 
@@ -533,6 +555,35 @@ def adjust_hedge(
             diff,
         )
         return close_hedge(asset, size=diff)
+
+
+def get_positions_strict(asset: str | None = None) -> list[dict]:
+    """Read all initialized venue states; empty means successfully flat."""
+    positions = []
+    for dex in _iter_initialized_dexs():
+        info = _dex_infos.get(dex) if dex else _info
+        if not info:
+            raise RuntimeError(f"Hyperliquid info client unavailable for dex={dex!r}")
+        state = info.user_state(_address, dex=dex)
+        if not isinstance(state, dict) or not isinstance(
+            state.get("assetPositions"), list
+        ):
+            raise RuntimeError(f"Invalid Hyperliquid state response for dex={dex!r}")
+        for item in state["assetPositions"]:
+            p = item["position"]
+            if asset is not None and p["coin"] != asset:
+                continue
+            positions.append(
+                {
+                    "coin": p["coin"],
+                    "size": float(p["szi"]),
+                    "entry_price": float(p["entryPx"]),
+                    "unrealized_pnl": float(p["unrealizedPnl"]),
+                    "leverage": p["leverage"],
+                    "dex": dex,
+                }
+            )
+    return positions
 
 
 def get_positions(asset: str | None = None) -> list[dict]:

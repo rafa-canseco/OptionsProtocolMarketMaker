@@ -3,7 +3,10 @@
 import json
 import logging
 import os
+import queue
+import threading
 import time
+from datetime import UTC, datetime
 from typing import Any
 
 from src import config
@@ -12,6 +15,23 @@ log = logging.getLogger(__name__)
 
 _supabase_client: Any = None
 _supabase_missing_columns: set[str] = set()
+_hedge_events: queue.SimpleQueue[dict[str, Any]] = queue.SimpleQueue()
+_hedge_upserts: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1024)
+_hedge_event_lock = threading.Lock()
+_hedge_replay_interval = 60
+_hedge_writer_started = False
+_hedge_replay_started = False
+_hedge_upserted: dict[str, str] = {}
+_hedge_queued: set[tuple[str, str]] = set()
+_SAFE_HEDGE_ERRORS = {
+    "missing_order_id",
+    "order_fills_not_visible",
+    "order_fills_incomplete",
+    "order_not_terminal",
+    "venue_order_rejected",
+    "venue_order_canceled",
+    "live_hedge_order_failed",
+}
 
 
 def _get_supabase() -> Any:
@@ -226,6 +246,126 @@ def log_capacity_snapshot(
             "status": status,
         }
     )
+
+
+def _hedge_upsert_worker() -> None:
+    while True:
+        event = _hedge_upserts.get()
+        key = (str(event.get("rebalance_id", "")), str(event.get("updated_at", "")))
+        retry_queued = False
+        try:
+            client = _get_supabase()
+            if client:
+                row = {
+                    k: v
+                    for k, v in event.items()
+                    if k != "event"
+                    and k != "order_started_ms"
+                    and not k.startswith("_")
+                }
+                client.table("mm_hedge_executions").upsert(
+                    row, on_conflict="rebalance_id"
+                ).execute()
+                _hedge_upserted[key[0]] = key[1]
+        except Exception as exc:
+            log.warning("Hedge telemetry upsert failed (%s)", type(exc).__name__)
+            time.sleep(1)
+            try:
+                _hedge_upserts.put_nowait(event)
+                _hedge_queued.add(key)
+                retry_queued = True
+            except queue.Full:
+                pass  # JSONL replay will re-enqueue the latest event.
+        finally:
+            if not retry_queued:
+                _hedge_queued.discard(key)
+            _hedge_upserts.task_done()
+
+
+def _replay_hedge_upserts() -> None:
+    latest = {
+        event["rebalance_id"]: event
+        for event in read_events()
+        if event.get("event") == "hedge_execution" and event.get("rebalance_id")
+    }
+    for rebalance_id, event in latest.items():
+        updated_at = str(event.get("updated_at", ""))
+        key = (rebalance_id, updated_at)
+        if _hedge_upserted.get(rebalance_id) == updated_at or key in _hedge_queued:
+            continue
+        _hedge_upserts.put(event)
+        _hedge_queued.add(key)
+
+
+def _hedge_event_worker() -> None:
+    while True:
+        event = _hedge_events.get()
+        try:
+            _write_jsonl(event)
+            key = (str(event.get("rebalance_id", "")), str(event.get("updated_at", "")))
+            try:
+                _hedge_upserts.put_nowait(event)
+                _hedge_queued.add(key)
+            except queue.Full:
+                pass  # JSONL is durable; periodic replay will enqueue the latest row.
+        except Exception as exc:
+            log.warning("Failed to process hedge telemetry (%s)", type(exc).__name__)
+
+
+def _replay_loop() -> None:
+    while True:
+        try:
+            _replay_hedge_upserts()
+        except Exception as exc:
+            log.warning("Hedge telemetry replay failed (%s)", type(exc).__name__)
+        time.sleep(_hedge_replay_interval)
+
+
+def start_hedge_upsert_replay() -> None:
+    """Start writer and periodic recovery of latest JSONL rows."""
+    global _hedge_replay_started, _hedge_writer_started
+    if not _hedge_writer_started:
+        _hedge_writer_started = True
+        threading.Thread(
+            target=_hedge_event_worker, name="hedge-telemetry-local-writer", daemon=True
+        ).start()
+        threading.Thread(
+            target=_hedge_upsert_worker, name="hedge-telemetry-writer", daemon=True
+        ).start()
+    if config.SUPABASE_URL and config.SUPABASE_KEY and not _hedge_replay_started:
+        _hedge_replay_started = True
+        threading.Thread(
+            target=_replay_loop, name="hedge-telemetry-replay", daemon=True
+        ).start()
+
+
+def log_hedge_execution(event: dict[str, Any]) -> None:
+    """Sanitize and enqueue hedge telemetry without performing I/O."""
+    global _hedge_writer_started
+    try:
+        safe = {**event}
+        error = safe.get("error")
+        if error:
+            safe["error"] = (
+                error
+                if error in _SAFE_HEDGE_ERRORS
+                or isinstance(error, str)
+                and error.isidentifier()
+                and error.endswith(("Error", "Exception"))
+                else type(error).__name__
+                if isinstance(error, Exception)
+                else "reconciliation_error"
+            )
+        event = {
+            "event": "hedge_execution",
+            **safe,
+            "updated_at": datetime.now(UTC).isoformat(timespec="microseconds"),
+        }
+        if not _hedge_writer_started:
+            start_hedge_upsert_replay()
+        _hedge_events.put_nowait(event)
+    except Exception as exc:
+        log.warning("Failed to enqueue hedge telemetry (%s)", type(exc).__name__)
 
 
 def read_events() -> list[dict[str, Any]]:
